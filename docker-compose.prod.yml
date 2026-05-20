@@ -1,0 +1,37 @@
+# Production overrides — use with:
+#   docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  api:
+    command: uvicorn athenaeum.main:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      ORCID_CLIENT_ID: ${ORCID_CLIENT_ID}
+      ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET}
+      ORCID_REDIRECT_URI: ${ORCID_REDIRECT_URI}
+      ORCID_API_BASE: ${ORCID_API_BASE}
+      FRONTEND_URL: ${FRONTEND_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+  worker:
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        VITE_API_URL: https://api.athenaindex.app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot
+    depends_on:
+      - api
+    restart: always
+
+volumes:
+  certbot-webroot:

@@ -1,0 +1,1781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athenaeum · Synthesis · Soil microbial C efficiency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #181818;
+    --bg-sidebar: #141414;
+    --bg-elevated: #1f1f1f;
+    --bg-subtle: #1c1c1c;
+    --bg-card: #202020;
+    --bg-hover: #262626;
+    --border: #2a2a2a;
+    --border-subtle: #232323;
+    --border-strong: #363636;
+    --text: #e6e1d6;
+    --text-muted: #9a968c;
+    --text-faint: #5f5c55;
+    --text-header: #d8d3c7;
+    --accent: #c9a876;
+    --accent-dim: #8a7a5c;
+    --verified: #8aa57c;
+    --tension: #c67a5c;
+    --contradicting: #b86b52;
+    --link: #89a5c4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lora', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .ui { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ═══════════════════════════════════════════════════
+     APP SHELL
+     ═══════════════════════════════════════════════════ */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .app-chrome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 46px;
+    padding: 0 16px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Lora', serif;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--text-header);
+  }
+
+  .brand-mark {
+    width: 22px;
+    height: 22px;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    position: relative;
+  }
+
+  .brand-mark::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .breadcrumbs {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .breadcrumbs .sep { color: var(--text-faint); }
+  .breadcrumbs .current { color: var(--text); }
+
+  .chrome-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: 280px;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .orcid-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+  }
+
+  .orcid-chip .dot {
+    width: 6px;
+    height: 6px;
+    background: #a6ce39;
+    border-radius: 50%;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     BODY LAYOUT
+     ═══════════════════════════════════════════════════ */
+  .app-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     SIDEBAR
+     ═══════════════════════════════════════════════════ */
+  .sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 24px 20px 32px;
+  }
+
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  .project-card {
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .project-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--accent-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .project-name {
+    font-family: 'Lora', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-header);
+    line-height: 1.3;
+    margin-bottom: 10px;
+  }
+
+  .project-meta {
+    display: flex;
+    gap: 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .project-meta span { display: inline-flex; align-items: center; gap: 5px; }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--verified);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(138, 165, 124, 0.15);
+  }
+
+  .sidebar-section {
+    margin-bottom: 22px;
+  }
+
+  .section-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .section-label .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0;
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+
+  .nav-item.active {
+    background: var(--bg-hover);
+    color: var(--text-header);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .nav-item .count-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  /* Paper list */
+  .paper-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .paper-item {
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+  }
+
+  .paper-item:hover { background: var(--bg-hover); }
+
+  .paper-item.featured {
+    background: rgba(201, 168, 118, 0.04);
+    box-shadow: inset 2px 0 0 var(--accent-dim);
+  }
+
+  .paper-title {
+    font-family: 'Lora', serif;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.35;
+    font-weight: 500;
+    font-style: italic;
+    margin-bottom: 3px;
+  }
+
+  .paper-meta {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .paper-meta .venue { color: var(--text-muted); }
+
+  .annotation-badge {
+    display: inline-block;
+    margin-left: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--accent-dim);
+  }
+
+  /* Questions */
+  .question-item {
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 5px;
+    margin-bottom: 6px;
+    font-family: 'Lora', serif;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    font-style: italic;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .question-item:hover { border-color: var(--border-strong); }
+
+  .question-item .q-mark {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    line-height: 14px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    font-style: normal;
+    margin-right: 4px;
+    transform: translateY(-1px);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════════ */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  .main::-webkit-scrollbar { width: 8px; }
+  .main::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+  .content {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 56px 48px 120px;
+  }
+
+  .page-breadcrumb {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .page-breadcrumb .accent-bar {
+    width: 20px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  /* Claim header */
+  .claim-frame {
+    margin-bottom: 28px;
+  }
+
+  .claim-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+
+  .claim-text {
+    font-family: 'Lora', serif;
+    font-weight: 500;
+    font-size: 26px;
+    line-height: 1.35;
+    color: var(--text-header);
+    letter-spacing: -0.005em;
+    padding: 20px 0 22px;
+    border-top: 1px solid var(--border-strong);
+    border-bottom: 1px solid var(--border-strong);
+    position: relative;
+  }
+
+  .claim-text::before {
+    content: '"';
+    position: absolute;
+    top: 8px;
+    left: -22px;
+    font-family: 'Lora', serif;
+    font-size: 44px;
+    color: var(--accent-dim);
+    line-height: 1;
+  }
+
+  /* Query expansion */
+  .query-expansion {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .qe-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .qe-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-faint);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+
+  .qe-terms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .qe-term {
+    display: inline-block;
+    padding: 3px 9px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    color: var(--text);
+    font-size: 11px;
+  }
+
+  .qe-edit {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--link);
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .qe-edit:hover { text-decoration: underline; }
+
+  /* Tension callout */
+  .tension-card {
+    margin: 40px 0 44px;
+    padding: 20px 24px 22px;
+    background: linear-gradient(to bottom, rgba(198, 122, 92, 0.08), rgba(198, 122, 92, 0.02));
+    border: 1px solid rgba(198, 122, 92, 0.25);
+    border-left: 3px solid var(--tension);
+    border-radius: 6px;
+  }
+
+  .tension-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .tension-icon {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--tension);
+  }
+
+  .tension-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--tension);
+  }
+
+  .tension-body {
+    font-family: 'Lora', serif;
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  .tension-body em {
+    color: var(--text-header);
+    font-style: italic;
+  }
+
+  /* Section divider */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 44px 0 20px;
+  }
+
+  .section-divider .line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .section-divider .label {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .section-divider.supporting .label { color: var(--verified); }
+  .section-divider.contradicting .label { color: var(--contradicting); }
+
+  /* Evidence cards */
+  .evidence {
+    margin-bottom: 28px;
+    padding: 22px 24px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+
+  .evidence:hover { border-color: var(--border-strong); }
+
+  .evidence.supporting { border-left: 3px solid var(--verified); }
+  .evidence.contradicting { border-left: 3px solid var(--contradicting); }
+  .evidence.complicating { border-left: 3px solid var(--accent-dim); }
+
+  .evidence-claim {
+    font-family: 'Lora', serif;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--text-header);
+    font-weight: 500;
+    margin-bottom: 14px;
+  }
+
+  .evidence-quote {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: var(--text);
+    padding: 12px 16px 12px 18px;
+    background: var(--bg-subtle);
+    border-left: 2px solid var(--accent-dim);
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .evidence-quote mark {
+    background: rgba(201, 168, 118, 0.14);
+    color: var(--text-header);
+    padding: 1px 2px;
+    border-radius: 2px;
+  }
+
+  .evidence-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .citation-line {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+
+  .citation-line .authors {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .citation-line .venue {
+    font-style: italic;
+    color: var(--text-muted);
+  }
+
+  .citation-line .year {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-left: 2px;
+  }
+
+  .evidence-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    background: rgba(138, 165, 124, 0.08);
+    border: 1px solid rgba(138, 165, 124, 0.22);
+    border-radius: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--verified);
+    letter-spacing: 0.02em;
+  }
+
+  .verified-badge::before {
+    content: '✓';
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+
+  .source-location {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    padding: 2px 7px;
+    background: var(--bg-elevated);
+    border-radius: 3px;
+  }
+
+  .open-paper {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--link);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .open-paper:hover { text-decoration: underline; }
+
+  /* Cross-reference between evidence cards */
+  .cross-ref {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .cross-ref .icon {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-dim);
+    flex-shrink: 0;
+  }
+
+  .cross-ref a { color: var(--link); text-decoration: none; }
+  .cross-ref a:hover { text-decoration: underline; }
+
+  /* Reasoning trace */
+  .reasoning-trace {
+    margin: 48px 0 24px;
+    padding: 16px 20px;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .trace-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+
+  .trace-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .trace-label .icon {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+  }
+
+  .trace-chevron {
+    color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  .trace-steps {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .trace-step {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .trace-step .num {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-dim);
+    flex-shrink: 0;
+    min-width: 18px;
+  }
+
+  .trace-step .desc { color: var(--text-muted); }
+  .trace-step .desc strong { color: var(--text); font-weight: 500; }
+
+  /* Follow-up */
+  .follow-up {
+    margin-top: 36px;
+    padding: 16px 18px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .follow-up .prompt-icon {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    font-size: 14px;
+  }
+
+  .follow-up input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 14px;
+  }
+
+  .follow-up input::placeholder {
+    color: var(--text-faint);
+  }
+
+  .follow-up .send-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     USER ACTION BAR — "your job" actions inside each card
+     ═══════════════════════════════════════════════════ */
+  .action-bar {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+
+  .action-btn:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+
+  .action-btn .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-dim);
+  }
+
+  .action-btn.primary {
+    background: rgba(201, 168, 118, 0.08);
+    border-color: rgba(201, 168, 118, 0.25);
+    color: var(--accent);
+  }
+
+  .action-btn.primary:hover {
+    background: rgba(201, 168, 118, 0.14);
+    border-color: rgba(201, 168, 118, 0.4);
+  }
+
+  .action-btn.primary .glyph { color: var(--accent); }
+
+  /* Evaluate block — where the user does the thinking */
+  .evaluate-block {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--bg-subtle);
+    border: 1px dashed var(--border-strong);
+    border-radius: 5px;
+  }
+
+  .evaluate-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .evaluate-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .evaluate-label .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .stance-chips {
+    display: flex;
+    gap: 4px;
+  }
+
+  .stance-chip {
+    padding: 2px 9px;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .stance-chip:hover { color: var(--text-muted); border-color: var(--border-strong); }
+
+  .stance-chip.agree-selected {
+    background: rgba(138, 165, 124, 0.12);
+    border-color: rgba(138, 165, 124, 0.35);
+    color: var(--verified);
+  }
+
+  .stance-chip.disagree-selected {
+    background: rgba(184, 107, 82, 0.12);
+    border-color: rgba(184, 107, 82, 0.35);
+    color: var(--contradicting);
+  }
+
+  .stance-chip.partial-selected {
+    background: rgba(201, 168, 118, 0.12);
+    border-color: rgba(201, 168, 118, 0.3);
+    color: var(--accent);
+  }
+
+  .evaluate-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: 'Lora', serif;
+    font-size: 13.5px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--text);
+    min-height: 22px;
+  }
+
+  .evaluate-input::placeholder {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  .evaluate-input.filled {
+    font-style: normal;
+  }
+
+  /* Context preview (middle ground between quote and full paper) */
+  .context-preview {
+    margin-top: 10px;
+    padding: 12px 14px 12px 16px;
+    background: transparent;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    font-family: 'Lora', serif;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+    position: relative;
+  }
+
+  .context-preview-header {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .context-preview-header .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-dim);
+  }
+
+  .context-preview .cited {
+    color: var(--text-header);
+    background: rgba(201, 168, 118, 0.08);
+    padding: 1px 2px;
+    border-radius: 2px;
+  }
+
+  /* Prompt card — replaces the previous AI-synthesis tension card */
+  .prompt-card {
+    margin: 40px 0 44px;
+    padding: 22px 26px 22px;
+    background: linear-gradient(to bottom, rgba(201, 168, 118, 0.06), rgba(201, 168, 118, 0.01));
+    border: 1px solid rgba(201, 168, 118, 0.22);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+  }
+
+  .prompt-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .prompt-icon-big {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--accent);
+  }
+
+  .prompt-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .prompt-observation {
+    font-family: 'Lora', serif;
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  .prompt-observation strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .prompt-observation .ref-chip {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--link);
+    border-bottom: 1px dotted var(--link);
+    padding: 0 1px;
+    cursor: pointer;
+  }
+
+  .prompt-question {
+    font-family: 'Lora', serif;
+    font-size: 17px;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--text-header);
+    padding: 14px 0 16px;
+    border-top: 1px solid rgba(201, 168, 118, 0.18);
+  }
+
+  .prompt-question::before {
+    content: '›';
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--accent);
+    font-style: normal;
+    margin-right: 8px;
+  }
+
+  .prompt-synthesis-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 12px 14px;
+    font-family: 'Lora', serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    resize: vertical;
+    min-height: 72px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .prompt-synthesis-input:focus { border-color: var(--accent-dim); }
+
+  .prompt-synthesis-input::placeholder {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  .prompt-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .prompt-footer .hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .prompt-footer .save-btn {
+    padding: 5px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .prompt-footer .save-btn:hover {
+    color: var(--text);
+    border-color: var(--accent-dim);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CEMENT BUTTON & BRICK PREVIEW
+     ═══════════════════════════════════════════════════ */
+  .prompt-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .cement-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    background: linear-gradient(to bottom, rgba(201, 168, 118, 0.18), rgba(201, 168, 118, 0.08));
+    border: 1px solid rgba(201, 168, 118, 0.5);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+
+  .cement-btn:hover {
+    background: linear-gradient(to bottom, rgba(201, 168, 118, 0.25), rgba(201, 168, 118, 0.12));
+    border-color: rgba(201, 168, 118, 0.7);
+    color: var(--text-header);
+  }
+
+  .cement-btn .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  /* Brick preview — shown after user writes synthesis, before cementing */
+  .brick-preview {
+    margin-top: 14px;
+    padding: 16px 18px 14px;
+    background: var(--bg);
+    border: 1.5px solid var(--accent-dim);
+    border-radius: 10px;
+    position: relative;
+  }
+
+  .brick-preview::before {
+    content: 'BRICK PREVIEW';
+    position: absolute;
+    top: -8px;
+    left: 16px;
+    padding: 0 8px;
+    background: var(--bg);
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+  }
+
+  .brick-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .brick-assertion {
+    font-family: 'Lora', serif;
+    font-size: 15px;
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-header);
+    padding: 8px 0 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .brick-assertion::before {
+    content: '"';
+    color: var(--accent-dim);
+    font-size: 18px;
+    margin-right: 2px;
+  }
+
+  .brick-assertion::after {
+    content: '"';
+    color: var(--accent-dim);
+    font-size: 18px;
+    margin-left: 2px;
+  }
+
+  .brick-supports {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  .brick-supports-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-right: 8px;
+  }
+
+  .brick-support-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 2px 3px 2px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 10.5px;
+    color: var(--text);
+  }
+
+  .brick-support-chip .role {
+    color: var(--text-faint);
+    font-size: 9px;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .brick-support-chip.oppose { border-color: rgba(184, 107, 82, 0.3); }
+  .brick-support-chip.oppose .role { color: var(--contradicting); }
+
+  .brick-attach-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .brick-attach-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .brick-attach-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+
+  .brick-attach-btn .glyph {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-dim);
+  }
+
+  /* Small utilities */
+  .inline-ref {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--link);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--link);
+    padding: 0 1px;
+  }
+
+  .inline-ref:hover { background: rgba(137, 165, 196, 0.08); }
+
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══════════════ TOP CHROME ═══════════════ -->
+  <header class="app-chrome">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <span>Athenaeum</span>
+    </div>
+    <div class="breadcrumbs ui">
+      <span>Soil microbial C efficiency</span>
+      <span class="sep">/</span>
+      <span>Synthesis</span>
+      <span class="sep">/</span>
+      <span class="current">B:F ratio &amp; CUE</span>
+    </div>
+    <div class="chrome-right ui">
+      <div class="search-bar">
+        <span style="opacity: 0.5;">⌕</span>
+        <span>Search across project &amp; literature</span>
+      </div>
+      <div class="orcid-chip">
+        <span class="dot"></span>
+        <span>0000-0002-1825-0097</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ BODY ═══════════════ -->
+  <div class="app-body">
+    <!-- ═══════════════ SIDEBAR ═══════════════ -->
+    <aside class="sidebar">
+      <div class="project-card">
+        <div class="project-label ui">Active Project</div>
+        <div class="project-name">Soil microbial C efficiency — temperate forest soils</div>
+        <div class="project-meta ui">
+          <span><span class="status-dot"></span>Active</span>
+          <span>47 days</span>
+          <span>Last: 2h ago</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-section nav">
+        <div class="nav-item ui">Overview</div>
+        <div class="nav-item ui">Papers <span class="count-pill">5</span></div>
+        <div class="nav-item ui">Annotations <span class="count-pill">12</span></div>
+        <div class="nav-item ui">Questions <span class="count-pill">4</span></div>
+        <div class="nav-item ui active">Synthesis <span class="count-pill">3</span></div>
+        <div class="nav-item ui">Knowledge graph</div>
+        <div class="nav-item ui">Alerts <span class="count-pill">2</span></div>
+      </nav>
+
+      <div class="sidebar-section">
+        <div class="section-label ui">Papers in project <span class="count mono">5</span></div>
+        <div class="paper-list">
+          <div class="paper-item featured">
+            <div class="paper-title">Soil fungal:bacterial ratios are linked to altered carbon cycling</div>
+            <div class="paper-meta ui">
+              <span>Malik et al.</span>
+              <span class="venue">Front. Microbiol.</span>
+              <span>2016</span>
+              <span class="annotation-badge mono">4 ann</span>
+            </div>
+          </div>
+          <div class="paper-item featured">
+            <div class="paper-title">Microbial carbon use efficiency: population, community, &amp; ecosystem-scale controls</div>
+            <div class="paper-meta ui">
+              <span>Geyer et al.</span>
+              <span class="venue">Biogeochemistry</span>
+              <span>2016</span>
+              <span class="annotation-badge mono">3 ann</span>
+            </div>
+          </div>
+          <div class="paper-item featured">
+            <div class="paper-title">Microbial growth and carbon use efficiency in soil: links to fungal-bacterial dominance</div>
+            <div class="paper-meta ui">
+              <span>Soares &amp; Rousk</span>
+              <span class="venue">Soil Biol. Biochem.</span>
+              <span>2019</span>
+              <span class="annotation-badge mono">5 ann</span>
+            </div>
+          </div>
+          <div class="paper-item featured">
+            <div class="paper-title">Microbial diversity drives carbon use efficiency in a model soil</div>
+            <div class="paper-meta ui">
+              <span>Domeignoz-Horta et al.</span>
+              <span class="venue">Nat. Commun.</span>
+              <span>2020</span>
+            </div>
+          </div>
+          <div class="paper-item featured">
+            <div class="paper-title">Microbial carbon use efficiency promotes global soil carbon storage</div>
+            <div class="paper-meta ui">
+              <span>Tao et al.</span>
+              <span class="venue">Nature</span>
+              <span>2023</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-label ui">Open questions <span class="count mono">4</span></div>
+        <div class="question-item">
+          <span class="q-mark mono">?</span>Why does theoretical prediction (fungi → higher CUE) diverge from direct empirical measurement in Soares &amp; Rousk?
+        </div>
+        <div class="question-item">
+          <span class="q-mark mono">?</span>Does the F:B → CUE relationship hold at the biome scale, or only within site?
+        </div>
+        <div class="question-item">
+          <span class="q-mark mono">?</span>How much of the CUE variance is methodological (¹⁸O vs ¹³C vs stoichiometric)?
+        </div>
+      </div>
+    </aside>
+
+    <!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+    <main class="main">
+      <div class="content">
+        <div class="page-breadcrumb ui">
+          <span class="accent-bar"></span>
+          <span>Synthesis #3</span>
+          <span style="color: var(--text-faint);">·</span>
+          <span>2 hours ago</span>
+        </div>
+
+        <!-- CLAIM HEADER -->
+        <div class="claim-frame">
+          <div class="claim-label ui">Evaluating the claim</div>
+          <div class="claim-text">
+            Bacterial to fungal ratios in soil may relate to carbon use efficiency.
+          </div>
+
+          <div class="query-expansion">
+            <div class="qe-header">
+              <span class="qe-label"><span class="mono" style="color: var(--accent);">≡</span> Your query was expanded across the literature</span>
+              <a class="qe-edit">Edit expansion</a>
+            </div>
+            <div class="qe-terms">
+              <span class="qe-term">F:B ratio</span>
+              <span class="qe-term">fungal-to-bacterial dominance</span>
+              <span class="qe-term">carbon use efficiency</span>
+              <span class="qe-term">CUE</span>
+              <span class="qe-term">microbial physiology soil C</span>
+              <span class="qe-term">substrate use efficiency</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- PROMPT: AI reports what it found; the scientist does the synthesis -->
+        <div class="prompt-card">
+          <div class="prompt-header">
+            <span class="prompt-icon-big mono">◈</span>
+            <span class="prompt-label ui">Your synthesis · the AI found signal, you decide what it means</span>
+          </div>
+          <div class="prompt-observation">
+            Across the 5 papers retrieved, I found <strong>2 sources supporting</strong> a positive F:B → CUE relationship (<span class="ref-chip">Malik 2016</span>, <span class="ref-chip">Domeignoz-Horta 2020</span>), <strong>1 source reporting the opposite sign</strong> (<span class="ref-chip">Soares &amp; Rousk 2019</span>), and <strong>2 sources providing context</strong> on scale and stakes (<span class="ref-chip">Geyer 2016</span>, <span class="ref-chip">Tao 2023</span>). The evidence below is sentence-verified. Whether these findings genuinely conflict, or are measuring different quantities at different scales, is <em>your call to make</em>.
+          </div>
+          <div class="prompt-question">
+            How would you characterize what the literature actually shows here?
+          </div>
+          <textarea class="prompt-synthesis-input" style="font-style: normal;">The relationship between soil fungal-to-bacterial ratios and microbial carbon use efficiency remains unresolved. Mechanistic arguments predict that fungal dominance increases CUE through broader enzyme repertoires and higher biomass C:N, but the only direct empirical test across multiple field sites in this corpus finds the opposite sign. This apparent contradiction may reflect a scale mismatch — theoretical predictions address population-scale CUE, while field measurements integrate community-scale processes where competition and turnover dynamics dominate.</textarea>
+          <div class="prompt-footer ui">
+            <span class="hint">Saved to <span style="color: var(--text-muted);">Synthesis #3</span> · drafts autosave</span>
+            <div class="prompt-actions">
+              <button class="save-btn">Save draft</button>
+              <button class="cement-btn">Cement as brick</button>
+            </div>
+          </div>
+
+          <!-- BRICK PREVIEW - shows what will be cemented -->
+          <div class="brick-preview">
+            <div class="brick-id mono">brick-0007 · draft · to be cemented on save</div>
+            <div class="brick-assertion">
+              The relationship between soil F:B ratios and microbial CUE remains unresolved, with theoretical predictions and direct empirical measurement reporting opposite signs — possibly due to a scale mismatch between population- and community-level CUE.
+            </div>
+            <div class="brick-supports">
+              <span class="brick-supports-label">Rests on</span>
+              <span class="brick-support-chip">Malik 2016 <span class="role">theory</span></span>
+              <span class="brick-support-chip">Domeignoz-Horta 2020 <span class="role">theory</span></span>
+              <span class="brick-support-chip oppose">Soares &amp; Rousk 2019 <span class="role">opposing</span></span>
+              <span class="brick-support-chip">Geyer 2016 <span class="role">framework</span></span>
+              <span class="brick-support-chip">Tao 2023 <span class="role">stakes</span></span>
+            </div>
+            <div class="brick-attach-row">
+              <span class="brick-attach-btn ui"><span class="glyph">+</span> Attach your data</span>
+              <span class="brick-attach-btn ui"><span class="glyph">+</span> Attach figure</span>
+              <span class="brick-attach-btn ui"><span class="glyph">+</span> Link another brick</span>
+              <span class="brick-attach-btn ui"><span class="glyph">⊙</span> Add annotation to subset</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXTRACTED EVIDENCE -->
+        <div class="section-divider">
+          <span class="line"></span>
+          <span class="label ui">Extracted passages · 5 papers · 6 sentences verified</span>
+          <span class="line"></span>
+        </div>
+
+        <article class="evidence">
+          <div class="evidence-claim">
+            Fungal dominance is theorized to yield higher CUE because fungi express a broader enzyme suite and carry a greater biomass C:N ratio.
+          </div>
+          <div class="evidence-quote">
+            "A shift toward a fungal dominance in the microbial community is thought to enhance organic C accumulation and decrease its turnover rate… <mark>fungi are thought to express a broader suite of enzymes capable of transforming and stabilizing inputs; and fungal biomass has greater C:N ratio which results in increased carbon use efficiency</mark>."
+          </div>
+
+          <div class="context-preview">
+            <div class="context-preview-header ui">
+              <span class="glyph">¶</span> Containing paragraph · §Introduction, paragraph 3
+            </div>
+            Intensively managed farmed soils often exhibit lower F:B biomass ratios when compared with more extensively managed soils; a phenomena thought to be due to tillage, high rates of fertilization and decreasing C:N ratio favoring bacteria (Bardgett et al., 1996; Bailey et al., 2002; Sinsabaugh et al., 2013). Lower fungal biomass has been linked to lower capacity of such soils to sequester C. <span class="cited">A shift toward a fungal dominance in the microbial community is thought to enhance organic C accumulation and decrease its turnover rate due to enhanced fungal mediated soil aggregation and/or changes in the physiology of the microbial biomass (Six et al., 2006). For instance, fungi are thought to express a broader suite of enzymes capable of transforming and stabilizing inputs; and fungal biomass has greater C:N ratio which results in increased carbon use efficiency (Strickland and Rousk, 2010; Waring et al., 2013).</span>
+          </div>
+
+          <div class="evidence-footer">
+            <div class="citation-line ui">
+              <span class="authors">Malik et al.</span> <span class="year mono">2016</span> · <span class="venue">Frontiers in Microbiology</span> 7: 1247
+            </div>
+            <div class="evidence-actions">
+              <span class="verified-badge ui">Sentence verified</span>
+              <span class="source-location">§Introduction</span>
+            </div>
+          </div>
+
+          <div class="cross-ref">
+            <span class="icon mono">↗</span>
+            <div>Claim is itself attributed to <a>Strickland &amp; Rousk 2010</a> and <a>Waring et al. 2013</a> — neither is in your current project. Add them?</div>
+          </div>
+
+          <div class="action-bar">
+            <a class="action-btn"><span class="glyph">¶</span> Context shown</a>
+            <a class="action-btn"><span class="glyph">↗</span> Open paper</a>
+            <a class="action-btn"><span class="glyph">✎</span> Annotate</a>
+            <a class="action-btn primary"><span class="glyph">◉</span> Add to graph</a>
+          </div>
+
+          <div class="evaluate-block">
+            <div class="evaluate-header">
+              <span class="evaluate-label ui"><span class="glyph">?</span> Your evaluation</span>
+              <div class="stance-chips">
+                <span class="stance-chip partial-selected ui">Partially agree</span>
+                <span class="stance-chip ui">Agree</span>
+                <span class="stance-chip ui">Disagree</span>
+              </div>
+            </div>
+            <textarea class="evaluate-input filled">Framing is accurate but the quoted claim is theoretical, not empirical — Malik is citing Strickland &amp; Rousk (2010) and Waring et al. (2013). Need to read those primary sources before treating this as established mechanism. The AI's extraction is faithful to the paper, but the paper itself is propagating a prediction, not reporting a result.</textarea>
+          </div>
+        </article>
+
+        <article class="evidence">
+          <div class="evidence-claim">
+            Community composition (of which F:B ratio is one dimension) is the strongest biotic predictor of CUE in controlled model soils — though abiotic factors modulate the relationship.
+          </div>
+          <div class="evidence-quote">
+            "<mark>community composition and diversity are the strongest predictors of CUE, abiotic factors modulated the relationship</mark> between diversity and CUE, with CUE being positively correlated with bacterial diversity only under high moisture."
+          </div>
+          <div class="evidence-footer">
+            <div class="citation-line ui">
+              <span class="authors">Domeignoz-Horta et al.</span> <span class="year mono">2020</span> · <span class="venue">Nature Communications</span> 11: 3684
+            </div>
+            <div class="evidence-actions">
+              <span class="verified-badge ui">Sentence verified</span>
+              <span class="source-location">Abstract</span>
+            </div>
+          </div>
+          <div class="cross-ref">
+            <span class="icon mono">⊕</span>
+            <div>The authors used <strong>SEM</strong> with F:B ratio as a mediator — this paper does not isolate F:B from community structure. See your <a>annotation</a> on Fig 4 (methods tension).</div>
+          </div>
+
+          <div class="action-bar">
+            <a class="action-btn"><span class="glyph">¶</span> Open context</a>
+            <a class="action-btn"><span class="glyph">↗</span> Open paper</a>
+            <a class="action-btn"><span class="glyph">✎</span> Annotate</a>
+            <a class="action-btn"><span class="glyph">◉</span> Add to graph</a>
+          </div>
+
+          <div class="evaluate-block">
+            <div class="evaluate-header">
+              <span class="evaluate-label ui"><span class="glyph">?</span> Your evaluation</span>
+              <div class="stance-chips">
+                <span class="stance-chip ui">Agree</span>
+                <span class="stance-chip ui">Partial</span>
+                <span class="stance-chip ui">Disagree</span>
+              </div>
+            </div>
+            <textarea class="evaluate-input" placeholder="Does the AI's framing match what the paper actually shows? Is the extraction faithful? Is it relevant to your claim? Write your assessment here…"></textarea>
+          </div>
+        </article>
+
+        <!-- More evidence continues below -->
+
+        <article class="evidence">
+          <div class="evidence-claim">
+            Direct empirical measurement across nine field sites finds the opposite sign: <em>higher</em> fungal dominance correlates with <em>lower</em> CUE, not higher.
+          </div>
+          <div class="evidence-quote">
+            "We observed that fungal-to-bacterial growth ratios (F:B) ranged from 0.02 to 0.44… <mark>We found a negative exponential relationship between the dominance of fungi and the microbial CUE.</mark> CUE ranged from 0.03 to 0.30, and values clustered most strongly according to site rather than level of soil N."
+          </div>
+          <div class="evidence-footer">
+            <div class="citation-line ui">
+              <span class="authors">Soares &amp; Rousk</span> <span class="year mono">2019</span> · <span class="venue">Soil Biology and Biochemistry</span> 131: 195–205
+            </div>
+            <div class="evidence-actions">
+              <span class="verified-badge ui">Sentence verified</span>
+              <span class="source-location">Abstract, §3.2</span>
+            </div>
+          </div>
+          <div class="cross-ref">
+            <span class="icon mono">↔</span>
+            <div>Observation: Rousk is co-author on the Malik-cited theoretical sources (Strickland &amp; Rousk 2010) and on this 2019 empirical paper. You may want to read them as a pair — is this an intellectual update from the same research program?</div>
+          </div>
+
+          <div class="action-bar">
+            <a class="action-btn"><span class="glyph">¶</span> Open context</a>
+            <a class="action-btn"><span class="glyph">↗</span> Open paper</a>
+            <a class="action-btn"><span class="glyph">✎</span> Annotate</a>
+            <a class="action-btn"><span class="glyph">◉</span> Add to graph</a>
+          </div>
+
+          <div class="evaluate-block">
+            <div class="evaluate-header">
+              <span class="evaluate-label ui"><span class="glyph">?</span> Your evaluation</span>
+              <div class="stance-chips">
+                <span class="stance-chip ui">Agree</span>
+                <span class="stance-chip ui">Partial</span>
+                <span class="stance-chip ui">Disagree</span>
+              </div>
+            </div>
+            <textarea class="evaluate-input" placeholder="Does the AI's framing match what the paper actually shows? Is the extraction faithful? Is it relevant to your claim? Write your assessment here…"></textarea>
+          </div>
+        </article>
+
+        <article class="evidence">
+          <div class="evidence-claim">
+            CUE operates at different scales (population, community, ecosystem); claims about "F:B → CUE" need to specify which scale is meant.
+          </div>
+          <div class="evidence-quote">
+            "<mark>CUE<sub>P</sub> reflects population-scale carbon use efficiency</mark> of microbes governed by species-specific metabolic and thermodynamic constraints, <mark>CUE<sub>C</sub> defines community-scale microbial efficiency</mark> as gross biomass production per unit substrate taken up over short time scales…"
+          </div>
+          <div class="evidence-footer">
+            <div class="citation-line ui">
+              <span class="authors">Geyer et al.</span> <span class="year mono">2016</span> · <span class="venue">Biogeochemistry</span> 127: 173–188
+            </div>
+            <div class="evidence-actions">
+              <span class="verified-badge ui">Sentence verified</span>
+              <span class="source-location">Abstract</span>
+            </div>
+          </div>
+          <div class="cross-ref">
+            <span class="icon mono">↯</span>
+            <div>Observation: Soares &amp; Rousk measure CUE<sub>C</sub>; Malik's quoted claim operates at CUE<sub>P</sub>. Worth checking whether they are measuring the same quantity.</div>
+          </div>
+
+          <div class="action-bar">
+            <a class="action-btn"><span class="glyph">¶</span> Open context</a>
+            <a class="action-btn"><span class="glyph">↗</span> Open paper</a>
+            <a class="action-btn"><span class="glyph">✎</span> Annotate</a>
+            <a class="action-btn"><span class="glyph">◉</span> Add to graph</a>
+          </div>
+
+          <div class="evaluate-block">
+            <div class="evaluate-header">
+              <span class="evaluate-label ui"><span class="glyph">?</span> Your evaluation</span>
+              <div class="stance-chips">
+                <span class="stance-chip ui">Agree</span>
+                <span class="stance-chip ui">Partial</span>
+                <span class="stance-chip ui">Disagree</span>
+              </div>
+            </div>
+            <textarea class="evaluate-input" placeholder="Does the AI's framing match what the paper actually shows? Is the extraction faithful? Is it relevant to your claim? Write your assessment here…"></textarea>
+          </div>
+        </article>
+
+        <article class="evidence">
+          <div class="evidence-claim">
+            At the global scale, CUE (across all microbial community compositions) is reported as a major determinant of soil organic carbon storage.
+          </div>
+          <div class="evidence-quote">
+            "<mark>microbial carbon use efficiency is a major determinant of soil organic carbon storage and its spatial variation across the globe</mark>… We examine the relationship between CUE and the preservation of SOC, and interactions with climate, vegetation and edaphic properties."
+          </div>
+          <div class="evidence-footer">
+            <div class="citation-line ui">
+              <span class="authors">Tao et al.</span> <span class="year mono">2023</span> · <span class="venue">Nature</span> 618: 981–985
+            </div>
+            <div class="evidence-actions">
+              <span class="verified-badge ui">Sentence verified</span>
+              <span class="source-location">Abstract</span>
+            </div>
+          </div>
+
+          <div class="action-bar">
+            <a class="action-btn"><span class="glyph">¶</span> Open context</a>
+            <a class="action-btn"><span class="glyph">↗</span> Open paper</a>
+            <a class="action-btn"><span class="glyph">✎</span> Annotate</a>
+            <a class="action-btn"><span class="glyph">◉</span> Add to graph</a>
+          </div>
+
+          <div class="evaluate-block">
+            <div class="evaluate-header">
+              <span class="evaluate-label ui"><span class="glyph">?</span> Your evaluation</span>
+              <div class="stance-chips">
+                <span class="stance-chip ui">Agree</span>
+                <span class="stance-chip ui">Partial</span>
+                <span class="stance-chip ui">Disagree</span>
+              </div>
+            </div>
+            <textarea class="evaluate-input" placeholder="Does the AI's framing match what the paper actually shows? Is the extraction faithful? Is it relevant to your claim? Write your assessment here…"></textarea>
+          </div>
+        </article>
+
+        <!-- REASONING TRACE -->
+        <div class="reasoning-trace">
+          <div class="trace-header">
+            <div class="trace-label ui">
+              <span class="icon mono">◇</span>
+              Reasoning trace — how this synthesis was built
+            </div>
+            <span class="trace-chevron mono">▼</span>
+          </div>
+          <div class="trace-steps">
+            <div class="trace-step ui">
+              <span class="num">01</span>
+              <span class="desc"><strong>Query interpretation.</strong> Parsed claim into two entities (bacterial:fungal ratio, carbon use efficiency) and one relation (may relate). Expanded to 6 terms using domain synonyms from your project's vocabulary.</span>
+            </div>
+            <div class="trace-step ui">
+              <span class="num">02</span>
+              <span class="desc"><strong>Retrieval.</strong> Hybrid search over 5 project papers + 41 adjacent candidates from OpenAlex. Reranked to top 12. All 5 project papers scored above relevance threshold.</span>
+            </div>
+            <div class="trace-step ui">
+              <span class="num">03</span>
+              <span class="desc"><strong>Sentence extraction.</strong> Extracted 23 candidate sentences from 12 papers. Dropped 9 as tangential. Retained 14 with sentence-level grounding to paper offset.</span>
+            </div>
+            <div class="trace-step ui">
+              <span class="num">04</span>
+              <span class="desc"><strong>Signal detection.</strong> Compared reported directions across sources. Noted Malik and Soares &amp; Rousk describe the F:B → CUE relationship in opposite directions; Geyer introduces a scale distinction relevant to both. Surfaced for user review.</span>
+            </div>
+            <div class="trace-step ui">
+              <span class="num">05</span>
+              <span class="desc"><strong>Citation verification.</strong> Independent pass checked 6/6 quoted sentences against source text — all verified verbatim. No hallucinated citations detected.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- FOLLOW-UP -->
+        <div class="follow-up">
+          <span class="prompt-icon mono">›</span>
+          <input type="text" placeholder="Ask a follow-up grounded in these 5 papers…" />
+          <span class="send-hint mono">↵</span>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

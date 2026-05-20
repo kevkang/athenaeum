@@ -1,0 +1,163 @@
+"""arq job definitions for ingestion, synthesis, and Neo4j graph sync."""
+from __future__ import annotations
+
+import asyncio
+import uuid
+from functools import partial
+
+import httpx
+import redis.asyncio as aioredis
+import structlog
+from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+
+from athenaeum.config import get_settings
+from athenaeum.ingest.openalex import fetch_referenced_work_ids
+from athenaeum.ingest.pipeline import run_ingest
+from athenaeum.storage.models import CitationEdge, Paper
+from athenaeum.synthesize.orchestrator import run_synthesis
+
+log = structlog.get_logger()
+
+
+async def startup(ctx: dict) -> None:
+    settings = get_settings()
+    ctx["engine"] = create_async_engine(settings.database_url, pool_size=5, max_overflow=10)
+    ctx["http"] = httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0, read=300.0),
+        headers={"User-Agent": "athenaeum/0.0.1 (mailto:contact@athenaeum.app)"},
+        follow_redirects=True,
+    )
+    ctx["redis"] = aioredis.from_url(settings.redis_url)
+
+    try:
+        from athenaeum.graph.driver import init_constraints, make_driver
+
+        driver = make_driver(settings.neo4j_url, settings.neo4j_user, settings.neo4j_password)
+        await init_constraints(driver)
+        ctx["neo4j_driver"] = driver
+        log.info("worker.neo4j.connected")
+    except Exception as exc:
+        log.warning("worker.neo4j.unavailable", error=str(exc))
+        ctx["neo4j_driver"] = None
+
+    log.info("worker.startup")
+
+
+async def shutdown(ctx: dict) -> None:
+    engine: AsyncEngine = ctx["engine"]
+    http: httpx.AsyncClient = ctx["http"]
+    r: aioredis.Redis = ctx["redis"]
+    await engine.dispose()
+    await http.aclose()
+    await r.aclose()
+    if ctx.get("neo4j_driver") is not None:
+        await ctx["neo4j_driver"].close()
+    log.info("worker.shutdown")
+
+
+# ── Ingestion ──────────────────────────────────────────────────────────────────
+
+async def ingest_paper(
+    ctx: dict,
+    paper_id: str,
+    oa_pdf_url: str | None = None,
+) -> None:
+    settings = get_settings()
+    pid = uuid.UUID(paper_id)
+    log.info("job.ingest_paper.start", paper_id=paper_id)
+
+    await run_ingest(
+        paper_id=pid,
+        oa_pdf_url=oa_pdf_url,
+        engine=ctx["engine"],
+        http=ctx["http"],
+        settings=settings,
+    )
+
+    # Populate citation_edges from OpenAlex referenced_works.
+    await _sync_citations(ctx, pid, settings)
+
+    log.info("job.ingest_paper.done", paper_id=paper_id)
+
+
+async def _sync_citations(ctx: dict, paper_id: uuid.UUID, settings) -> None:
+    engine: AsyncEngine = ctx["engine"]
+    driver = ctx.get("neo4j_driver")
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None or not paper.openalex_id:
+            return
+
+        # Sync paper node to Neo4j first.
+        if driver:
+            from athenaeum.graph.sync import upsert_paper
+            async with driver.session() as neo:
+                await upsert_paper(neo, paper)
+
+        # Fetch referenced OpenAlex IDs in a thread (pyalex is synchronous).
+        loop = asyncio.get_event_loop()
+        ref_ids: list[str] = await loop.run_in_executor(
+            None, partial(fetch_referenced_work_ids, paper.openalex_id)
+        )
+        if not ref_ids:
+            return
+
+        # Find which referenced papers are already in our DB.
+        found = list(await session.scalars(
+            select(Paper).where(Paper.openalex_id.in_(ref_ids))
+        ))
+        if not found:
+            return
+
+        # Upsert citation_edges (ON CONFLICT DO NOTHING).
+        stmt = pg_insert(CitationEdge).values([
+            {"from_paper_id": paper.id, "to_paper_id": ref.id, "source": "openalex"}
+            for ref in found
+        ]).on_conflict_do_nothing()
+        await session.execute(stmt)
+        await session.commit()
+
+        # Sync CITES edges to Neo4j.
+        if driver:
+            from athenaeum.graph.sync import sync_paper_cites
+            async with driver.session() as neo:
+                await sync_paper_cites(neo, str(paper.id), [str(r.id) for r in found])
+
+        log.info(
+            "job.citations.synced",
+            paper_id=str(paper_id),
+            refs_found=len(found),
+        )
+
+
+# ── Synthesis ──────────────────────────────────────────────────────────────────
+
+async def run_synthesis_job(
+    ctx: dict,
+    synthesis_id: str,
+) -> None:
+    settings = get_settings()
+    log.info("job.synthesis.start", synthesis_id=synthesis_id)
+    await run_synthesis(
+        synthesis_id=uuid.UUID(synthesis_id),
+        engine=ctx["engine"],
+        redis=ctx["redis"],
+        settings=settings,
+    )
+    log.info("job.synthesis.done", synthesis_id=synthesis_id)
+
+
+# ── Graph sync ─────────────────────────────────────────────────────────────────
+
+async def sync_project_graph(ctx: dict, project_id: str) -> None:
+    driver = ctx.get("neo4j_driver")
+    if driver is None:
+        log.warning("graph_sync.neo4j_unavailable", project_id=project_id)
+        return
+
+    from athenaeum.graph.sync import sync_project_graph as _sync
+
+    await _sync(driver, ctx["engine"], uuid.UUID(project_id))

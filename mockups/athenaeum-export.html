@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athenaeum · Export framework · Soil microbial C efficiency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #161616;
+    --bg-sidebar: #141414;
+    --bg-elevated: #1f1f1f;
+    --bg-subtle: #1c1c1c;
+    --bg-card: #1d1d1d;
+    --bg-hover: #262626;
+    --bg-code: #0f0f0f;
+    --bg-paper: #1a1a1a;
+    --border: #2a2a2a;
+    --border-subtle: #232323;
+    --border-strong: #363636;
+    --text: #e6e1d6;
+    --text-muted: #9a968c;
+    --text-faint: #5f5c55;
+    --text-header: #d8d3c7;
+    --accent: #c9a876;
+    --accent-dim: #8a7a5c;
+    --verified: #8aa57c;
+    --tension: #c67a5c;
+    --contradicting: #b86b52;
+    --link: #89a5c4;
+    --question: #b39ac4;
+
+    /* YAML syntax colors — restrained, paper-like */
+    --yaml-key: #c9a876;
+    --yaml-value: #e6e1d6;
+    --yaml-string: #c4d3a8;
+    --yaml-comment: #5f5c55;
+    --yaml-anchor: #89a5c4;
+    --yaml-meta: #b39ac4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lora', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .ui { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ═══════ TOP CHROME ═══════ */
+  .app-chrome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 46px;
+    padding: 0 16px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Lora', serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--text-header);
+  }
+
+  .brand-mark {
+    width: 22px;
+    height: 22px;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    position: relative;
+  }
+
+  .brand-mark::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .breadcrumbs {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .breadcrumbs .sep { color: var(--text-faint); }
+  .breadcrumbs .current { color: var(--text); }
+  .breadcrumbs a { color: var(--text-muted); text-decoration: none; cursor: pointer; }
+  .breadcrumbs a:hover { color: var(--text); }
+
+  .chrome-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .view-switcher {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+  }
+
+  .view-switch-btn {
+    padding: 3px 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .view-switch-btn.active {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  .orcid-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+  }
+
+  .orcid-chip .dot {
+    width: 6px; height: 6px;
+    background: #a6ce39;
+    border-radius: 50%;
+  }
+
+  /* ═══════ EXPORT TOOLBAR (below chrome) ═══════ */
+  .export-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .export-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .export-title h1 {
+    font-family: 'Lora', serif;
+    font-weight: 600;
+    font-size: 19px;
+    letter-spacing: -0.005em;
+    color: var(--text-header);
+  }
+
+  .export-title .subtitle {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-left: 14px;
+    border-left: 1px solid var(--border-strong);
+  }
+
+  .filename-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+
+  .filename-chip .ext {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .export-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .export-btn {
+    padding: 7px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .export-btn:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+  }
+
+  .export-btn.primary {
+    background: linear-gradient(to bottom, rgba(201, 168, 118, 0.18), rgba(201, 168, 118, 0.08));
+    border-color: rgba(201, 168, 118, 0.5);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .export-btn.primary:hover {
+    background: linear-gradient(to bottom, rgba(201, 168, 118, 0.25), rgba(201, 168, 118, 0.12));
+    border-color: rgba(201, 168, 118, 0.7);
+    color: var(--text-header);
+  }
+
+  /* ═══════ EXPLAINER BANNER ═══════ */
+  .banner {
+    padding: 14px 32px;
+    background: linear-gradient(to right, rgba(201, 168, 118, 0.06), rgba(201, 168, 118, 0.01));
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .banner-content {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    max-width: 1400px;
+  }
+
+  .banner-icon {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--accent);
+    margin-top: -2px;
+    flex-shrink: 0;
+  }
+
+  .banner-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  .banner-text strong {
+    color: var(--text-header);
+    font-weight: 600;
+  }
+
+  .banner-text code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--accent);
+    background: var(--bg-code);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ═══════ TWO-COLUMN BODY ═══════ */
+  .body-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .pane-source {
+    background: var(--bg-code);
+    border-right: 1px solid var(--border);
+  }
+
+  .pane-rendered {
+    background: var(--bg);
+  }
+
+  .pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 20px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .pane-header-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .pane-header-label .swatch {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .pane-header-label .swatch.rendered { background: var(--verified); }
+
+  .pane-header-info {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+
+  /* ═══════ YAML PANE ═══════ */
+  .yaml-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 22px 24px 60px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text);
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  .yaml-content::-webkit-scrollbar { width: 8px; height: 8px; }
+  .yaml-content::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+  .yk { color: var(--yaml-key); }              /* keys */
+  .yv { color: var(--yaml-value); }             /* scalar values */
+  .ys { color: var(--yaml-string); }            /* quoted strings */
+  .yc { color: var(--yaml-comment); font-style: italic; }  /* comments */
+  .ya { color: var(--yaml-anchor); font-weight: 500; }     /* anchors / refs */
+  .ym { color: var(--yaml-meta); }              /* meta tags / types */
+  .yi { color: var(--text-faint); }             /* indent hints / null */
+
+  /* Subtle line numbers via counter */
+  .yaml-numbered {
+    counter-reset: line;
+    position: relative;
+  }
+  .yaml-line {
+    display: block;
+    counter-increment: line;
+    position: relative;
+    padding-left: 44px;
+  }
+  .yaml-line::before {
+    content: counter(line);
+    position: absolute;
+    left: 0;
+    width: 32px;
+    text-align: right;
+    color: var(--text-faint);
+    opacity: 0.6;
+    font-size: 11px;
+    user-select: none;
+  }
+
+  .yaml-line.section-break {
+    margin-top: 8px;
+  }
+
+  .yaml-line.brick-header {
+    background: rgba(201, 168, 118, 0.04);
+  }
+
+  /* ═══════ RENDERED PANE ═══════ */
+  .rendered-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 36px 56px 80px;
+  }
+
+  .rendered-content::-webkit-scrollbar { width: 8px; }
+  .rendered-content::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+  .doc {
+    max-width: 640px;
+    margin: 0 auto;
+    font-family: 'Lora', serif;
+  }
+
+  .doc-meta {
+    margin-bottom: 28px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .doc-meta-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+
+  .doc-title {
+    font-family: 'Lora', serif;
+    font-weight: 600;
+    font-size: 24px;
+    line-height: 1.3;
+    color: var(--text-header);
+    margin-bottom: 12px;
+    letter-spacing: -0.005em;
+  }
+
+  .doc-meta-line {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .doc-meta-line .label {
+    display: inline-block;
+    width: 90px;
+    color: var(--text-faint);
+    font-weight: 500;
+  }
+
+  .doc-meta-line code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text);
+  }
+
+  /* Brick rendering in document */
+  .doc-brick {
+    margin-bottom: 32px;
+    position: relative;
+  }
+
+  .doc-brick-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .doc-brick-id .status {
+    font-family: 'Inter', sans-serif;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--text-faint);
+    padding: 1px 7px;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+  }
+
+  .doc-brick.draft .doc-brick-id { color: var(--text-faint); }
+
+  .doc-brick-assertion {
+    font-family: 'Lora', serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.55;
+    color: var(--text-header);
+    margin-bottom: 12px;
+    padding-left: 16px;
+    border-left: 2px solid var(--accent);
+  }
+
+  .doc-brick.draft .doc-brick-assertion {
+    border-left-color: var(--accent-dim);
+    border-left-style: dashed;
+    color: var(--text);
+  }
+
+  .doc-brick-rests {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 8px;
+    padding-left: 18px;
+  }
+
+  .doc-brick-rests .label {
+    font-weight: 600;
+    color: var(--text-faint);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .doc-brick-rests .citation {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .doc-brick-rests .citation .role {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  .doc-brick-rests .citation.opposing .role {
+    color: var(--contradicting);
+  }
+
+  .doc-brick-builds {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-left: 18px;
+    margin-bottom: 8px;
+  }
+
+  .doc-brick-builds .label {
+    font-weight: 600;
+    color: var(--text-faint);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .doc-brick-builds .ref {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(201, 168, 118, 0.06);
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-right: 4px;
+  }
+
+  .doc-brick-passages-summary {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+    padding-left: 18px;
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  .doc-divider {
+    margin: 28px 0;
+    height: 1px;
+    background: var(--border);
+    position: relative;
+  }
+
+  .doc-divider::after {
+    content: 'builds on';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--bg);
+    padding: 0 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .doc-references {
+    margin-top: 36px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+  }
+
+  .doc-references-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+
+  .doc-reference {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    margin-bottom: 7px;
+    padding-left: 24px;
+    text-indent: -24px;
+  }
+
+  .doc-reference .ref-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--accent-dim);
+    margin-right: 8px;
+  }
+
+  .doc-reference .authors {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .doc-reference .venue {
+    font-style: italic;
+  }
+
+  .doc-footer {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-subtle);
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.55;
+  }
+
+  /* Compile-into-paper indicator on each brick */
+  .doc-brick-prose-hint {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg-subtle);
+    border: 1px dashed var(--border-strong);
+    border-radius: 4px;
+    font-family: 'Lora', serif;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .doc-brick-prose-hint::before {
+    content: 'COMPILES TO ';
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--text-faint);
+    font-style: normal;
+    margin-right: 6px;
+  }
+
+  /* ── Traceability in export rendered pane ── */
+  .doc-trace-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+
+  .doc-trace-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    transition: color 0.15s;
+  }
+
+  .doc-trace-toggle-label:hover { color: var(--text); }
+
+  .doc-trace-switch {
+    width: 28px; height: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    position: relative;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .doc-trace-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 9px; height: 9px;
+    background: var(--text-faint);
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .doc-trace-toggle-label.on .doc-trace-switch {
+    background: rgba(201, 168, 118, 0.18);
+    border-color: var(--accent-dim);
+  }
+
+  .doc-trace-toggle-label.on .doc-trace-switch::after {
+    left: 15px;
+    background: var(--accent);
+  }
+
+  .doc-trace-panel {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(201,168,118,0.08);
+  }
+
+  .doc-trace-panel.open { display: block; }
+
+  .doc-trace-panel-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .doc-trace-item {
+    margin-bottom: 10px;
+    padding: 9px 12px;
+    background: rgba(201,168,118,0.02);
+    border: 1px solid var(--border-subtle);
+    border-left: 2px solid var(--accent-dim);
+    border-radius: 4px;
+  }
+
+  .doc-trace-item.opposing {
+    border-left-color: var(--tension);
+    background: rgba(198,122,92,0.025);
+  }
+
+  .doc-trace-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .doc-trace-paper {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .doc-trace-item.opposing .doc-trace-paper { color: var(--tension); }
+
+  .doc-trace-section {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-faint);
+  }
+
+  .doc-trace-role {
+    font-family: 'Inter', sans-serif;
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-left: auto;
+  }
+
+  .doc-trace-item.opposing .doc-trace-role { color: var(--tension); border-color: rgba(198,122,92,0.3); }
+
+  .doc-trace-quote {
+    font-family: 'Lora', serif;
+    font-size: 11.5px;
+    font-style: italic;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  .doc-trace-quote::before { content: '\201C'; color: var(--accent-dim); }
+  .doc-trace-quote::after  { content: '\201D'; color: var(--accent-dim); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- TOP CHROME -->
+  <header class="app-chrome">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <span>Athenaeum</span>
+    </div>
+    <div class="breadcrumbs ui">
+      <span>Soil microbial C efficiency</span>
+      <span class="sep">/</span>
+      <a>Knowledge</a>
+      <span class="sep">/</span>
+      <span class="current">Export framework</span>
+    </div>
+    <div class="chrome-right ui">
+      <div class="view-switcher">
+        <span class="view-switch-btn">Papers</span>
+        <span class="view-switch-btn">Knowledge</span>
+        <span class="view-switch-btn">Synthesis</span>
+        <span class="view-switch-btn active">Export</span>
+      </div>
+      <div class="orcid-chip">
+        <span class="dot"></span>
+        <span>0000-0002-1825-0097</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- EXPORT TOOLBAR -->
+  <div class="export-toolbar">
+    <div class="export-title">
+      <h1>Export framework</h1>
+      <span class="subtitle ui">Project · 3 bricks · 5 papers · 2 datasets</span>
+      <span class="filename-chip"><span>soil-microbial-c-efficiency</span><span class="ext">.ath</span></span>
+    </div>
+    <div class="export-actions">
+      <button class="export-btn ui">Copy YAML</button>
+      <button class="export-btn ui">Render as Markdown</button>
+      <button class="export-btn ui">Render as PDF</button>
+      <button class="export-btn primary ui">Download .ath</button>
+    </div>
+  </div>
+
+  <!-- EXPLAINER BANNER -->
+  <div class="banner">
+    <div class="banner-content">
+      <span class="banner-icon mono">i</span>
+      <div class="banner-text">
+        <strong>What is a framework?</strong> A <code>.ath</code> file is a portable, plaintext YAML representation of your project's argument structure — every brick, every supporting paper, every builds-on relation, with full citation provenance. Another scientist can drop this file into their Athenaeum and reproduce the structure exactly, then build their own bricks on top. The format is human-readable, citation-grade, and version-controllable. Compiles directly into a paper draft.
+      </div>
+    </div>
+  </div>
+
+  <!-- TWO-COLUMN BODY -->
+  <div class="body-grid">
+
+    <!-- ═══════ LEFT: YAML SOURCE ═══════ -->
+    <div class="pane pane-source">
+      <div class="pane-header">
+        <div class="pane-header-label ui">
+          <span class="swatch"></span>
+          <span>Source · YAML</span>
+        </div>
+        <div class="pane-header-info mono">.ath v1.0 · 4.2 KB</div>
+      </div>
+
+      <div class="yaml-content yaml-numbered"><span class="yaml-line"><span class="yc"># Athenaeum framework export</span></span><span class="yaml-line"><span class="yc"># Format: .ath v1.0 (YAML)</span></span><span class="yaml-line"><span class="yc"># Generated: 2026-04-27T15:42Z</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yk">framework</span>:</span><span class="yaml-line">  <span class="yk">version</span>: <span class="yv">"1.0"</span></span><span class="yaml-line">  <span class="yk">format</span>: <span class="yv">ath</span></span><span class="yaml-line">  <span class="yk">exported_at</span>: <span class="yv">2026-04-27T15:42:00Z</span></span><span class="yaml-line">  <span class="yk">exporter</span>: <span class="yv">athenaeum-web@0.4.1</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yk">project</span>:</span><span class="yaml-line">  <span class="yk">id</span>: <span class="yv">proj-soil-microbial-c-efficiency</span></span><span class="yaml-line">  <span class="yk">title</span>: <span class="ys">"Soil microbial C efficiency — temperate forest soils"</span></span><span class="yaml-line">  <span class="yk">description</span>: <span class="ys">|</span></span><span class="yaml-line">    <span class="ys">Investigation of how microbial community composition,</span></span><span class="yaml-line">    <span class="ys">specifically fungal-to-bacterial ratios, regulates carbon</span></span><span class="yaml-line">    <span class="ys">use efficiency and downstream soil organic carbon storage</span></span><span class="yaml-line">    <span class="ys">in temperate forest soils.</span></span><span class="yaml-line">  <span class="yk">authors</span>:</span><span class="yaml-line">    - <span class="yk">orcid</span>: <span class="yv">0000-0002-1825-0097</span></span><span class="yaml-line">      <span class="yk">role</span>: <span class="yv">primary</span></span><span class="yaml-line">  <span class="yk">created</span>: <span class="yv">2026-03-11</span></span><span class="yaml-line">  <span class="yk">days_active</span>: <span class="yv">47</span></span><span class="yaml-line">  <span class="yk">license</span>: <span class="yv">CC-BY-4.0</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yc"># ───── PAPERS — addressable references used by bricks ─────</span></span><span class="yaml-line"><span class="yk">papers</span>:</span><span class="yaml-line">  - <span class="ya">&amp;malik2016</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">paper-malik-2016</span></span><span class="yaml-line">    <span class="yk">doi</span>: <span class="yv">10.3389/fmicb.2016.01247</span></span><span class="yaml-line">    <span class="yk">authors</span>: <span class="ys">"Malik, A.A., Chowdhury, S., Schlager, V., et al."</span></span><span class="yaml-line">    <span class="yk">year</span>: <span class="yv">2016</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Soil fungal:bacterial ratios are linked to altered carbon cycling"</span></span><span class="yaml-line">    <span class="yk">venue</span>: <span class="yv">Frontiers in Microbiology</span></span><span class="yaml-line"></span><span class="yaml-line">  - <span class="ya">&amp;geyer2016</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">paper-geyer-2016</span></span><span class="yaml-line">    <span class="yk">doi</span>: <span class="yv">10.1007/s10533-016-0191-y</span></span><span class="yaml-line">    <span class="yk">authors</span>: <span class="ys">"Geyer, K.M., Kyker-Snowman, E., Grandy, A.S., Frey, S.D."</span></span><span class="yaml-line">    <span class="yk">year</span>: <span class="yv">2016</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Microbial carbon use efficiency: accounting for population, community, and ecosystem-scale controls"</span></span><span class="yaml-line">    <span class="yk">venue</span>: <span class="yv">Biogeochemistry</span></span><span class="yaml-line"></span><span class="yaml-line">  - <span class="ya">&amp;soares2019</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">paper-soares-rousk-2019</span></span><span class="yaml-line">    <span class="yk">doi</span>: <span class="yv">10.1016/j.soilbio.2019.01.010</span></span><span class="yaml-line">    <span class="yk">authors</span>: <span class="ys">"Soares, M., Rousk, J."</span></span><span class="yaml-line">    <span class="yk">year</span>: <span class="yv">2019</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Microbial growth and carbon use efficiency in soil"</span></span><span class="yaml-line">    <span class="yk">venue</span>: <span class="yv">Soil Biology and Biochemistry</span></span><span class="yaml-line"></span><span class="yaml-line">  - <span class="ya">&amp;domeignoz2020</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">paper-domeignoz-horta-2020</span></span><span class="yaml-line">    <span class="yk">doi</span>: <span class="yv">10.1038/s41467-020-17502-z</span></span><span class="yaml-line">    <span class="yk">authors</span>: <span class="ys">"Domeignoz-Horta, L.A., Pold, G., Liu, X.-J.A., et al."</span></span><span class="yaml-line">    <span class="yk">year</span>: <span class="yv">2020</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Microbial diversity drives carbon use efficiency in a model soil"</span></span><span class="yaml-line">    <span class="yk">venue</span>: <span class="yv">Nature Communications</span></span><span class="yaml-line"></span><span class="yaml-line">  - <span class="ya">&amp;tao2023</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">paper-tao-2023</span></span><span class="yaml-line">    <span class="yk">doi</span>: <span class="yv">10.1038/s41586-023-06042-3</span></span><span class="yaml-line">    <span class="yk">authors</span>: <span class="ys">"Tao, F., Huang, Y., Hungate, B.A., et al."</span></span><span class="yaml-line">    <span class="yk">year</span>: <span class="yv">2023</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Microbial carbon use efficiency promotes global soil carbon storage"</span></span><span class="yaml-line">    <span class="yk">venue</span>: <span class="yv">Nature</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yc"># ───── DATASETS — your own data attached to bricks ─────</span></span><span class="yaml-line"><span class="yk">datasets</span>:</span><span class="yaml-line">  - <span class="ya">&amp;dataMethodCompare</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">data-method-compare</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"CUE method comparison, n=24 soils"</span></span><span class="yaml-line">    <span class="yk">type</span>: <span class="yv">figure</span></span><span class="yaml-line">    <span class="yk">storage</span>: <span class="yv">athenaeum-vault://figures/method-compare-fig2.png</span></span><span class="yaml-line"></span><span class="yaml-line">  - <span class="ya">&amp;dataScaleTaxonomy</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">data-scale-taxonomy</span></span><span class="yaml-line">    <span class="yk">title</span>: <span class="ys">"Scale taxonomy synthesis (your annotations across 4 papers)"</span></span><span class="yaml-line">    <span class="yk">type</span>: <span class="yv">synthesis</span></span><span class="yaml-line">    <span class="yk">storage</span>: <span class="yv">athenaeum-vault://syntheses/scale-taxonomy.smd</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yc"># ───── BRICKS — assertions in argument order ─────</span></span><span class="yaml-line"><span class="yk">bricks</span>:</span><span class="yaml-line"></span><span class="yaml-line brick-header">  - <span class="ya">&amp;brick0005</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">brick-0005</span></span><span class="yaml-line">    <span class="yk">type</span>: <span class="yv">methods</span></span><span class="yaml-line">    <span class="yk">status</span>: <span class="yv">cemented</span></span><span class="yaml-line">    <span class="yk">cemented_at</span>: <span class="yv">2026-04-22T11:18:00Z</span></span><span class="yaml-line">    <span class="yk">assertion</span>: <span class="ys">|</span></span><span class="yaml-line">      <span class="ys">CUE measurements differ by scale and methodology —</span></span><span class="yaml-line">      <span class="ys">¹⁸O-water tracks community-level production,</span></span><span class="yaml-line">      <span class="ys">¹³C-substrate traces population-level flux,</span></span><span class="yaml-line">      <span class="ys">and stoichiometric modelling estimates from enzyme activities.</span></span><span class="yaml-line">    <span class="yk">rests_on</span>:</span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*geyer2016</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">framework</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, sentences 2-3"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*soares2019</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">method</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"§2.1, Methods"</span></span><span class="yaml-line">      - <span class="yk">dataset</span>: <span class="ya">*dataMethodCompare</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">data</span></span><span class="yaml-line">      - <span class="yk">dataset</span>: <span class="ya">*dataScaleTaxonomy</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">synthesis</span></span><span class="yaml-line">    <span class="yk">passages</span>: <span class="yv">4</span>  <span class="yc"># sentence-verified quotes</span></span><span class="yaml-line">    <span class="yk">annotations</span>: <span class="yv">3</span></span><span class="yaml-line">    <span class="yk">built_from_synthesis</span>: <span class="yv">2</span></span><span class="yaml-line"></span><span class="yaml-line brick-header">  - <span class="ya">&amp;brick0003</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">brick-0003</span></span><span class="yaml-line">    <span class="yk">type</span>: <span class="yv">foundation</span></span><span class="yaml-line">    <span class="yk">status</span>: <span class="yv">cemented</span></span><span class="yaml-line">    <span class="yk">cemented_at</span>: <span class="yv">2026-04-15T09:33:00Z</span></span><span class="yaml-line">    <span class="yk">assertion</span>: <span class="ys">|</span></span><span class="yaml-line">      <span class="ys">Microbial carbon use efficiency is a major determinant</span></span><span class="yaml-line">      <span class="ys">of global soil organic carbon storage and its spatial</span></span><span class="yaml-line">      <span class="ys">variation across the globe.</span></span><span class="yaml-line">    <span class="yk">rests_on</span>:</span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*tao2023</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">meta-analysis</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, opening claim"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*geyer2016</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">framework</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, theoretical scaffold"</span></span><span class="yaml-line">    <span class="yk">passages</span>: <span class="yv">2</span></span><span class="yaml-line">    <span class="yk">annotations</span>: <span class="yv">2</span></span><span class="yaml-line">    <span class="yk">built_from_synthesis</span>: <span class="yv">1</span></span><span class="yaml-line"></span><span class="yaml-line brick-header">  - <span class="ya">&amp;brick0007</span></span><span class="yaml-line">    <span class="yk">id</span>: <span class="yv">brick-0007</span></span><span class="yaml-line">    <span class="yk">type</span>: <span class="yv">synthesis</span></span><span class="yaml-line">    <span class="yk">status</span>: <span class="yv">draft</span></span><span class="yaml-line">    <span class="yk">drafted_at</span>: <span class="yv">2026-04-27T13:42:00Z</span></span><span class="yaml-line">    <span class="yk">assertion</span>: <span class="ys">|</span></span><span class="yaml-line">      <span class="ys">The relationship between soil F:B ratios and CUE</span></span><span class="yaml-line">      <span class="ys">remains unresolved, possibly due to methodological</span></span><span class="yaml-line">      <span class="ys">differences and mismatches between population- and</span></span><span class="yaml-line">      <span class="ys">community-level measurements.</span></span><span class="yaml-line">    <span class="yk">rests_on</span>:</span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*malik2016</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">theory</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"§Introduction, paragraph 3"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*domeignoz2020</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">theory</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*soares2019</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">opposing</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, §3.2"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*geyer2016</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">framework</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, scale definition"</span></span><span class="yaml-line">      - <span class="yk">paper</span>: <span class="ya">*tao2023</span></span><span class="yaml-line">        <span class="yk">role</span>: <span class="yv">stakes</span></span><span class="yaml-line">        <span class="yk">passage</span>: <span class="ys">"Abstract, motivation"</span></span><span class="yaml-line">    <span class="yk">builds_on</span>:</span><span class="yaml-line">      - <span class="ya">*brick0005</span>  <span class="yc"># methods context</span></span><span class="yaml-line">      - <span class="ya">*brick0003</span>  <span class="yc"># stakes / foundation</span></span><span class="yaml-line">    <span class="yk">passages</span>: <span class="yv">6</span></span><span class="yaml-line">    <span class="yk">annotations</span>: <span class="yv">12</span></span><span class="yaml-line">    <span class="yk">opposing_edges</span>: <span class="yv">1</span>  <span class="yc"># Malik vs Soares &amp; Rousk direction conflict</span></span><span class="yaml-line">    <span class="yk">built_from_synthesis</span>: <span class="yv">3</span></span><span class="yaml-line"></span><span class="yaml-line section-break"><span class="yc"># ───── PROVENANCE — full audit trail (truncated for export) ─────</span></span><span class="yaml-line"><span class="yk">provenance</span>:</span><span class="yaml-line">  <span class="yk">syntheses_run</span>: <span class="yv">3</span></span><span class="yaml-line">  <span class="yk">citation_verifications</span>: <span class="yv">12</span></span><span class="yaml-line">  <span class="yk">citation_verification_rate</span>: <span class="yv">1.00</span>  <span class="yc"># 12/12 verbatim verified</span></span><span class="yaml-line">  <span class="yk">user_evaluations_logged</span>: <span class="yv">7</span></span><span class="yaml-line">  <span class="yk">retrieval_corpus</span>: <span class="yv">openalex-2026-04</span></span><span class="yaml-line">  <span class="yk">model_used</span>: <span class="yv">claude-opus-4-7</span></span><span class="yaml-line">  <span class="yk">checker_model</span>: <span class="yv">claude-opus-4-7</span></span></div>
+    </div>
+
+    <!-- ═══════ RIGHT: RENDERED PREVIEW ═══════ -->
+    <div class="pane pane-rendered">
+      <div class="pane-header">
+        <div class="pane-header-label ui">
+          <span class="swatch rendered"></span>
+          <span>Rendered · Compiles into paper</span>
+        </div>
+        <div class="pane-header-info mono">view: argument-flow</div>
+      </div>
+
+      <div class="rendered-content">
+        <div class="doc">
+
+          <!-- Document meta header -->
+          <div class="doc-meta">
+            <div class="doc-meta-label ui">Athenaeum Framework · Argument Scaffolding</div>
+            <div class="doc-title">Soil microbial C efficiency<br/>— temperate forest soils</div>
+            <div class="doc-meta-line ui"><span class="label">Author</span> ORCID <code>0000-0002-1825-0097</code></div>
+            <div class="doc-meta-line ui"><span class="label">Created</span> 2026-03-11 · 47 days active</div>
+            <div class="doc-meta-line ui"><span class="label">Bricks</span> 3 (2 cemented, 1 draft) · <span class="label" style="display:inline; width:auto;">Builds-on</span> 2 internal links</div>
+            <div class="doc-meta-line ui"><span class="label">License</span> CC-BY-4.0</div>
+          </div>
+
+          <!-- BRICK 1 -->
+          <div class="doc-brick cemented">
+            <div class="doc-brick-id mono">brick-0005 · methods <span class="status">CEMENTED</span></div>
+            <div class="doc-brick-assertion">
+              CUE measurements differ by scale and methodology — ¹⁸O-water tracks community-level production, ¹³C-substrate traces population-level flux, and stoichiometric modelling estimates from enzyme activities.
+            </div>
+            <div class="doc-brick-rests">
+              <span class="label">Rests on</span>
+              <span class="citation">Geyer 2016 <span class="role">framework, abstract</span></span>;
+              <span class="citation">Soares &amp; Rousk 2019 <span class="role">method, §2.1</span></span>;
+              <span class="citation">your figure 2 <span class="role">data</span></span>;
+              <span class="citation">your scale taxonomy <span class="role">synthesis</span></span>.
+            </div>
+            <div class="doc-brick-passages-summary">4 sentence-verified passages · 3 annotations · built from synthesis #2</div>
+            <div class="doc-brick-prose-hint">
+              CUE measurements differ by scale and methodology (Geyer et al., 2016; Soares &amp; Rousk, 2019). ¹⁸O-water tracks community-level production, ¹³C-substrate traces population-level flux, and stoichiometric modelling estimates from enzyme activities (Fig. 2).
+            </div>
+
+            <div class="doc-trace-toggle-row">
+              <span>Text-level traceability</span>
+              <label class="doc-trace-toggle-label" onclick="toggleDocTrace(this, 'exp-trace-0005')">
+                Show source passages
+                <span class="doc-trace-switch"></span>
+              </label>
+            </div>
+            <div class="doc-trace-panel" id="exp-trace-0005">
+              <div class="doc-trace-panel-label">Cemented passages</div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Geyer 2016</span>
+                  <span class="doc-trace-section">Abstract, sentences 2–3</span>
+                  <span class="doc-trace-role">framework</span>
+                </div>
+                <div class="doc-trace-quote">Here we outline the processes underlying microbial efficiency and propose a conceptual framework that structures the definition of CUE according to increasingly broad temporal and spatial drivers where (1) CUE_P reflects population-scale carbon use efficiency of microbes governed by species-specific metabolic and thermodynamic constraints, (2) CUE_C defines community-scale microbial efficiency as gross biomass production per unit substrate taken up over short time scales, largely excluding recycling of microbial necromass and exudates, and (3) CUE_E reflects the ecosystem-scale efficiency of net microbial biomass production (growth) per unit substrate taken up as iterative breakdown and recycling of microbial products occurs.</div>
+              </div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Soares &amp; Rousk 2019</span>
+                  <span class="doc-trace-section">§2.1, Methods</span>
+                  <span class="doc-trace-role">method</span>
+                </div>
+                <div class="doc-trace-quote">We estimated fungal and bacterial growth in C units in microcosm systems with submerged plant litter. We established conversion factors between bacterial and fungal growth to biomass and applied this to a dataset representing 9 different sites in temperate forest soils, temperate agricultural soils, and subarctic forest soils, to estimate growth rates of fungi and bacteria in units of C, to estimate the dominance of the two decomposer groups, and to compare these values to respiration to estimate the microbial CUE.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-divider"></div>
+
+          <!-- BRICK 2 -->
+          <div class="doc-brick cemented">
+            <div class="doc-brick-id mono">brick-0003 · foundation <span class="status">CEMENTED</span></div>
+            <div class="doc-brick-assertion">
+              Microbial carbon use efficiency is a major determinant of global soil organic carbon storage and its spatial variation across the globe.
+            </div>
+            <div class="doc-brick-rests">
+              <span class="label">Rests on</span>
+              <span class="citation">Tao 2023 <span class="role">meta-analysis, abstract</span></span>;
+              <span class="citation">Geyer 2016 <span class="role">framework, abstract</span></span>.
+            </div>
+            <div class="doc-brick-passages-summary">2 sentence-verified passages · 2 annotations · built from synthesis #1</div>
+            <div class="doc-brick-prose-hint">
+              Microbial carbon use efficiency is a major determinant of global soil organic carbon storage and its spatial variation across the globe (Tao et al., 2023; Geyer et al., 2016).
+            </div>
+
+            <div class="doc-trace-toggle-row">
+              <span>Text-level traceability</span>
+              <label class="doc-trace-toggle-label" onclick="toggleDocTrace(this, 'exp-trace-0003')">
+                Show source passages
+                <span class="doc-trace-switch"></span>
+              </label>
+            </div>
+            <div class="doc-trace-panel" id="exp-trace-0003">
+              <div class="doc-trace-panel-label">Cemented passages</div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Tao 2023</span>
+                  <span class="doc-trace-section">Abstract, opening claim</span>
+                  <span class="doc-trace-role">meta-analysis</span>
+                </div>
+                <div class="doc-trace-quote">Soils store more carbon than other terrestrial ecosystems. How soil organic carbon (SOC) forms and persists remains uncertain, which makes it challenging to understand how it will respond to climatic change. It has been suggested that soil microorganisms play an important role in SOC formation, preservation and loss.</div>
+              </div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Geyer 2016</span>
+                  <span class="doc-trace-section">Abstract, theoretical scaffold</span>
+                  <span class="doc-trace-role">framework</span>
+                </div>
+                <div class="doc-trace-quote">Microbial carbon use efficiency (CUE) is a critical regulator of soil organic matter dynamics and terrestrial carbon fluxes, with strong implications for soil biogeochemistry models.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-divider"></div>
+
+          <!-- BRICK 3 -->
+          <div class="doc-brick draft">
+            <div class="doc-brick-id mono">brick-0007 · synthesis <span class="status">DRAFT</span></div>
+            <div class="doc-brick-assertion">
+              The relationship between soil F:B ratios and CUE remains unresolved, possibly due to methodological differences and mismatches between population- and community-level measurements.
+            </div>
+            <div class="doc-brick-builds">
+              <span class="label">Builds on</span>
+              <span class="ref mono">brick-0005</span> (methods context) ·
+              <span class="ref mono">brick-0003</span> (foundation / stakes)
+            </div>
+            <div class="doc-brick-rests">
+              <span class="label">Rests on</span>
+              <span class="citation">Malik 2016 <span class="role">theory, §Introduction</span></span>;
+              <span class="citation">Domeignoz-Horta 2020 <span class="role">theory, abstract</span></span>;
+              <span class="citation opposing">Soares &amp; Rousk 2019 <span class="role">opposing direction, §3.2</span></span>;
+              <span class="citation">Geyer 2016 <span class="role">scale framework</span></span>;
+              <span class="citation">Tao 2023 <span class="role">stakes</span></span>.
+            </div>
+            <div class="doc-brick-passages-summary">6 sentence-verified passages · 12 annotations · 1 opposing-direction edge · built from synthesis #3</div>
+            <div class="doc-brick-prose-hint">
+              The relationship between soil F:B ratios and CUE remains unresolved (Malik et al., 2016; Domeignoz-Horta et al., 2020; Soares &amp; Rousk, 2019), possibly due to methodological differences and mismatches between population- and community-level measurements (Geyer et al., 2016; Tao et al., 2023).
+            </div>
+
+            <div class="doc-trace-toggle-row">
+              <span>Text-level traceability</span>
+              <label class="doc-trace-toggle-label" onclick="toggleDocTrace(this, 'exp-trace-0007')">
+                Show source passages
+                <span class="doc-trace-switch"></span>
+              </label>
+            </div>
+            <div class="doc-trace-panel" id="exp-trace-0007">
+              <div class="doc-trace-panel-label">Draft passages</div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Malik 2016</span>
+                  <span class="doc-trace-section">§Introduction, paragraph 3</span>
+                  <span class="doc-trace-role">theory</span>
+                </div>
+                <div class="doc-trace-quote">Despite several lines of observational evidence, there is a lack of consensus on whether higher fungal:bacterial (F:B) ratios directly cause higher soil carbon (C) storage. Litter derived ¹³C in respired CO₂ was consistently lower, and residual ¹³C in bulk SOM was higher in high F:B soil demonstrating greater C storage potential in the F:B dominated soil.</div>
+              </div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Domeignoz-Horta 2020</span>
+                  <span class="doc-trace-section">Abstract</span>
+                  <span class="doc-trace-role">theory</span>
+                </div>
+                <div class="doc-trace-quote">While community composition and diversity are the strongest predictors of CUE, abiotic factors modulated the relationship between diversity and CUE, with CUE being positively correlated with bacterial diversity only under high moisture. Altogether these results indicate that the diversity × ecosystem-function relationship can be impaired under non-favorable conditions in soils, and that to understand changes in soil C cycling we need to account for the multiple facets of global changes.</div>
+              </div>
+              <div class="doc-trace-item opposing">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Soares &amp; Rousk 2019</span>
+                  <span class="doc-trace-section">Abstract · §3.2</span>
+                  <span class="doc-trace-role">opposing</span>
+                </div>
+                <div class="doc-trace-quote">We found a negative exponential relationship between the dominance of fungi and the microbial CUE. CUE ranged from 0.03 to 0.30, and values clustered most strongly according to site rather than level of soil N. A higher soil C-quality coincided with lower F:B and higher CUE across the surveyed sites, while a higher N availability did not.</div>
+              </div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Geyer 2016</span>
+                  <span class="doc-trace-section">Abstract, scale definition</span>
+                  <span class="doc-trace-role">framework</span>
+                </div>
+                <div class="doc-trace-quote">While ecologists increasingly appreciate the importance of CUE, its core concepts remain ambiguous: terminology is inconsistent and confusing, methods capture variable temporal and spatial scales, and the significance of many fundamental drivers remains inconclusive.</div>
+              </div>
+              <div class="doc-trace-item">
+                <div class="doc-trace-meta">
+                  <span class="doc-trace-paper">Tao 2023</span>
+                  <span class="doc-trace-section">Abstract, motivation</span>
+                  <span class="doc-trace-role">stakes</span>
+                </div>
+                <div class="doc-trace-quote">Although CUE has the potential to act as a predictor of variation in SOC storage, the role of CUE in SOC persistence remains unresolved. Here we examine the relationship between CUE and the preservation of SOC, and interactions with climate, vegetation and edaphic properties, using a combination of global-scale datasets, a microbial-process explicit model, data assimilation, deep learning and meta-analysis.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- References (compiled from rests_on across all bricks) -->
+          <div class="doc-references">
+            <div class="doc-references-label ui">References — compiled from .ath bibliography</div>
+            <div class="doc-reference">
+              <span class="ref-id mono">[malik2016]</span>
+              <span class="authors">Malik, A.A., Chowdhury, S., Schlager, V., et al.</span> (2016). Soil fungal:bacterial ratios are linked to altered carbon cycling. <span class="venue">Frontiers in Microbiology</span>, 7: 1247. doi:10.3389/fmicb.2016.01247
+            </div>
+            <div class="doc-reference">
+              <span class="ref-id mono">[geyer2016]</span>
+              <span class="authors">Geyer, K.M., Kyker-Snowman, E., Grandy, A.S., Frey, S.D.</span> (2016). Microbial carbon use efficiency: accounting for population, community, and ecosystem-scale controls. <span class="venue">Biogeochemistry</span>, 127: 173–188. doi:10.1007/s10533-016-0191-y
+            </div>
+            <div class="doc-reference">
+              <span class="ref-id mono">[soares2019]</span>
+              <span class="authors">Soares, M., Rousk, J.</span> (2019). Microbial growth and carbon use efficiency in soil. <span class="venue">Soil Biology and Biochemistry</span>, 131: 195–205. doi:10.1016/j.soilbio.2019.01.010
+            </div>
+            <div class="doc-reference">
+              <span class="ref-id mono">[domeignoz2020]</span>
+              <span class="authors">Domeignoz-Horta, L.A., Pold, G., Liu, X.-J.A., et al.</span> (2020). Microbial diversity drives carbon use efficiency in a model soil. <span class="venue">Nature Communications</span>, 11: 3684. doi:10.1038/s41467-020-17502-z
+            </div>
+            <div class="doc-reference">
+              <span class="ref-id mono">[tao2023]</span>
+              <span class="authors">Tao, F., Huang, Y., Hungate, B.A., et al.</span> (2023). Microbial carbon use efficiency promotes global soil carbon storage. <span class="venue">Nature</span>, 618: 981–985. doi:10.1038/s41586-023-06042-3
+            </div>
+          </div>
+
+          <div class="doc-footer ui">
+            Reproducibility: this framework can be loaded into any Athenaeum project to recreate the brick structure, reattach the same papers via DOI lookup, and resume work on top of it. Citation verification metadata is included in the source <code style="background: var(--bg-code); color: var(--accent); padding: 1px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;">.ath</code> file. License: CC-BY-4.0.
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<script>
+function toggleDocTrace(label, panelId) {
+  const panel = document.getElementById(panelId);
+  const isOn = label.classList.toggle('on');
+  panel.classList.toggle('open', isOn);
+  const textNode = Array.from(label.childNodes).find(n => n.nodeType === 3);
+  if (textNode) textNode.textContent = isOn ? 'Hide source passages' : 'Show source passages';
+}
+</script>
+
+</body>
+</html>

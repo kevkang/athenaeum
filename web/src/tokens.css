@@ -1,0 +1,44 @@
+:root {
+  /* Surfaces */
+  --bg: #161616;
+  --bg-sidebar: #141414;
+  --bg-canvas: #131313;
+  --bg-elevated: #1f1f1f;
+  --bg-subtle: #1c1c1c;
+  --bg-card: #1d1d1d;
+  --bg-hover: #262626;
+  --bg-code: #0f0f0f;
+
+  /* Borders */
+  --border: #2a2a2a;
+  --border-subtle: #232323;
+  --border-strong: #363636;
+
+  /* Text */
+  --text: #e6e1d6;
+  --text-muted: #9a968c;
+  --text-faint: #5f5c55;
+  --text-header: #d8d3c7;
+
+  /* Semantic */
+  --accent: #c9a876;
+  --accent-dim: #8a7a5c;
+  --verified: #8aa57c;
+  --tension: #c67a5c;
+  --contradicting: #b86b52;
+  --link: #89a5c4;
+  --question: #b39ac4;
+  --annotation: #c9a876;
+  --orcid: #a6ce39;
+
+  /* YAML syntax */
+  --yaml-key: #c9a876;
+  --yaml-string: #c4d3a8;
+  --yaml-comment: #5f5c55;
+  --yaml-anchor: #89a5c4;
+  --yaml-meta: #b39ac4;
+
+  /* Layout */
+  --chrome-height: 46px;
+  --sidebar-width: 300px;
+}

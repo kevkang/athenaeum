@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Athenaeum · Research Traceability for Working Scientists</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #111110;
+    --bg-warm: #141412;
+    --bg-card: #1a1917;
+    --bg-elevated: #201f1c;
+    --bg-hover: #272522;
+    --border: #2a2825;
+    --border-subtle: #222120;
+    --border-strong: #38352f;
+    --text: #e8e3d8;
+    --text-muted: #9a9489;
+    --text-faint: #5c5850;
+    --text-header: #ddd8cc;
+    --accent: #c9a876;
+    --accent-dim: #8a7a5c;
+    --accent-glow: rgba(201, 168, 118, 0.12);
+    --accent-glow-strong: rgba(201, 168, 118, 0.22);
+    --verified: #8aa57c;
+    --tension: #c67a5c;
+    --link: #89a5c4;
+    --question: #b39ac4;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lora', Georgia, serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  .ui  { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ─── GRAIN OVERLAY ─────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+    opacity: 0.022;
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ─── AMBIENT LIGHT ─────────────────────────── */
+  .ambient {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(120px);
+    z-index: 0;
+  }
+  .ambient-1 {
+    width: 700px; height: 500px;
+    top: -180px; left: -120px;
+    background: radial-gradient(ellipse, rgba(201,168,118,0.055) 0%, transparent 70%);
+  }
+  .ambient-2 {
+    width: 600px; height: 400px;
+    bottom: 10%; right: -100px;
+    background: radial-gradient(ellipse, rgba(137,165,196,0.04) 0%, transparent 70%);
+  }
+  .ambient-3 {
+    width: 400px; height: 300px;
+    top: 50%; left: 45%;
+    background: radial-gradient(ellipse, rgba(201,168,118,0.03) 0%, transparent 70%);
+  }
+
+  /* ─── NAV ───────────────────────────────────── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 48px;
+    height: 56px;
+    background: rgba(17, 17, 16, 0.88);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-family: 'Lora', serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-header);
+  }
+
+  .brand-mark {
+    width: 24px; height: 24px;
+    border: 1.5px solid var(--accent);
+    border-radius: 50%;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .brand-mark::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12.5px;
+    color: var(--text-faint);
+    list-style: none;
+  }
+
+  .nav-links a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .nav-links a:hover { color: var(--text-muted); }
+
+  .nav-cta {
+    padding: 7px 18px;
+    background: var(--accent-glow);
+    border: 1px solid rgba(201,168,118,0.3);
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent) !important;
+    letter-spacing: 0.04em;
+    transition: all 0.2s !important;
+  }
+
+  .nav-cta:hover {
+    background: var(--accent-glow-strong) !important;
+    border-color: rgba(201,168,118,0.5) !important;
+    color: var(--text-header) !important;
+  }
+
+  /* ─── HERO ──────────────────────────────────── */
+  .hero {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 120px 48px 80px;
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 28px;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 0.1s;
+  }
+
+  .hero-title {
+    font-family: 'Lora', serif;
+    font-size: clamp(44px, 6vw, 82px);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text-header);
+    max-width: 820px;
+    margin-bottom: 12px;
+    opacity: 0;
+    animation: fadeUp 0.9s ease forwards 0.25s;
+  }
+
+  .hero-title em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  .hero-subtitle {
+    font-family: 'Lora', serif;
+    font-size: clamp(17px, 2vw, 22px);
+    font-style: italic;
+    color: var(--text-muted);
+    max-width: 620px;
+    line-height: 1.55;
+    margin-bottom: 48px;
+    opacity: 0;
+    animation: fadeUp 1s ease forwards 0.4s;
+  }
+
+  .hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    opacity: 0;
+    animation: fadeUp 1s ease forwards 0.55s;
+  }
+
+  .btn-primary {
+    padding: 12px 28px;
+    background: rgba(201,168,118,0.1);
+    border: 1px solid rgba(201,168,118,0.4);
+    border-radius: 5px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .btn-primary:hover {
+    background: rgba(201,168,118,0.18);
+    border-color: rgba(201,168,118,0.6);
+    color: var(--text-header);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(201,168,118,0.12);
+  }
+
+  .btn-secondary {
+    padding: 12px 24px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 5px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--text-faint);
+    color: var(--text);
+  }
+
+  /* Scroll cue */
+  .scroll-cue {
+    position: absolute;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    animation: fadeIn 1s ease forwards 1.4s;
+  }
+
+  .scroll-line {
+    width: 1px;
+    height: 48px;
+    background: linear-gradient(to bottom, var(--accent), transparent);
+    animation: scrollPulse 2.2s ease-in-out infinite;
+  }
+
+  .scroll-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  /* ─── DIVIDER ───────────────────────────────── */
+  .section-divider {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 80px;
+    margin: 0;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border-strong));
+  }
+
+  .section-divider::after {
+    background: linear-gradient(to left, transparent, var(--border-strong));
+  }
+
+  .divider-mark {
+    width: 6px; height: 6px;
+    background: var(--accent-dim);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ─── MANIFESTO SECTION ─────────────────────── */
+  .manifesto {
+    position: relative;
+    z-index: 1;
+    padding: 100px 48px 110px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::after {
+    content: '';
+    display: inline-block;
+    width: 32px;
+    height: 1px;
+    background: var(--accent-dim);
+    vertical-align: middle;
+  }
+
+  .manifesto-heading {
+    font-family: 'Lora', serif;
+    font-size: clamp(28px, 3.5vw, 44px);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-header);
+    max-width: 700px;
+    margin-bottom: 56px;
+    letter-spacing: -0.01em;
+  }
+
+  .manifesto-heading em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  /* Two-column manifesto layout */
+  .manifesto-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+  }
+
+  .manifesto-item {
+    padding: 32px 36px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    transition: all 0.25s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .manifesto-item::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--accent-dim);
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+
+  .manifesto-item:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+  }
+
+  .manifesto-item:hover::before {
+    opacity: 1;
+  }
+
+  /* Span full width for the "philosophy" items */
+  .manifesto-item.wide {
+    grid-column: 1 / -1;
+  }
+
+  .manifesto-item.philosophy {
+    background: rgba(201,168,118,0.03);
+    border-color: rgba(201,168,118,0.12);
+  }
+
+  .manifesto-item.philosophy::before {
+    background: var(--accent);
+    opacity: 1;
+  }
+
+  .item-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .item-number .n {
+    font-size: 9px;
+    color: var(--text-faint);
+  }
+
+  .item-heading {
+    font-family: 'Lora', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-header);
+    line-height: 1.3;
+    margin-bottom: 10px;
+  }
+
+  .item-body {
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+
+  .item-body strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .item-tag {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 3px 9px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+  }
+
+  .item-tag.verified { border-color: rgba(138,165,124,0.3); color: var(--verified); }
+  .item-tag.open { border-color: rgba(179,154,196,0.3); color: var(--question); }
+  .item-tag.tension { border-color: rgba(198,122,92,0.3); color: var(--tension); }
+  .item-tag.accent { border-color: rgba(201,168,118,0.3); color: var(--accent); }
+
+  /* Philosophy quote */
+  .philosophy-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+
+  .philosophy-pull {
+    font-family: 'Lora', serif;
+    font-size: clamp(20px, 2.2vw, 26px);
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.45;
+    color: var(--text-header);
+  }
+
+  .philosophy-pull span {
+    color: var(--accent);
+  }
+
+  .philosophy-body {
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .philosophy-body p strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* ─── HOW IT WORKS ──────────────────────────── */
+  .how-it-works {
+    position: relative;
+    z-index: 1;
+    padding: 0 48px 100px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    margin-top: 48px;
+  }
+
+  .step {
+    padding: 32px 30px 30px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    position: relative;
+  }
+
+  .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .step-num::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .step-heading {
+    font-family: 'Lora', serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-header);
+    margin-bottom: 10px;
+    line-height: 1.3;
+  }
+
+  .step-body {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-muted);
+  }
+
+  /* ─── SCHEMATIC ─────────────────────────────── */
+  .schematic-wrap {
+    margin: 48px 0 0;
+    padding: 28px 32px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 2px;
+    overflow-x: auto;
+  }
+
+  .schematic-svg {
+    display: block;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    opacity: 0.88;
+  }
+
+  /* 5-column steps grid */
+  .steps-5 {
+    grid-template-columns: repeat(5, 1fr) !important;
+  }
+
+  .step-repeat {
+    background: rgba(201,168,118,0.03) !important;
+    border-color: rgba(201,168,118,0.12) !important;
+  }
+
+  /* ─── OPEN INFRASTRUCTURE ───────────────────── */
+  .openness {
+    position: relative;
+    z-index: 1;
+    padding: 0 48px 100px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .open-grid {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 2px;
+    margin-top: 48px;
+  }
+
+  .open-main {
+    padding: 40px 40px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-left: 2px solid var(--accent);
+  }
+
+  .open-main-heading {
+    font-family: 'Lora', serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-header);
+    line-height: 1.3;
+    margin-bottom: 14px;
+  }
+
+  .open-main-body {
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-muted);
+  }
+
+  .open-main-body strong { color: var(--text); font-weight: 600; }
+
+  .open-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .open-stat {
+    flex: 1;
+    padding: 24px 28px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .open-stat-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 4px;
+    letter-spacing: -0.02em;
+  }
+
+  .open-stat-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: var(--text-faint);
+    line-height: 1.4;
+  }
+
+  /* ─── CTA SECTION ───────────────────────────── */
+  .cta-section {
+    position: relative;
+    z-index: 1;
+    padding: 80px 48px 140px;
+    text-align: center;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 600px; height: 300px;
+    background: radial-gradient(ellipse at top, rgba(201,168,118,0.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    margin-bottom: 20px;
+  }
+
+  .cta-heading {
+    font-family: 'Lora', serif;
+    font-size: clamp(28px, 3.5vw, 44px);
+    font-weight: 600;
+    color: var(--text-header);
+    line-height: 1.2;
+    max-width: 620px;
+    margin: 0 auto 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .cta-sub {
+    font-family: 'Lora', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--text-muted);
+    margin-bottom: 36px;
+  }
+
+  .cta-roles {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 40px;
+  }
+
+  .role-chip {
+    padding: 5px 13px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .cta-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+
+  /* ─── FOOTER ─────────────────────────────────── */
+  footer {
+    position: relative;
+    z-index: 1;
+    padding: 24px 48px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    color: var(--text-faint);
+  }
+
+  footer .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: 'Lora', serif;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  footer .footer-mark {
+    width: 16px; height: 16px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 50%;
+    position: relative;
+  }
+
+  footer .footer-mark::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 4px; height: 4px;
+    background: var(--accent-dim);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  footer .footer-links {
+    display: flex;
+    gap: 24px;
+    list-style: none;
+  }
+
+  footer .footer-links a {
+    color: var(--text-faint);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  footer .footer-links a:hover { color: var(--text-muted); }
+
+  footer .footer-posi {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  footer .footer-posi::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--verified);
+    border-radius: 50%;
+  }
+
+  /* ─── ANIMATIONS ────────────────────────────── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes scrollPulse {
+    0%, 100% { transform: scaleY(1); opacity: 0.5; }
+    50%       { transform: scaleY(0.6); opacity: 0.2; }
+  }
+
+  /* Scroll-triggered reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Staggered reveals */
+  .reveal-stagger .manifesto-item,
+  .reveal-stagger .step,
+  .reveal-stagger .open-stat {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .reveal-stagger.visible .manifesto-item:nth-child(1),
+  .reveal-stagger.visible .step:nth-child(1),
+  .reveal-stagger.visible .open-stat:nth-child(1) { opacity: 1; transform: none; transition-delay: 0s; }
+
+  .reveal-stagger.visible .manifesto-item:nth-child(2),
+  .reveal-stagger.visible .step:nth-child(2),
+  .reveal-stagger.visible .open-stat:nth-child(2) { opacity: 1; transform: none; transition-delay: 0.08s; }
+
+  .reveal-stagger.visible .manifesto-item:nth-child(3),
+  .reveal-stagger.visible .step:nth-child(3),
+  .reveal-stagger.visible .open-stat:nth-child(3) { opacity: 1; transform: none; transition-delay: 0.16s; }
+
+  .reveal-stagger.visible .manifesto-item:nth-child(4),
+  .reveal-stagger.visible .step:nth-child(4) { opacity: 1; transform: none; transition-delay: 0.24s; }
+
+  .reveal-stagger.visible .step:nth-child(5) { opacity: 1; transform: none; transition-delay: 0.32s; }
+
+  .reveal-stagger.visible .manifesto-item:nth-child(5) { opacity: 1; transform: none; transition-delay: 0.08s; }
+  .reveal-stagger.visible .manifesto-item:nth-child(6) { opacity: 1; transform: none; transition-delay: 0.16s; }
+  .reveal-stagger.visible .manifesto-item:nth-child(7) { opacity: 1; transform: none; transition-delay: 0s; }
+
+  /* ─── HERO DECORATION ───────────────────────── */
+  .hero-rule {
+    width: 1px;
+    height: 72px;
+    background: linear-gradient(to bottom, transparent, var(--accent-dim), transparent);
+    margin: 36px auto 36px;
+    opacity: 0;
+    animation: fadeIn 1s ease forwards 0.9s;
+  }
+
+  /* Inline accent line in headings */
+  .accent-line {
+    display: inline-block;
+    width: 28px;
+    height: 1.5px;
+    background: var(--accent);
+    vertical-align: middle;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+<div class="ambient ambient-3"></div>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="nav-brand">
+    <div class="brand-mark"></div>
+    Athenaeum
+  </div>
+  <ul class="nav-links ui">
+    <li><a href="#manifesto">Manifesto</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#open">Open science</a></li>
+    <li><a href="#cta" class="nav-cta">Request access</a></li>
+  </ul>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+
+  <h1 class="hero-title">
+    AI does the archiving.<br>
+    <em>You do the science.</em>
+  </h1>
+
+  <div class="hero-rule"></div>
+
+  <p class="hero-subtitle">
+    Athenaeum is a research traceability tool for working scientists — built on the [hopefully non-controversial] belief that every claim, human- or computer-generated, must be anchored to specific sentences, in specific papers, verified.
+  </p>
+
+  <div class="hero-actions">
+    <a href="#manifesto" class="btn-primary">Read the manifesto</a>
+    <a href="#how" class="btn-secondary">See how it works</a>
+  </div>
+
+  <div class="scroll-cue">
+    <div class="scroll-line"></div>
+    <span class="scroll-label mono">scroll</span>
+  </div>
+</section>
+
+<div class="section-divider"><div class="divider-mark"></div></div>
+
+<!-- ── MANIFESTO ── -->
+<section class="manifesto" id="manifesto">
+  <div class="reveal">
+    <div class="section-label mono">
+      <span class="accent-line"></span>
+      The manifesto
+    </div>
+    <h2 class="manifesto-heading">
+      Reject synthesis<br>
+      <em>embrace complexity.</em>
+    </h2>
+  </div>
+
+  <div class="manifesto-grid reveal-stagger">
+
+    <!-- 1 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">01 ·</span> The problem</div>
+      <div class="item-heading">The tools are pulling in the wrong direction</div>
+      <div class="item-body ui">
+        Scientists spend <strong>3–8 hours a week</strong> reading literature. Every major AI tool has optimized for the same paradigm: ask a question, get a synthesized answer. The design goal is speed-to-answer — which is <strong>fundamentally mismatched to how science actually works.</strong>
+      </div>
+      <span class="item-tag tension">consensus meters reduce evidence to vote counts</span>
+    </div>
+
+    <!-- 2 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">02 ·</span> The failure</div>
+      <div class="item-heading">Hallucinated citations are polluting the literature</div>
+      <div class="item-body ui">
+        Closed, non-reproducible tools optimized for consumer-scale growth are introducing <strong>misread and fabricated citations</strong> into active scientific discourse. Real research is a sustained engagement over months and years — not a sequence of stateless questions.
+      </div>
+      <span class="item-tag tension">closed · non-reproducible · unaccountable</span>
+    </div>
+
+    <!-- 3 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">03 ·</span> The principle</div>
+      <div class="item-heading">Every claim anchored to a specific sentence</div>
+      <div class="item-body ui">
+        Every AI-generated connection is anchored to <strong>specific sentences in specific papers, quoted verbatim, verified by an independent checking pass.</strong> All reasoning is auditable. You no longer trust that a summary has successfully digested citations X, Y, and Z — you see the textual network directly.
+      </div>
+      <span class="item-tag verified">verbatim · sentence-level · independently verified</span>
+    </div>
+
+    <!-- 4 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">04 ·</span> The architecture</div>
+      <div class="item-heading">Annotations and questions are first-class objects</div>
+      <div class="item-body ui">
+        Annotations, open questions, and discussions accumulate into a <strong>personal knowledge graph.</strong> When made public, they form a community corpus that enables users to build consensus and independently trace and audit evidence bases. AI makes connections. <strong>The scientist evaluates them</strong> in a structured citation, annotation, connection, cementation activity loop.
+      </div>
+      <span class="item-tag open">knowledge graph · community corpus · open audit</span>
+    </div>
+
+    <!-- 5 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">05 ·</span> The infrastructure</div>
+      <div class="item-heading">Built on open science</div>
+      <div class="item-body ui">
+        <strong>OpenAlex indexes 271 million works under CC0.</strong> Preprint servers host millions of full texts. The infrastructure to do better has quietly become available. What was missing was a product built on this foundation that treats scientists as scientists — not passive consumers of AI output.
+      </div>
+      <span class="item-tag accent">OpenAlex · CC0 · open annotation standards</span>
+    </div>
+
+    <!-- 6 -->
+    <div class="manifesto-item">
+      <div class="item-number mono"><span class="n">06 ·</span> The commitment</div>
+      <div class="item-heading">Open source, POSI-committed, nonprofit governed</div>
+      <div class="item-body ui">
+        Our commitment to <strong>POSI</strong> (Principles of Open Scholarly Infrastructure) and to nonprofit governance is structural, not rhetorical — the legal form prevents the main failure mode of successful open infrastructure: <strong>acquisition by commercial publishers.</strong>
+      </div>
+      <span class="item-tag verified">POSI · open prompts · open evaluations · CC-BY</span>
+    </div>
+
+    <!-- 7: philosophy wide -->
+    <div class="manifesto-item wide philosophy">
+      <div class="item-number mono"><span class="n">07 ·</span> The philosophy</div>
+      <div class="philosophy-inner">
+        <div class="philosophy-pull">
+          AI is the archivist who searches the library.<br>
+          <span>The user is the scholar who interprets.</span>
+        </div>
+        <div class="philosophy-body ui">
+          <p>The future world crafted by scientists and engineers is ultimately inhabited by humans, not computers. <strong>Humans need to be responsible for assessing claims</strong> — not abstracting away intellectual engagement in favor of expediency.</p>
+          <p>AI is powerful for assessing large volumes of text and presenting coherent structure. This tool uses that power honestly: AI surfaces connections, flags tensions, and traces evidence chains. <strong>You decide what it means.</strong></p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<div class="section-divider"><div class="divider-mark"></div></div>
+
+<!-- ── HOW IT WORKS ── -->
+<section class="how-it-works" id="how">
+  <div class="reveal">
+    <div class="section-label mono">
+      <span class="accent-line"></span>
+      How it works
+    </div>
+    <h2 class="manifesto-heading" style="margin-bottom: 0;">
+      Structured around sustained<br>research — not one-off queries.
+    </h2>
+  </div>
+
+  <!-- Hand-drawn schematic -->
+  <div class="schematic-wrap reveal">
+    <svg class="schematic-svg" viewBox="0 0 860 200" xmlns="http://www.w3.org/2000/svg" aria-label="Process schematic: Scope → Synthesize → Cement → Trace → Repeat">
+      <defs>
+        <filter id="roughen">
+          <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise" seed="2"/>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.2" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <style>
+          .sch-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #9a9489; letter-spacing: 0.12em; text-transform: uppercase; }
+          .sch-num   { font-family: 'JetBrains Mono', monospace; font-size: 8px; fill: #c9a876; letter-spacing: 0.1em; }
+          .sch-repeat{ font-family: 'JetBrains Mono', monospace; font-size: 8.5px; fill: #c9a876; letter-spacing: 0.12em; }
+          .sch-stroke{ stroke: #4a4640; stroke-width: 1.2; fill: none; filter: url(#roughen); }
+          .sch-accent{ stroke: #8a7a5c; stroke-width: 1.1; fill: none; filter: url(#roughen); }
+          .sch-arrow { stroke: #5c5850; stroke-width: 1.3; fill: none; marker-end: url(#arrowhead); filter: url(#roughen); }
+          .sch-repeat-arrow { stroke: #8a7a5c; stroke-width: 1.1; fill: none; marker-end: url(#arrowhead-accent); filter: url(#roughen); stroke-dasharray: 4 2.5; }
+          .sch-highlight { stroke: #c9a876; stroke-width: 1.8; fill: none; opacity: 0.5; filter: url(#roughen); }
+          .sch-line { stroke: #3a3830; stroke-width: 0.9; fill: none; filter: url(#roughen); }
+        </style>
+        <marker id="arrowhead" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+          <path d="M0,0.5 L6,3.5 L0,6.5" stroke="#5c5850" stroke-width="1" fill="none"/>
+        </marker>
+        <marker id="arrowhead-accent" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+          <path d="M0,0.5 L6,3.5 L0,6.5" stroke="#8a7a5c" stroke-width="1" fill="none"/>
+        </marker>
+      </defs>
+
+      <!-- ── 01 SCOPE: cardboard box ── -->
+      <!-- box front face -->
+      <path class="sch-stroke" d="M28,80 L28,148 L88,148 L88,80"/>
+      <!-- box bottom -->
+      <path class="sch-stroke" d="M28,148 L38,158 L98,158 L88,148"/>
+      <!-- box right side -->
+      <path class="sch-stroke" d="M88,80 L98,90 L98,158"/>
+      <!-- top flaps (open box) -->
+      <path class="sch-stroke" d="M28,80 L38,70 L98,70 L88,80"/>
+      <path class="sch-stroke" d="M38,70 L38,90 L28,80"/>
+      <path class="sch-stroke" d="M98,70 L98,90 L88,80"/>
+      <!-- flap crease lines -->
+      <path class="sch-line" d="M38,70 L63,78"/>
+      <path class="sch-line" d="M98,70 L73,78"/>
+      <!-- tape strip across top -->
+      <path class="sch-accent" d="M53,68 L53,82"/>
+      <path class="sch-accent" d="M73,68 L73,82"/>
+      <path class="sch-accent" d="M53,75 L73,75"/>
+      <!-- label -->
+      <text class="sch-num" x="58" y="68">01</text>
+      <text class="sch-label" x="26" y="168">scope</text>
+
+      <!-- ── ARROW 1→2 ── -->
+      <path class="sch-arrow" d="M104,114 C118,112 132,112 148,114"/>
+
+      <!-- ── 02 SYNTHESIZE: papers with highlights + connecting lines ── -->
+      <!-- paper 1 (back-left) -->
+      <path class="sch-stroke" d="M158,72 L158,148 L202,148 L202,72 Z"/>
+      <path class="sch-line"   d="M165,85 L195,85"/>
+      <path class="sch-line"   d="M165,92 L195,92"/>
+      <path class="sch-highlight" d="M165,99 L189,99"/>
+      <path class="sch-line"   d="M165,106 L195,106"/>
+      <path class="sch-line"   d="M165,113 L190,113"/>
+      <path class="sch-highlight" d="M165,120 L185,120"/>
+      <path class="sch-line"   d="M165,127 L195,127"/>
+      <!-- paper 2 (front-right, offset) -->
+      <path class="sch-stroke" d="M174,78 L174,154 L218,154 L218,78 Z"/>
+      <path class="sch-line"   d="M181,91 L211,91"/>
+      <path class="sch-line"   d="M181,98 L211,98"/>
+      <path class="sch-highlight" d="M181,105 L207,105"/>
+      <path class="sch-line"   d="M181,112 L211,112"/>
+      <path class="sch-highlight" d="M181,119 L202,119"/>
+      <path class="sch-line"   d="M181,126 L211,126"/>
+      <path class="sch-line"   d="M181,133 L205,133"/>
+      <!-- connecting lines between highlights -->
+      <path class="sch-accent" d="M189,99 C210,99 212,105 181,105" stroke-dasharray="3 2"/>
+      <path class="sch-accent" d="M185,120 C205,120 208,119 202,119" stroke-dasharray="3 2"/>
+      <!-- label -->
+      <text class="sch-num" x="168" y="68">02</text>
+      <text class="sch-label" x="155" y="168">synthesize</text>
+
+      <!-- ── ARROW 2→3 ── -->
+      <path class="sch-arrow" d="M224,114 C238,112 252,112 268,114"/>
+
+      <!-- ── 03 CEMENT: brick wall ── -->
+      <!-- row 1 -->
+      <rect class="sch-stroke" x="278" y="76" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="320" y="76" width="40" height="18" rx="0.5"/>
+      <!-- row 2 (offset) -->
+      <rect class="sch-stroke" x="258" y="96" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="300" y="96" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="342" y="96" width="20" height="18" rx="0.5"/>
+      <!-- row 3 -->
+      <rect class="sch-stroke" x="278" y="116" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="320" y="116" width="40" height="18" rx="0.5"/>
+      <!-- row 4 (offset) -->
+      <rect class="sch-stroke" x="258" y="136" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="300" y="136" width="40" height="18" rx="0.5"/>
+      <rect class="sch-stroke" x="342" y="136" width="20" height="18" rx="0.5"/>
+      <!-- label -->
+      <text class="sch-num" x="295" y="68">03</text>
+      <text class="sch-label" x="284" y="168">cement</text>
+
+      <!-- ── ARROW 3→4 ── -->
+      <path class="sch-arrow" d="M365,114 C379,112 393,112 409,114"/>
+
+      <!-- ── 04 TRACE: line graph ── -->
+      <!-- axes -->
+      <path class="sch-stroke" d="M420,148 L420,72 M420,148 L500,148"/>
+      <!-- tick marks y-axis -->
+      <path class="sch-line" d="M417,130 L423,130"/>
+      <path class="sch-line" d="M417,112 L423,112"/>
+      <path class="sch-line" d="M417,94 L423,94"/>
+      <!-- tick marks x-axis -->
+      <path class="sch-line" d="M440,145 L440,151"/>
+      <path class="sch-line" d="M460,145 L460,151"/>
+      <path class="sch-line" d="M480,145 L480,151"/>
+      <!-- data line -->
+      <path class="sch-accent" d="M420,140 L435,132 L448,124 L458,118 L465,108 L472,100 L480,90 L490,82 L498,76"/>
+      <!-- data points -->
+      <circle cx="435" cy="132" r="2.2" fill="#8a7a5c" stroke="none"/>
+      <circle cx="448" cy="124" r="2.2" fill="#8a7a5c" stroke="none"/>
+      <circle cx="465" cy="108" r="2.2" fill="#c9a876" stroke="none"/>
+      <circle cx="480" cy="90"  r="2.2" fill="#8a7a5c" stroke="none"/>
+      <circle cx="498" cy="76"  r="2.2" fill="#c9a876" stroke="none"/>
+      <!-- label -->
+      <text class="sch-num" x="441" y="68">04</text>
+      <text class="sch-label" x="430" y="168">trace</text>
+
+      <!-- ── ARROW 4→5 ── -->
+      <path class="sch-arrow" d="M506,114 C520,112 534,112 550,114"/>
+
+      <!-- ── 05 REPEAT: circular arrow back to 01 ── -->
+      <!-- circle with "05" -->
+      <circle class="sch-accent" cx="580" cy="114" r="28"/>
+      <text class="sch-repeat" x="580" y="110" text-anchor="middle">05</text>
+      <text class="sch-repeat" x="580" y="122" text-anchor="middle">repeat</text>
+
+      <!-- ── BIG LOOP BACK: 05 → 01 ── -->
+      <path class="sch-repeat-arrow" d="M580,86 C580,46 430,26 280,28 C160,29 80,30 58,68"/>
+    </svg>
+  </div>
+
+  <div class="steps steps-5 reveal-stagger">
+    <div class="step">
+      <div class="step-num mono">01</div>
+      <div class="step-heading">Scope a project</div>
+      <div class="step-body ui">
+        Create a project based on an active research question. The tool learns and searches the literature specific to your work — not a generic knowledge base. Papers, datasets, and prior knowledge bricks accumulate into a persistent and human-readable research context.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num mono">02</div>
+      <div class="step-heading">Synthesize</div>
+      <div class="step-body ui">
+        Evaluate connections that AI surfaces. Evaluate the evidence yourself, drawing upon the direct textual evidence.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num mono">03</div>
+      <div class="step-heading">Cement</div>
+      <div class="step-body ui">
+        Citations, evidence, and annotations build knowledge bricks. Cement these into human-readable sentences that build a knowledge base.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num mono">04</div>
+      <div class="step-heading">Trace, export, and share</div>
+      <div class="step-body ui">
+        The full knowledge graph — every claim, every supporting passage, every open question and tension — is exportable as a portable <code class="mono" style="font-size:11px;color:var(--accent)">.ath</code> framework file. Human-readable, version-controllable, and reproducible.
+      </div>
+    </div>
+    <div class="step step-repeat">
+      <div class="step-num mono">05</div>
+      <div class="step-heading">Repeat</div>
+      <div class="step-body ui">
+        Each cycle deepens the knowledge base. The context accumulates; the literature narrows; the claims sharpen.
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"><div class="divider-mark"></div></div>
+
+<!-- ── OPEN INFRASTRUCTURE ── -->
+<section class="openness" id="open">
+  <div class="reveal">
+    <div class="section-label mono">
+      <span class="accent-line"></span>
+      Open infrastructure
+    </div>
+  </div>
+
+  <div class="open-grid reveal">
+    <div class="open-main">
+      <div class="open-main-heading">The reform-minded scientific community will not trust closed commercial AI for serious work.</div>
+      <div class="open-main-body ui">
+        <p style="margin-bottom:12px;">
+          The market has consolidated around a single product paradigm that experienced researchers find unsatisfying. No major tool is open source. Foundation funding for open scientific infrastructure is at a historic high — following cOAlition S, the U.S. OSTP Nelson memo, and European institutional mandates.
+        </p>
+        <p>
+          We publish our <strong>citation verification rate monthly and openly.</strong> We target a <strong>&lt;2% hallucinated-citation rate</strong> — measured, not claimed. Our prompts and evaluation logic are public. If we fail, anyone can see it.
+        </p>
+      </div>
+    </div>
+
+    <div class="open-stats">
+      <div class="open-stat">
+        <div class="open-stat-num">271M</div>
+        <div class="open-stat-label ui">works indexed by OpenAlex under CC0 license</div>
+      </div>
+      <div class="open-stat">
+        <div class="open-stat-num">&lt;2%</div>
+        <div class="open-stat-label ui">target hallucinated-citation rate, published monthly</div>
+      </div>
+      <div class="open-stat">
+        <div class="open-stat-num mono" style="font-size:22px;">POSI</div>
+        <div class="open-stat-label ui">Principles of Open Scholarly Infrastructure — structural, not rhetorical</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-brand">
+    <div class="footer-mark"></div>
+    Athenaeum
+  </div>
+  <ul class="footer-links ui">
+    <li><a href="#">GitHub</a></li>
+    <li><a href="#">Open prompts</a></li>
+    <li><a href="#">CC-BY 4.0</a></li>
+    <li><a href="#">Contact</a></li>
+  </ul>
+  <div class="footer-posi mono">POSI committed</div>
+</footer>
+
+<script>
+  // Scroll-triggered reveals
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.08 });
+
+  document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

@@ -1,0 +1,270 @@
+.wrapper {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+}
+
+.toolbarLabel {
+  color: var(--text-faint);
+  margin-right: 4px;
+}
+
+.filterChip {
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filterChip:hover { border-color: var(--border-strong); color: var(--text-muted); }
+
+.filterChip.active {
+  background: rgba(201, 168, 118, 0.1);
+  border-color: rgba(201, 168, 118, 0.4);
+  color: var(--accent);
+}
+
+.toolbarSep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.toolbarBtn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toolbarBtn:hover { border-color: var(--border-strong); color: var(--text-muted); }
+
+.countBadge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+/* ── Canvas ── */
+.canvasArea {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.cytoscapeContainer {
+  flex: 1;
+  background: var(--bg-canvas);
+}
+
+/* ── Empty state (inside canvas) ── */
+.emptyState {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.emptyDesc { font-size: 12px; line-height: 1.6; }
+
+/* ── Node detail panel ── */
+.detailPanel {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+.detailPanelHeader {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.typeBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.typeBadge.observation { background: rgba(201,168,118,0.12); color: var(--accent); }
+.typeBadge.methods     { background: rgba(137,165,196,0.12); color: var(--link); }
+.typeBadge.foundation  { background: rgba(154,150,140,0.1);  color: var(--text-muted); }
+.typeBadge.synthesis   { background: rgba(179,154,196,0.12); color: var(--question); }
+.typeBadge.claim       { background: rgba(138,165,124,0.12); color: var(--verified); }
+.typeBadge.other       { background: rgba(154,150,140,0.1);  color: var(--text-muted); }
+
+.closeBtn {
+  margin-left: auto;
+  padding: 2px 7px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.closeBtn:hover { border-color: var(--border-strong); color: var(--text-muted); }
+
+.detailPanelScroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.detailAssertion {
+  font-family: 'Lora', serif;
+  font-size: 13.5px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.detailStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDot.draft     { background: var(--accent-dim); }
+.statusDot.cemented  { background: var(--verified); }
+
+.statusLabel {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.cementPanelBtn {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: rgba(138,165,124,0.1);
+  border: 1px solid rgba(138,165,124,0.3);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--verified);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cementPanelBtn:hover:not(:disabled) { background: rgba(138,165,124,0.18); }
+.cementPanelBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.detailSection {
+  margin-bottom: 14px;
+}
+
+.detailSectionLabel {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.connectionChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.connectionChip:hover { border-color: var(--accent-dim); }
+
+.connectionChipText {
+  font-family: 'Lora', serif;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailDate {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+/* ── Loading / error states ── */
+.loadingOverlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--text-faint);
+}

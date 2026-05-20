@@ -1,0 +1,79 @@
+athenaeum-concept-paper
+Athenaeum
+A research traceability tool for working scientists. AI does the archiving. You do the science.
+The problem
+Scientists spend 3–8 hours a week reading literature, and the tools meant to help them are pulling in the
+wrong direction. Google Scholar is stagnating and structurally unstable — a free service Google has no
+strategic commitment to maintain — yet it remains the de facto archivist of scientific research. The new
+generation of AI research tools (Elicit, Consensus, and others) has raised hundreds of millions of dollars
+optimizing a single paradigm: ask a question, get a synthesized answer with citations. The design goal
+is speed-to-answer.
+This model is fundamentally mismatched to how science actually works. Real research is a sustained
+engagement with a field over months and years, not a sequence of stateless questions. "Consensus meters"
+reduce nuanced evidence to vote counts. Hallucinated and misread citations are polluting the literature. Every
+major tool is closed source, non-reproducible, and built for consumer-scale growth rather than scholarly trust.
+(Not only do I think these are bad models for science, but I am also skeptical it will be profitable for the
+companies pushing it.)
+The underlying infrastructure to do better has quietly become available. OpenAlex now indexes 271 million
+works under a CC0 license. Preprint servers host millions of papers in full text. Open annotation standards
+exist. What's missing is a product built on this foundation that treats scientists as scientists rather than
+passive consumers and regurgitators of AI output.
+The project
+"I propose to build an open-source AI research companion for working scientists." If you're looking for that,
+you're in the wrong place.
+There is no shortage of AI research companions that synthesize information and output summaries and
+consensus statements. Athenaeum is not a research companion — it is a research traceability tool.
+The product is built around sustained projects scoped to a researcher's active question. The project
+accumulates a persistent context — papers, the scientist's own datasets, prior reasoning — and gets smarter
+about that specific work over time. This component is necessary, but not innovative.
+This is the important part: every AI-generated claim is anchored to specific sentences in specific papers,
+quoted verbatim, verified by an independent checking pass. All reasoning is auditable — query
+expansion is shown and editable, and retrieval, sentence extraction, signal detection, and citation verification
+are exposed as a step-by-step reasoning trace on every synthesis.
+The unit of work is the brick: a cemented assertion that rests on sentence-level evidence from specific
+papers. Each citation carrying an explicit role (theory, method, opposing direction, stakes) and an exact
+passage accumulates annotations, and builds on other bricks to form an argument scaffolding. A brick moves
+from draft to cemented only when the scientist decides it should. Synthesis itself is inverted: the AI reports
+what it found, N sources support this, M report the opposite sign, others bear on scale and stakes, and the
+scientist writes the synthesis and logs an evaluation (agree / partial / disagree, with reasoning) against
+each extracted passage. AI does what AI is good at: making connections. The user evaluates those
+connections in a structured citation → annotation → connection → cementation loop.
+Annotations, open questions, and discussions are first-class objects that accumulate into a personal
+knowledge graph — papers linked by citation and co-citation, the scientist's annotations and questions
+overlaid, opposing-direction edges flagged, and "ghost" papers (cited in the literature but not yet in the
+project) surfaced for retrieval. Made public, the graph becomes a community corpus that enables independent
+tracing and auditing of any evidence base. The entire project exports as a portable .ath framework file: a
+human-readable, version-controllable YAML record of every brick, supporting passage, and builds-on relation,
+with a full provenance trail (retrieval corpus, model and independent checker model, citation-verification rate,
+logged evaluations). It compiles directly into a scientific paper attachment and can be dropped into any other
+Athenaeum to reproduce the structure exactly and build on top of it. CC-BY-4.0.
+The strategic wedge is not "better synthesis" but a different product category. Where incumbents optimize for
+speed-to-answer, we optimize for depth-of-understanding. Where they are closed, we are open source: open
+prompts, open evaluations, a public commitment to the Principles of Open Scholarly Infrastructure (POSI),
+and a citation-verification rate published openly every month, targeting a measured <1% hallucinatedcitation rate rather than a claimed one. Where they are structurally incompatible with a community layer
+(because it conflicts with a subscription business model), we build community contribution as the long-term
+moat.
+A second phase integrates structured peer review and, eventually, platform-native publishing on top of the
+research tool. Because the .ath framework is already a citation-grade manuscript substrate, the publishing
+layer emerges from an already-engaged community rather than fighting the usual cold-start adoption problem:
+utility wins first.
+An opinionated framework
+This is an opinionated project. I am a working scientist who sees a fundamental disconnect between how
+science is done (properly) and how AI is being juiced to intervene. I am also a devout AI skeptic. I have seen
+baseless claims and grift abound in this industry. Silicon Valley chants "AI is a tool" while building platforms
+that maximize cognitive offloading of the user for speed and dependence. The philosophy of this project is
+simple at its core:
+The landscape and the wedge into the field
+1. The future world crafted by scientists and engineers is ultimately inhabited by humans, not computers.
+Therefore, it is humans who need to be responsible for assessing claims — not abstracting away
+intellectual engagement in favor of expediency.
+2. AI is powerful for parsing large volumes and presenting them coherently. In this framework, AI is the
+archivist who searches the library; the user is the scholar who interprets.
+The market has consolidated around a single product paradigm that experienced researchers find
+unsatisfying. No major tool is open source, and the reform-minded scientific community does not trust closed
+commercial AI for serious work. Open bibliographic infrastructure (OpenAlex, funded with $7.5M from Arcadia
+in 2024) has removed the main technical dependency that previously favored incumbents. Foundation
+funding for open scientific infrastructure is at a historic high following cOAlition S, the U.S. OSTP Nelson
+memo, and European institutional mandates. Our commitment to POSI, to nonprofit governance, and to open
+source is structural rather than rhetorical — the legal form prevents the main failure mode of successful open
+infrastructure, which is acquisition by commercial publishers.

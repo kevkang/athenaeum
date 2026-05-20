@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.env
+.env.production
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.log
+.idea/
+.vscode/
+.claude/
+*.swp
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.env
