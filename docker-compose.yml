@@ -72,12 +72,17 @@ services:
     command: arq athenaeum.worker.settings.WorkerSettings
     environment:
       DATABASE_URL: postgresql+asyncpg://athenaeum:athenaeum@postgres:5432/athenaeum
+      NEO4J_URL: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: athenaeum
       REDIS_URL: redis://redis:6379/0
       GROBID_URL: http://grobid:8070
       UNPAYWALL_EMAIL: contact@athenaeum.app
     depends_on:
       postgres:
         condition: service_healthy
+      neo4j:
+        condition: service_started
       redis:
         condition: service_started
       grobid:

@@ -15,6 +15,7 @@ services:
 
   worker:
     environment:
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
   nginx:
