@@ -13,6 +13,10 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
+  neo4j:
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+
   worker:
     environment:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
