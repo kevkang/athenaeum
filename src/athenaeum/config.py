@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     synthesis_model: str = "claude-opus-4-7"
     checker_model: str = "claude-opus-4-7"
 
+    s3_bucket: str | None = None
+    aws_region: str = "us-east-1"
+
 
 @lru_cache
 def get_settings() -> Settings:

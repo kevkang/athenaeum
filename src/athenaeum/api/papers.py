@@ -9,10 +9,11 @@ import asyncio
 import uuid
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
+from athenaeum.config import get_settings
 from athenaeum.domain.models import PaperIngest, PaperOut, SectionOut, SentenceOut
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import Paper, PaperSection, PaperSentence, Project, ProjectMember, ProjectPaper
@@ -112,6 +113,74 @@ async def ingest_paper(
         log.info("papers.enqueued", paper_id=str(paper.id))
     except Exception as exc:
         log.warning("papers.enqueue_failed", paper_id=str(paper.id), error=str(exc))
+
+    return paper
+
+
+_UPLOAD_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+_ALLOWED_SUFFIXES = {".pdf", ".txt"}
+
+
+@router.post("/upload", response_model=PaperOut, status_code=status.HTTP_201_CREATED)
+async def upload_paper(
+    project_id: uuid.UUID = Form(...),
+    file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    doi: str | None = Form(default=None),
+    session: SessionDep = ...,
+    user: CurrentUserDep = ...,
+    request: Request = ...,
+) -> Paper:
+    settings = get_settings()
+    if not settings.s3_bucket:
+        raise HTTPException(status_code=501, detail="S3 upload not configured (set S3_BUCKET)")
+
+    suffix = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if suffix not in _ALLOWED_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported")
+
+    content = await file.read()
+    if len(content) > _UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 50 MB)")
+
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    membership = await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Not a project member")
+
+    paper_id = uuid.uuid4()
+    s3_key = f"uploads/{paper_id}{suffix}"
+
+    from athenaeum.storage.s3 import upload_fileobj
+    await upload_fileobj(content, settings.s3_bucket, s3_key, settings.aws_region)
+
+    bare_doi = _normalize_doi(doi.strip()) if doi else None
+    paper = Paper(
+        id=paper_id,
+        doi=bare_doi,
+        title=title.strip() if title else (file.filename or "[Uploaded file]"),
+        status="ghost",
+    )
+    session.add(paper)
+    session.add(ProjectPaper(project_id=project_id, paper_id=paper_id, added_by=user.id))
+    await session.commit()
+    await session.refresh(paper)
+
+    try:
+        await request.app.state.arq_pool.enqueue_job(
+            "ingest_paper", str(paper_id), s3_key=s3_key
+        )
+        log.info("papers.upload_enqueued", paper_id=str(paper_id), key=s3_key)
+    except Exception as exc:
+        log.warning("papers.upload_enqueue_failed", paper_id=str(paper_id), error=str(exc))
 
     return paper
 

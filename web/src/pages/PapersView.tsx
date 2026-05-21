@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -10,9 +10,12 @@ import styles from './PapersView.module.css';
 
 function IngestForm({ projectId }: { projectId: string }) {
   const [doi, setDoi] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const mutation = useMutation({
+  const doiMutation = useMutation({
     mutationFn: () => papersApi.ingest(doi.trim(), projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
@@ -20,15 +23,31 @@ function IngestForm({ projectId }: { projectId: string }) {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const uploadMutation = useMutation({
+    mutationFn: () => papersApi.upload(uploadFile!, projectId, { title: uploadTitle || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setUploadFile(null);
+      setUploadTitle('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+  });
+
+  const handleDoiSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (doi.trim()) mutation.mutate();
+    if (doi.trim()) doiMutation.mutate();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setUploadFile(f);
+    if (f) setUploadTitle(f.name.replace(/\.[^.]+$/, ''));
   };
 
   return (
     <div className={styles.ingestForm}>
-      <div className={styles.ingestLabel}>Add paper by DOI</div>
-      <form className={styles.ingestRow} onSubmit={handleSubmit}>
+      <div className={styles.ingestLabel}>Add by DOI</div>
+      <form className={styles.ingestRow} onSubmit={handleDoiSubmit}>
         <input
           className={styles.doiInput}
           value={doi}
@@ -39,15 +58,58 @@ function IngestForm({ projectId }: { projectId: string }) {
         <button
           className={styles.ingestBtn}
           type="submit"
-          disabled={!doi.trim() || mutation.isPending}
+          disabled={!doi.trim() || doiMutation.isPending}
         >
-          {mutation.isPending ? '…' : 'Add'}
+          {doiMutation.isPending ? '…' : 'Add'}
         </button>
       </form>
-      {mutation.error && (
-        <div className={styles.ingestError}>
-          {(mutation.error as Error).message}
+      {doiMutation.error && (
+        <div className={styles.ingestError}>{(doiMutation.error as Error).message}</div>
+      )}
+
+      <div className={styles.ingestDivider}>or upload PDF / TXT</div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt"
+        className={styles.fileInputHidden}
+        onChange={handleFileChange}
+      />
+
+      {!uploadFile ? (
+        <button className={styles.uploadPickBtn} onClick={() => fileInputRef.current?.click()}>
+          Choose file…
+        </button>
+      ) : (
+        <div className={styles.uploadRow}>
+          <input
+            className={styles.uploadTitleInput}
+            value={uploadTitle}
+            onChange={(e) => setUploadTitle(e.target.value)}
+            placeholder="Title (optional)"
+          />
+          <button
+            className={styles.ingestBtn}
+            onClick={() => uploadMutation.mutate()}
+            disabled={uploadMutation.isPending}
+          >
+            {uploadMutation.isPending ? '…' : 'Upload'}
+          </button>
+          <button
+            className={styles.uploadCancelBtn}
+            onClick={() => {
+              setUploadFile(null);
+              setUploadTitle('');
+              if (fileInputRef.current) fileInputRef.current.value = '';
+            }}
+          >
+            ✕
+          </button>
         </div>
+      )}
+      {uploadMutation.error && (
+        <div className={styles.ingestError}>{(uploadMutation.error as Error).message}</div>
       )}
     </div>
   );

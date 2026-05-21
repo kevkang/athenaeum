@@ -63,6 +63,7 @@ async def ingest_paper(
     ctx: dict,
     paper_id: str,
     oa_pdf_url: str | None = None,
+    s3_key: str | None = None,
 ) -> None:
     settings = get_settings()
     pid = uuid.UUID(paper_id)
@@ -71,6 +72,7 @@ async def ingest_paper(
     await run_ingest(
         paper_id=pid,
         oa_pdf_url=oa_pdf_url,
+        s3_key=s3_key,
         engine=ctx["engine"],
         http=ctx["http"],
         settings=settings,

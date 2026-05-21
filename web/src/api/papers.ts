@@ -83,6 +83,15 @@ export const papersApi = {
       })
       .then((r) => r.data),
 
+  upload: (file: File, projectId: string, opts: { title?: string; doi?: string } = {}) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('project_id', projectId);
+    if (opts.title) form.append('title', opts.title);
+    if (opts.doi) form.append('doi', opts.doi);
+    return api.post<Paper>('/papers/upload', form).then((r) => r.data);
+  },
+
   retry: (paperId: string) =>
     api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
 
