@@ -331,8 +331,11 @@ async def run_synthesis(
 
         except Exception:
             log.exception("synthesis.failed", synthesis_id=str(synthesis_id))
-            synthesis.status = "failed"
-            await session.commit()
+            await session.rollback()
+            synthesis = await session.get(Synthesis, synthesis_id)
+            if synthesis is not None:
+                synthesis.status = "failed"
+                await session.commit()
             await redis.publish(
                 f"synthesis:{synthesis_id}:steps",
                 json.dumps({"kind": "failed"}),
