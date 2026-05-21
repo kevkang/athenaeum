@@ -63,6 +63,8 @@ export const synthesisApi = {
       })
       .then((r) => r.data),
 
+  delete: (id: string) => api.delete(`/syntheses/${id}`),
+
   updateText: (id: string, synthesisText: string) =>
     api
       .patch<Synthesis>(`/syntheses/${id}`, { synthesis_text: synthesisText })

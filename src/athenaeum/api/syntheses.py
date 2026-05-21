@@ -86,6 +86,29 @@ async def create_synthesis(
     return synthesis
 
 
+@router.delete("/{synthesis_id}", status_code=204)
+async def delete_synthesis(
+    synthesis_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> None:
+    synthesis = await session.get(Synthesis, synthesis_id)
+    if synthesis is None:
+        raise HTTPException(status_code=404, detail="Synthesis not found")
+
+    membership = await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == synthesis.project_id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Not a project member")
+
+    await session.delete(synthesis)
+    await session.commit()
+
+
 @router.patch("/{synthesis_id}", response_model=SynthesisOut)
 async def update_synthesis(
     synthesis_id: uuid.UUID,

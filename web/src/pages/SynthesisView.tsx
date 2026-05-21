@@ -187,9 +187,25 @@ function SynthesisTextEditor({ synthesis }: { synthesis: Synthesis }) {
 
 // ── SynthesisDetail ───────────────────────────────────────────────────────────
 
-function SynthesisDetail({ synthesis, onRefresh }: { synthesis: Synthesis; onRefresh: () => void }) {
+function SynthesisDetail({
+  synthesis,
+  onRefresh,
+  onDeleted,
+}: {
+  synthesis: Synthesis;
+  onRefresh: () => void;
+  onDeleted: () => void;
+}) {
   const queryClient = useQueryClient();
   const isRunning = synthesis.status === 'running';
+
+  const deleteMutation = useMutation({
+    mutationFn: () => synthesisApi.delete(synthesis.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['syntheses', synthesis.project_id] });
+      onDeleted();
+    },
+  });
 
   const { data: evidence } = useQuery({
     queryKey: ['evidence-full', synthesis.id],
@@ -213,17 +229,26 @@ function SynthesisDetail({ synthesis, onRefresh }: { synthesis: Synthesis; onRef
 
   return (
     <div className={styles.synthDetail}>
-      {/* Status banner */}
-      <div className={`${styles.statusBanner} ${styles[synthesis.status]}`}>
-        <span className={`${styles.statusDot} ${styles[synthesis.status]}`} />
-        {synthesis.status === 'running' && 'Running synthesis…'}
-        {synthesis.status === 'done' && 'Synthesis complete'}
-        {synthesis.status === 'failed' && 'Synthesis failed'}
-        {synthesis.verification_rate !== null && (
-          <span className={styles.vr}>
-            {(synthesis.verification_rate * 100).toFixed(0)}% citations verified
-          </span>
-        )}
+      {/* Status banner + delete */}
+      <div className={styles.synthDetailHeader}>
+        <div className={`${styles.statusBanner} ${styles[synthesis.status]}`}>
+          <span className={`${styles.statusDot} ${styles[synthesis.status]}`} />
+          {synthesis.status === 'running' && 'Running synthesis…'}
+          {synthesis.status === 'done' && 'Synthesis complete'}
+          {synthesis.status === 'failed' && 'Synthesis failed'}
+          {synthesis.verification_rate !== null && (
+            <span className={styles.vr}>
+              {(synthesis.verification_rate * 100).toFixed(0)}% citations verified
+            </span>
+          )}
+        </div>
+        <button
+          className={styles.deleteBtn}
+          onClick={() => deleteMutation.mutate()}
+          disabled={deleteMutation.isPending}
+        >
+          {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+        </button>
       </div>
 
       {/* Claim */}
@@ -393,6 +418,7 @@ export default function SynthesisView() {
               key={activeSynth.id}
               synthesis={activeSynth}
               onRefresh={handleRefresh}
+              onDeleted={() => setSelectedId(null)}
             />
           ) : (
             <div className={styles.emptyState}>

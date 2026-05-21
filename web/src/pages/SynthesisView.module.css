@@ -207,6 +207,41 @@
 /* ── Selected synthesis ── */
 .synthDetail { max-width: 760px; }
 
+.synthDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.synthDetailHeader .statusBanner {
+  flex: 1;
+  margin-bottom: 24px;
+}
+
+.deleteBtn {
+  background: none;
+  border: 1px solid rgba(198, 122, 92, 0.3);
+  border-radius: 4px;
+  color: var(--tension);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: rgba(198, 122, 92, 0.08);
+}
+
+.deleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .statusBanner {
   display: flex;
   align-items: center;
