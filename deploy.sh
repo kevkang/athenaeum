@@ -12,6 +12,9 @@ $COMPOSE build
 echo "==> Starting services..."
 $COMPOSE up -d
 
+echo "==> Restarting workers to pick up code changes..."
+$COMPOSE restart worker api
+
 echo "==> Running migrations..."
 $COMPOSE exec api alembic upgrade head
 
