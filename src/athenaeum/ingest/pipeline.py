@@ -64,7 +64,9 @@ async def _process(
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
 
-        if s3_key and settings.s3_bucket:
+        if s3_key:
+            if not settings.s3_bucket:
+                raise RuntimeError("S3_BUCKET not configured but s3_key was provided")
             from athenaeum.storage.s3 import delete_object, download_to_path
 
             dest = tmp_dir / Path(s3_key).name
