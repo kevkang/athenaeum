@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
 import { papersApi, firstAuthor, type Paper, type SearchHit } from '../api/papers';
 import { projectsApi } from '../api/projects';
 import styles from './PapersView.module.css';
@@ -166,6 +167,12 @@ function SearchResults({ hits, query }: { hits: SearchHit[]; query: string }) {
 // ── Paper detail ─────────────────────────────────────────────────────────────
 
 function PaperDetail({ paper }: { paper: Paper }) {
+  const queryClient = useQueryClient();
+  const retryMutation = useMutation({
+    mutationFn: () => papersApi.retry(paper.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers'] }),
+  });
+
   const { data: sections } = useQuery({
     queryKey: ['sections', paper.id],
     queryFn: () => papersApi.sections(paper.id),
@@ -216,6 +223,19 @@ function PaperDetail({ paper }: { paper: Paper }) {
         <div className={styles.spinnerRow}>
           <span className={styles.ingesting}>⟳</span>
           Full text ingestion queued — check back shortly.
+        </div>
+      )}
+
+      {paper.status === 'failed' && (
+        <div className={styles.spinnerRow}>
+          <span>Ingestion failed.</span>
+          <button
+            className={styles.retryBtn}
+            onClick={() => retryMutation.mutate()}
+            disabled={retryMutation.isPending}
+          >
+            {retryMutation.isPending ? 'Retrying…' : 'Retry ingestion'}
+          </button>
         </div>
       )}
 

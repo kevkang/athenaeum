@@ -116,6 +116,30 @@ async def ingest_paper(
     return paper
 
 
+@router.post("/{paper_id}/retry", response_model=PaperOut)
+async def retry_ingest(
+    paper_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+) -> Paper:
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    paper.status = "ghost"
+    await session.commit()
+    await session.refresh(paper)
+
+    try:
+        await request.app.state.arq_pool.enqueue_job("ingest_paper", str(paper.id), oa_pdf_url=None)
+        log.info("papers.retry_enqueued", paper_id=str(paper.id))
+    except Exception as exc:
+        log.warning("papers.retry_enqueue_failed", paper_id=str(paper.id), error=str(exc))
+
+    return paper
+
+
 @router.get("/{paper_id}", response_model=PaperOut)
 async def get_paper(
     paper_id: uuid.UUID,

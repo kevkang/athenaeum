@@ -83,6 +83,9 @@ export const papersApi = {
       })
       .then((r) => r.data),
 
+  retry: (paperId: string) =>
+    api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
+
   search: (query: string, projectId: string, mode = 'hybrid', topK = 20) =>
     api
       .post<SearchResponse>('/search', {

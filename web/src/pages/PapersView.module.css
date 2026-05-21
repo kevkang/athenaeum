@@ -455,6 +455,20 @@
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.retryBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.retryBtn:hover {
+  background: var(--surface-raised);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
