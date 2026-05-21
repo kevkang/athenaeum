@@ -20,4 +20,4 @@ jobs:
           script: |
             cd /opt/athenaeum
             git pull
-            ./deploy.sh
+            bash deploy.sh
