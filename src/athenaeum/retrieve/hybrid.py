@@ -34,8 +34,9 @@ async def _vector_search(
     embedding: list[float],
     k: int,
 ) -> list[dict[str, Any]]:
+    vec = _vec_str(embedding)
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 ps.id,
                 ps.paper_id,
@@ -43,15 +44,15 @@ async def _vector_search(
                 ps.text,
                 ps.char_start,
                 ps.char_end,
-                (1 - (ps.embedding <=> :vec::vector))::float AS score
+                (1 - (ps.embedding <=> '{vec}'::vector))::float AS score
             FROM paper_sentences ps
             JOIN project_papers pp ON pp.paper_id = ps.paper_id
             WHERE pp.project_id = :pid
               AND ps.embedding IS NOT NULL
-            ORDER BY ps.embedding <=> :vec::vector
+            ORDER BY ps.embedding <=> '{vec}'::vector
             LIMIT :k
         """),
-        {"vec": _vec_str(embedding), "pid": str(project_id), "k": k},
+        {"pid": str(project_id), "k": k},
     )
     return [dict(r._mapping) for r in rows]
 
