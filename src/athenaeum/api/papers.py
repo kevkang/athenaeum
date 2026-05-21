@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
-from athenaeum.domain.models import PaperIngest, PaperOut, SectionOut, SentenceOut
+from athenaeum.domain.models import PaperIngest, PaperOut, PaperUpdate, SectionOut, SentenceOut
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import Paper, PaperSection, PaperSentence, Project, ProjectMember, ProjectPaper
 
@@ -181,6 +181,66 @@ async def upload_paper(
         log.info("papers.upload_enqueued", paper_id=str(paper_id), key=s3_key)
     except Exception as exc:
         log.warning("papers.upload_enqueue_failed", paper_id=str(paper_id), error=str(exc))
+
+    return paper
+
+
+@router.patch("/{paper_id}", response_model=PaperOut)
+async def update_paper(
+    paper_id: uuid.UUID,
+    payload: PaperUpdate,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> Paper:
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    if payload.title is not None:
+        paper.title = payload.title
+    if payload.abstract is not None:
+        paper.abstract = payload.abstract
+    await session.commit()
+    await session.refresh(paper)
+    return paper
+
+
+@router.post("/{paper_id}/reupload", response_model=PaperOut)
+async def reupload_paper(
+    paper_id: uuid.UUID,
+    file: UploadFile = File(...),
+    session: SessionDep = ...,
+    user: CurrentUserDep = ...,
+    request: Request = ...,
+) -> Paper:
+    settings = get_settings()
+    if not settings.s3_bucket:
+        raise HTTPException(status_code=501, detail="S3 upload not configured (set S3_BUCKET)")
+
+    suffix = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    if suffix not in _ALLOWED_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported")
+
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    content = await file.read()
+    if len(content) > _UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 50 MB)")
+
+    s3_key = f"uploads/{paper_id}{suffix}"
+    from athenaeum.storage.s3 import upload_fileobj
+    await upload_fileobj(content, settings.s3_bucket, s3_key, settings.aws_region)
+
+    paper.status = "ghost"
+    await session.commit()
+    await session.refresh(paper)
+
+    try:
+        await request.app.state.arq_pool.enqueue_job("ingest_paper", str(paper_id), s3_key=s3_key)
+        log.info("papers.reupload_enqueued", paper_id=str(paper_id), key=s3_key)
+    except Exception as exc:
+        log.warning("papers.reupload_enqueue_failed", paper_id=str(paper_id), error=str(exc))
 
     return paper
 

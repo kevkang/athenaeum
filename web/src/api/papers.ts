@@ -92,6 +92,15 @@ export const papersApi = {
     return api.post<Paper>('/papers/upload', form).then((r) => r.data);
   },
 
+  update: (paperId: string, data: { title?: string; abstract?: string }) =>
+    api.patch<Paper>(`/papers/${paperId}`, data).then((r) => r.data),
+
+  reupload: (paperId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<Paper>(`/papers/${paperId}/reupload`, form).then((r) => r.data);
+  },
+
   retry: (paperId: string) =>
     api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
 

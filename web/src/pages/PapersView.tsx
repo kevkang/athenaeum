@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { papersApi, firstAuthor, type Paper, type SearchHit } from '../api/papers';
 import { projectsApi } from '../api/projects';
+
 import styles from './PapersView.module.css';
 
 // ── Ingest form ──────────────────────────────────────────────────────────────
@@ -228,12 +229,59 @@ function SearchResults({ hits, query }: { hits: SearchHit[]; query: string }) {
 
 // ── Paper detail ─────────────────────────────────────────────────────────────
 
-function PaperDetail({ paper }: { paper: Paper }) {
+function PaperDetail({
+  paper,
+  projectId,
+  onRemoved,
+}: {
+  paper: Paper;
+  projectId: string;
+  onRemoved: () => void;
+}) {
   const queryClient = useQueryClient();
+  const reuploadRef = useRef<HTMLInputElement>(null);
+
   const retryMutation = useMutation({
     mutationFn: () => papersApi.retry(paper.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers'] }),
   });
+
+  const removeMutation = useMutation({
+    mutationFn: () => projectsApi.removePaper(projectId, paper.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      onRemoved();
+    },
+  });
+
+  const reuploadMutation = useMutation({
+    mutationFn: (file: File) => papersApi.reupload(paper.id, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  // Editable title / abstract
+  const [editTitle, setEditTitle] = useState(paper.title);
+  const [editAbstract, setEditAbstract] = useState(paper.abstract ?? '');
+
+  useEffect(() => {
+    setEditTitle(paper.title);
+    setEditAbstract(paper.abstract ?? '');
+  }, [paper.id]);
+
+  // Debounced autosave — only fires when user has actually changed values
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const newTitle = editTitle.trim();
+      const newAbstract = editAbstract;
+      if (newTitle && (newTitle !== paper.title || newAbstract !== (paper.abstract ?? ''))) {
+        papersApi.update(paper.id, { title: newTitle, abstract: newAbstract }).then(() =>
+          queryClient.invalidateQueries({ queryKey: ['papers', projectId] })
+        );
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTitle, editAbstract]);
 
   const { data: sections } = useQuery({
     queryKey: ['sections', paper.id],
@@ -249,7 +297,6 @@ function PaperDetail({ paper }: { paper: Paper }) {
 
   const author = firstAuthor(paper.authors_json);
 
-  // Group sentences by section
   const sentencesBySection: Record<string, string[]> = {};
   if (sentences) {
     for (const s of sentences) {
@@ -258,9 +305,29 @@ function PaperDetail({ paper }: { paper: Paper }) {
     }
   }
 
+  const handleReupload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) reuploadMutation.mutate(file);
+    if (reuploadRef.current) reuploadRef.current.value = '';
+  };
+
   return (
     <div className={styles.paperDetail}>
-      <div className={styles.paperDetailTitle}>{paper.title}</div>
+      <div className={styles.paperDetailActions}>
+        <button
+          className={styles.removeBtn}
+          onClick={() => removeMutation.mutate()}
+          disabled={removeMutation.isPending}
+        >
+          {removeMutation.isPending ? 'Removing…' : 'Remove from project'}
+        </button>
+      </div>
+
+      <input
+        className={styles.paperTitleInput}
+        value={editTitle}
+        onChange={(e) => setEditTitle(e.target.value)}
+      />
 
       <div className={styles.paperDetailMeta}>
         {author && <span><strong>{author}</strong>{Array.isArray(paper.authors_json) && paper.authors_json.length > 1 ? ' et al.' : ''}</span>}
@@ -298,12 +365,30 @@ function PaperDetail({ paper }: { paper: Paper }) {
           >
             {retryMutation.isPending ? 'Retrying…' : 'Retry ingestion'}
           </button>
+          <input
+            ref={reuploadRef}
+            type="file"
+            accept=".pdf,.txt"
+            className={styles.fileInputHidden}
+            onChange={handleReupload}
+          />
+          <button
+            className={styles.retryBtn}
+            onClick={() => reuploadRef.current?.click()}
+            disabled={reuploadMutation.isPending}
+          >
+            {reuploadMutation.isPending ? 'Uploading…' : 'Upload PDF / TXT'}
+          </button>
         </div>
       )}
 
-      {paper.abstract && (
-        <div className={styles.paperAbstract}>{paper.abstract}</div>
-      )}
+      <textarea
+        className={styles.abstractTextarea}
+        value={editAbstract}
+        onChange={(e) => setEditAbstract(e.target.value)}
+        placeholder="Abstract…"
+        rows={5}
+      />
 
       {sections && sections.map((section, i) => {
         const sectionSentences = sentencesBySection[section.id] ?? [];
@@ -395,7 +480,11 @@ export default function PapersView() {
           {searchResults ? (
             <SearchResults hits={searchResults.hits} query={searchResults.query} />
           ) : selectedPaper ? (
-            <PaperDetail paper={selectedPaper} />
+            <PaperDetail
+              paper={selectedPaper}
+              projectId={projectId}
+              onRemoved={() => setSelectedId(null)}
+            />
           ) : (
             <div className={styles.emptyState}>
               <div className={styles.emptyStateTitle}>No paper selected</div>

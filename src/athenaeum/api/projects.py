@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.models import PaperOut, ProjectCreate, ProjectOut, ProjectUpdate, SynthesisOut
+
 from athenaeum.storage.models import Paper, Project, ProjectMember, ProjectPaper, Synthesis
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -94,6 +95,35 @@ async def list_project_syntheses(
         .order_by(Synthesis.run_at.desc())
     )
     return list(rows)
+
+
+@router.delete("/{project_id}/papers/{paper_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_paper_from_project(
+    project_id: UUID,
+    paper_id: UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> None:
+    membership = await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if membership is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a project member")
+
+    link = await session.scalar(
+        select(ProjectPaper).where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.paper_id == paper_id,
+        )
+    )
+    if link is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Paper not in project")
+
+    await session.delete(link)
+    await session.commit()
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

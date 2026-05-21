@@ -79,6 +79,11 @@ class PaperIngest(BaseModel):
     project_id: UUID
 
 
+class PaperUpdate(BaseModel):
+    title: str | None = None
+    abstract: str | None = None
+
+
 class PaperOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

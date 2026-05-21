@@ -139,15 +139,24 @@ async def _step_extract(
     valid_ids = {str(h.sentence_id): h for h in hits}
     passages: list[Passage] = []
 
+    def _clean_uuid(raw: str) -> str:
+        """Strip surrounding whitespace/quotes that LLMs sometimes add."""
+        import re
+        return re.sub(r"[^0-9a-fA-F\-]", "", raw.strip())
+
     for pd in tool_result["input"].get("passages", []):
-        raw_sids = pd.get("sentence_ids", [])
+        raw_sids = [_clean_uuid(str(s)) for s in pd.get("sentence_ids", [])]
         # Filter to only IDs that were actually retrieved
         valid_sids = [sid for sid in raw_sids if sid in valid_ids]
         if not valid_sids:
             log.warning("extract.invalid_sentence_ids", returned=raw_sids)
             continue
 
-        sentence_uuids = [uuid.UUID(sid) for sid in valid_sids]
+        try:
+            sentence_uuids = [uuid.UUID(sid) for sid in valid_sids]
+        except ValueError as exc:
+            log.warning("extract.bad_sentence_uuid", error=str(exc))
+            continue
 
         # Fetch ground-truth text from DB in sentence order
         rows = (
@@ -158,11 +167,18 @@ async def _step_extract(
             )
         ).all()
         verbatim = " ".join(r.text for r in rows)
-        paper_id_str = pd.get("paper_id", str(valid_ids[valid_sids[0]].paper.id))
+
+        # paper_id: prefer what the LLM returned, fall back to the hit's paper id
+        raw_paper_id = pd.get("paper_id")
+        fallback_paper_id = str(valid_ids[valid_sids[0]].paper.id)
+        try:
+            paper_id = uuid.UUID(_clean_uuid(str(raw_paper_id))) if raw_paper_id else uuid.UUID(fallback_paper_id)
+        except ValueError:
+            paper_id = uuid.UUID(fallback_paper_id)
 
         passage = Passage(
             id=uuid.uuid4(),
-            paper_id=uuid.UUID(paper_id_str),
+            paper_id=paper_id,
             sentence_ids=sentence_uuids,
             verbatim_text=verbatim,
         )

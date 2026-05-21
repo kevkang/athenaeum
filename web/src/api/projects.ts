@@ -25,6 +25,9 @@ export const projectsApi = {
   update: (id: string, payload: Partial<ProjectCreate>) =>
     api.patch<Project>(`/projects/${id}`, payload).then((r) => r.data),
 
+  removePaper: (projectId: string, paperId: string) =>
+    api.delete(`/projects/${projectId}/papers/${paperId}`),
+
   importArchive: (file: File) => {
     const form = new FormData();
     form.append('file', file);
