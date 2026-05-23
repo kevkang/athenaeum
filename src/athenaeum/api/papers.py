@@ -245,6 +245,61 @@ async def reupload_paper(
     return paper
 
 
+@router.post("/{paper_id}/summarize", response_model=PaperOut)
+async def summarize_paper(
+    paper_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> Paper:
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="LLM provider not configured")
+
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    if paper.status != "full_text":
+        raise HTTPException(status_code=400, detail="Paper must have full text before summarizing")
+
+    rows = await session.scalars(
+        select(PaperSentence)
+        .where(PaperSentence.paper_id == paper_id)
+        .order_by(PaperSentence.ord)
+    )
+    text = " ".join(s.text for s in rows)
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="No text content found for this paper")
+
+    from athenaeum.provider.anthropic_client import AnthropicProvider
+    from athenaeum.provider.base import Message
+
+    provider = AnthropicProvider(settings.anthropic_api_key, settings.summarize_model)
+    message, _ = await provider.complete(
+        messages=[
+            Message(
+                role="user",
+                content=(
+                    f'Paper title: "{paper.title}"\n\n'
+                    f"Full text (excerpt):\n{text[:8000]}\n\n"
+                    "Write a concise abstract (150–250 words) covering the paper's "
+                    "objectives, methods, key findings, and conclusions. "
+                    "Output only the abstract text."
+                ),
+            )
+        ],
+        system="You are a scientific writing assistant. Write accurate, well-structured abstracts.",
+        max_tokens=512,
+    )
+
+    if not message:
+        raise HTTPException(status_code=502, detail="LLM returned no content")
+
+    paper.abstract = message.strip()
+    await session.commit()
+    await session.refresh(paper)
+    return paper
+
+
 @router.post("/{paper_id}/retry", response_model=PaperOut)
 async def retry_ingest(
     paper_id: uuid.UUID,

@@ -260,6 +260,14 @@ function PaperDetail({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
   });
 
+  const summarizeMutation = useMutation({
+    mutationFn: () => papersApi.summarize(paper.id),
+    onSuccess: (updated) => {
+      setEditAbstract(updated.abstract ?? '');
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+    },
+  });
+
   // Editable title / abstract
   const [editTitle, setEditTitle] = useState(paper.title);
   const [editAbstract, setEditAbstract] = useState(paper.abstract ?? '');
@@ -380,6 +388,23 @@ function PaperDetail({
           >
             {reuploadMutation.isPending ? 'Uploading…' : 'Upload PDF / TXT'}
           </button>
+        </div>
+      )}
+
+      {!editAbstract && paper.status === 'full_text' && (
+        <div className={styles.generateRow}>
+          <button
+            className={styles.generateBtn}
+            onClick={() => summarizeMutation.mutate()}
+            disabled={summarizeMutation.isPending}
+          >
+            {summarizeMutation.isPending ? 'Generating…' : '✦ Generate abstract'}
+          </button>
+          {summarizeMutation.error && (
+            <span className={styles.generateError}>
+              {(summarizeMutation.error as Error).message}
+            </span>
+          )}
         </div>
       )}
 

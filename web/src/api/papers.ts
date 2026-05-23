@@ -101,6 +101,9 @@ export const papersApi = {
     return api.post<Paper>(`/papers/${paperId}/reupload`, form).then((r) => r.data);
   },
 
+  summarize: (paperId: string) =>
+    api.post<Paper>(`/papers/${paperId}/summarize`).then((r) => r.data),
+
   retry: (paperId: string) =>
     api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
 

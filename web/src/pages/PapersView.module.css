@@ -587,6 +587,41 @@
   background: var(--bg-elevated);
 }
 
+.generateRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.generateBtn {
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(201, 168, 118, 0.08);
+  border: 1px solid rgba(201, 168, 118, 0.3);
+  border-radius: 5px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.generateBtn:hover:not(:disabled) {
+  background: rgba(201, 168, 118, 0.16);
+}
+
+.generateBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generateError {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--tension);
+}
+
 .abstractTextarea {
   display: block;
   width: 100%;
