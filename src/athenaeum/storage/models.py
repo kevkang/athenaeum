@@ -207,7 +207,7 @@ class Synthesis(Base):
     )
 
     steps: Mapped[list["SynthesisStep"]] = relationship(
-        back_populates="synthesis", order_by="SynthesisStep.ord"
+        back_populates="synthesis", order_by="SynthesisStep.ord", passive_deletes=True
     )
 
 
@@ -312,7 +312,7 @@ class Brick(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     built_from_synthesis_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("syntheses.id")
+        UUID(as_uuid=True), ForeignKey("syntheses.id", ondelete="SET NULL")
     )
 
     rests_on: Mapped[list["BrickRestsOn"]] = relationship(back_populates="brick")
