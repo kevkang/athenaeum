@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from athenaeum import __version__
-from athenaeum.api import annotations, archive, auth, bricks, graph, members, papers, projects, public, search, syntheses
+from athenaeum.api import annotations, archive, auth, bricks, graph, links, members, papers, projects, public, search, syntheses
 from athenaeum.config import get_settings
 
 log = structlog.get_logger()
@@ -67,20 +67,9 @@ app.include_router(graph.router)
 app.include_router(archive.router)
 app.include_router(members.router)
 app.include_router(public.router)
+app.include_router(links.router)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
-
-
-@app.get("/_debug/settings")
-async def debug_settings() -> dict:
-    from athenaeum.config import _ENV_FILE
-    s = get_settings()
-    return {
-        "env_file": str(_ENV_FILE),
-        "env_file_exists": _ENV_FILE.exists(),
-        "orcid_client_id": s.orcid_client_id,
-        "orcid_redirect_uri": s.orcid_redirect_uri,
-    }

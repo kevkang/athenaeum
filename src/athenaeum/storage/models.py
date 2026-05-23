@@ -473,3 +473,42 @@ class TensionEdge(Base):
     evidence_passage_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("passages.id")
     )
+
+
+class KnowledgeLink(Base):
+    __tablename__ = "knowledge_links"
+    __table_args__ = (
+        CheckConstraint(
+            "from_type IN ('paper','synthesis')",
+            name="knowledge_links_from_type_chk",
+        ),
+        CheckConstraint(
+            "to_type IN ('paper','synthesis')",
+            name="knowledge_links_to_type_chk",
+        ),
+        CheckConstraint(
+            "rel IN ('supports','contradicts','extends','cites','related')",
+            name="knowledge_links_rel_chk",
+        ),
+        UniqueConstraint(
+            "from_id", "from_type", "to_id", "to_type", "rel",
+            name="knowledge_links_uq",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    from_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    from_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    to_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    rel: Mapped[str] = mapped_column(String(20), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

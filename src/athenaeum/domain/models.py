@@ -403,6 +403,44 @@ class CoCitationNeighborOut(BaseModel):
     shared_citations: int
 
 
+# ── Knowledge links ───────────────────────────────────────────────────────────
+
+_REF_TYPES = "^(paper|synthesis)$"
+_REL_TYPES = "^(supports|contradicts|extends|cites|related)$"
+
+
+class KnowledgeLinkCreate(BaseModel):
+    project_id: UUID
+    from_type: str = Field(pattern=_REF_TYPES)
+    from_id: UUID
+    to_type: str = Field(pattern=_REF_TYPES)
+    to_id: UUID
+    rel: str = Field(pattern=_REL_TYPES)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class KnowledgeLinkOut(BaseModel):
+    id: UUID
+    project_id: UUID
+    from_type: str
+    from_id: UUID
+    from_title: str
+    to_type: str
+    to_id: UUID
+    to_title: str
+    rel: str
+    note: str | None
+    created_by: UUID
+    created_at: datetime
+
+
+class KnowledgeRefOut(BaseModel):
+    id: UUID
+    ref_type: str   # 'paper' | 'synthesis'
+    title: str
+    subtitle: str | None  # year + venue for papers; status for syntheses
+
+
 # ── Datasets ──────────────────────────────────────────────────────────────────
 
 class DatasetCreate(BaseModel):
