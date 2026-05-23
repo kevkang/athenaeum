@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { papersApi, firstAuthor, type Paper, type SearchHit } from '../api/papers';
 import { projectsApi } from '../api/projects';
-
+import { MentionTextarea } from '../components/MentionTextarea';
+import { LinksPanel } from '../components/LinksPanel';
 import styles from './PapersView.module.css';
 
 // ── Ingest form ──────────────────────────────────────────────────────────────
@@ -382,10 +383,13 @@ function PaperDetail({
         </div>
       )}
 
-      <textarea
+      <MentionTextarea
         className={styles.abstractTextarea}
         value={editAbstract}
-        onChange={(e) => setEditAbstract(e.target.value)}
+        onChange={setEditAbstract}
+        projectId={projectId}
+        fromType="paper"
+        fromId={paper.id}
         placeholder="Abstract…"
         rows={5}
       />
@@ -402,6 +406,8 @@ function PaperDetail({
           </div>
         );
       })}
+
+      <LinksPanel projectId={projectId} refType="paper" refId={paper.id} />
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { synthesisApi, type Synthesis, type EvidenceFull, type Evaluation } from '../api/syntheses';
 import { projectsApi } from '../api/projects';
+import { MentionTextarea } from '../components/MentionTextarea';
+import { LinksPanel } from '../components/LinksPanel';
 import styles from './SynthesisView.module.css';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -156,8 +158,7 @@ function SynthesisTextEditor({ synthesis }: { synthesis: Synthesis }) {
     onSettled: () => setSaving(false),
   });
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
+  const handleChange = useCallback((val: string) => {
     setText(val);
     setSaving(true);
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -172,11 +173,15 @@ function SynthesisTextEditor({ synthesis }: { synthesis: Synthesis }) {
   return (
     <div className={styles.synthTextSection}>
       <div className={styles.sectionHeader}>Your synthesis</div>
-      <textarea
+      <MentionTextarea
         className={styles.synthTextArea}
         value={text}
         onChange={handleChange}
+        projectId={synthesis.project_id}
+        fromType="synthesis"
+        fromId={synthesis.id}
         placeholder="Write your synthesis here — your own reading of what the evidence establishes. This is your science, not the AI's."
+        rows={8}
       />
       <div className={`${styles.synthTextHint} ${saving ? styles.synthTextSaving : ''}`}>
         {saving ? 'Saving…' : 'Saved automatically'}
@@ -280,6 +285,12 @@ function SynthesisDetail({
       {synthesis.status === 'done' && (
         <SynthesisTextEditor synthesis={synthesis} />
       )}
+
+      <LinksPanel
+        projectId={synthesis.project_id}
+        refType="synthesis"
+        refId={synthesis.id}
+      />
     </div>
   );
 }
