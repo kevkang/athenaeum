@@ -1,4 +1,4 @@
-"""Annotations, questions, datasets, and per-passage evaluations (on syntheses)."""
+"""Annotations, datasets, and per-passage evaluations (on syntheses)."""
 from __future__ import annotations
 
 import uuid
@@ -15,16 +15,12 @@ from athenaeum.domain.models import (
     DatasetOut,
     EvaluationCreate,
     EvaluationOut,
-    QuestionCreate,
-    QuestionOut,
-    QuestionUpdate,
 )
 from athenaeum.storage.models import (
     Annotation,
     Dataset,
     Evaluation,
     ProjectMember,
-    Question,
     Synthesis,
 )
 
@@ -98,62 +94,6 @@ async def delete_annotation(
         raise HTTPException(status_code=403, detail="Not the annotation author")
     await session.delete(annotation)
     await session.commit()
-
-
-# ── Questions ──────────────────────────────────────────────────────────────────
-
-@router.post("/questions", response_model=QuestionOut, status_code=201)
-async def create_question(
-    payload: QuestionCreate,
-    session: SessionDep,
-    user: CurrentUserDep,
-) -> Question:
-    await _assert_member(session, payload.project_id, user.id)
-    question = Question(
-        id=uuid.uuid4(),
-        project_id=payload.project_id,
-        author_id=user.id,
-        body=payload.body,
-        attached_to=payload.attached_to,
-        status="open",
-    )
-    session.add(question)
-    await session.commit()
-    await session.refresh(question)
-    return question
-
-
-@router.get("/questions", response_model=list[QuestionOut])
-async def list_questions(
-    session: SessionDep,
-    user: CurrentUserDep,
-    project_id: uuid.UUID = Query(...),
-    status: str | None = Query(default=None),
-) -> list[Question]:
-    await _assert_member(session, project_id, user.id)
-    stmt = select(Question).where(Question.project_id == project_id)
-    if status is not None:
-        stmt = stmt.where(Question.status == status)
-    stmt = stmt.order_by(Question.created_at.desc())
-    rows = await session.scalars(stmt)
-    return list(rows)
-
-
-@router.patch("/questions/{question_id}", response_model=QuestionOut)
-async def update_question(
-    question_id: uuid.UUID,
-    payload: QuestionUpdate,
-    session: SessionDep,
-    user: CurrentUserDep,
-) -> Question:
-    question = await session.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="Question not found")
-    await _assert_member(session, question.project_id, user.id)
-    question.status = payload.status
-    await session.commit()
-    await session.refresh(question)
-    return question
 
 
 # ── Datasets ───────────────────────────────────────────────────────────────────

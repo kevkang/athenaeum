@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,10 +123,11 @@ async def create_brick(
     brick = Brick(
         id=uuid.uuid4(),
         project_id=payload.project_id,
+        author_id=user.id,
         type=payload.type,
         assertion=payload.assertion,
         built_from_synthesis_id=payload.built_from_synthesis_id,
-        status="draft",
+        status="open" if payload.type == "question" else "draft",
     )
     session.add(brick)
     _log_provenance(
@@ -172,6 +173,14 @@ async def update_brick(
     if payload.type is not None and payload.type != brick.type:
         brick.type = payload.type
         changed["type"] = payload.type
+    if payload.status is not None and payload.status != brick.status:
+        if brick.type != "question":
+            raise HTTPException(
+                status_code=400,
+                detail="Use POST /bricks/{id}/cement to change status of non-question bricks",
+            )
+        brick.status = payload.status
+        changed["status"] = payload.status
 
     if changed and was_cemented:
         brick.status = "draft"
@@ -381,11 +390,11 @@ async def list_bricks(
     project_id: uuid.UUID,
     session: SessionDep,
     user: CurrentUserDep,
+    type: str | None = Query(default=None),
 ) -> list[Brick]:
     await _assert_member(session, project_id, user.id)
-    rows = await session.scalars(
-        select(Brick)
-        .where(Brick.project_id == project_id)
-        .order_by(Brick.drafted_at.desc())
-    )
+    stmt = select(Brick).where(Brick.project_id == project_id)
+    if type is not None:
+        stmt = stmt.where(Brick.type == type)
+    rows = await session.scalars(stmt.order_by(Brick.drafted_at.desc()))
     return list(rows)

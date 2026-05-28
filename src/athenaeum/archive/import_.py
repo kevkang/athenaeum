@@ -21,7 +21,6 @@ from athenaeum.storage.models import (
     ProjectMember,
     ProjectPaper,
     ProvenanceLog,
-    Question,
     Synthesis,
     SynthesisEvidence,
 )
@@ -128,6 +127,7 @@ async def import_project(
         session.add(Brick(
             id=uuid.UUID(b["id"]),
             project_id=project_id,
+            author_id=_u(b.get("author_id")),
             type=b["type"],
             status=b["status"],
             assertion=b["assertion"],
@@ -164,15 +164,17 @@ async def import_project(
             body=a["body"],
         ))
 
-    # Questions
+    # Backward-compat: v1 archives exported questions as a separate list.
+    # Import them as bricks with type='question'.
     for q in data.get("questions", []):
-        session.add(Question(
+        session.add(Brick(
             id=uuid.UUID(q["id"]),
             project_id=project_id,
-            author_id=uuid.UUID(q["author_id"]),
-            body=q["body"],
+            author_id=_u(q.get("author_id")),
+            type="question",
             status=q.get("status", "open"),
-            attached_to=q.get("attached_to") or [],
+            assertion=q["body"],
+            built_from_synthesis_id=None,
         ))
 
     # Evaluations

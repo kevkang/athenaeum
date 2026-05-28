@@ -253,6 +253,9 @@ class EvaluationOut(BaseModel):
 
 # ── Bricks ────────────────────────────────────────────────────────────────────
 
+_QUESTION_STATUSES = {"open", "resolved", "wontfix"}
+
+
 class BrickCreate(BaseModel):
     project_id: UUID
     type: str = Field(min_length=1, max_length=50)
@@ -263,6 +266,7 @@ class BrickCreate(BaseModel):
 class BrickUpdate(BaseModel):
     assertion: str | None = None
     type: str | None = None
+    status: str | None = Field(default=None, pattern="^(open|resolved|wontfix)$")
 
 
 class RestsOnCreate(BaseModel):
@@ -298,6 +302,7 @@ class BrickOut(BaseModel):
 
     id: UUID
     project_id: UUID
+    author_id: UUID | None
     type: str
     status: str
     assertion: str
@@ -306,7 +311,7 @@ class BrickOut(BaseModel):
     built_from_synthesis_id: UUID | None
 
 
-# ── Annotations & questions ───────────────────────────────────────────────────
+# ── Annotations ───────────────────────────────────────────────────────────────
 
 class AnnotationCreate(BaseModel):
     project_id: UUID
@@ -324,28 +329,6 @@ class AnnotationOut(BaseModel):
     target_kind: str
     target_id: UUID
     body: str
-    created_at: datetime
-
-
-class QuestionCreate(BaseModel):
-    project_id: UUID
-    body: str = Field(min_length=1)
-    attached_to: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class QuestionUpdate(BaseModel):
-    status: str = Field(pattern="^(open|resolved|wontfix)$")
-
-
-class QuestionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    project_id: UUID
-    author_id: UUID
-    body: str
-    status: str
-    attached_to: Any
     created_at: datetime
 
 

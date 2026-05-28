@@ -297,12 +297,18 @@ class Dataset(Base):
 class Brick(Base):
     __tablename__ = "bricks"
     __table_args__ = (
-        CheckConstraint("status IN ('draft','cemented')", name="bricks_status_chk"),
+        CheckConstraint(
+            "status IN ('draft','cemented','open','resolved','wontfix')",
+            name="bricks_status_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
@@ -378,30 +384,6 @@ class Annotation(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-
-class Question(Base):
-    __tablename__ = "questions"
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('open','resolved','wontfix')", name="questions_status_chk"
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
-    )
-    author_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
-    body: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
-    attached_to: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
 
 
 class Evaluation(Base):

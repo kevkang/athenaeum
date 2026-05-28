@@ -99,7 +99,6 @@ SAMPLE: dict = {
             "created_at": "2026-05-17T03:00:00+00:00",
         }
     ],
-    "questions": [],
     "evaluations": [
         {
             "id": str(uuid.uuid4()),
@@ -162,7 +161,7 @@ def test_required_top_level_keys() -> None:
     required = {
         "ath_version", "exported_at", "project", "papers",
         "passages", "syntheses", "bricks", "annotations",
-        "questions", "evaluations", "datasets", "provenance",
+        "evaluations", "datasets", "provenance",
     }
     assert required.issubset(set(restored.keys()))
 

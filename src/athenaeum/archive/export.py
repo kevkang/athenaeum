@@ -22,7 +22,6 @@ from athenaeum.storage.models import (
     Project,
     ProjectPaper,
     ProvenanceLog,
-    Question,
     Synthesis,
     SynthesisEvidence,
 )
@@ -77,9 +76,6 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
 
     annotations = list(await session.scalars(
         select(Annotation).where(Annotation.project_id == project_id)
-    ))
-    questions = list(await session.scalars(
-        select(Question).where(Question.project_id == project_id)
     ))
     evaluations: list[Evaluation] = [] if not synthesis_ids else list(await session.scalars(
         select(Evaluation).where(Evaluation.synthesis_id.in_(synthesis_ids))
@@ -168,6 +164,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
         "bricks": [
             {
                 "id": str(b.id),
+                "author_id": _s(b.author_id),
                 "type": b.type,
                 "status": b.status,
                 "assertion": b.assertion,
@@ -202,17 +199,6 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "created_at": _iso(a.created_at),
             }
             for a in annotations
-        ],
-        "questions": [
-            {
-                "id": str(q.id),
-                "author_id": str(q.author_id),
-                "body": q.body,
-                "status": q.status,
-                "attached_to": q.attached_to,
-                "created_at": _iso(q.created_at),
-            }
-            for q in questions
         ],
         "evaluations": [
             {

@@ -4,14 +4,6 @@ import { useAuthStore } from '../store/auth';
 import ProjectSettingsModal from './ProjectSettingsModal';
 import styles from './AppShell.module.css';
 
-const VIEWS = [
-  { label: 'Papers', path: 'papers' },
-  { label: 'Knowledge', path: 'knowledge' },
-  { label: 'Graph', path: 'graph' },
-  { label: 'Synthesis', path: 'synthesis' },
-  { label: 'Export', path: 'export' },
-] as const;
-
 export default function AppShell() {
   const user = useAuthStore((s) => s.user);
   const location = useRouterState({ select: (s) => s.location });
@@ -19,8 +11,7 @@ export default function AppShell() {
 
   const projectMatch = location.pathname.match(/\/projects\/([^/]+)/);
   const projectId = projectMatch?.[1];
-
-  const activeView = VIEWS.find((v) => location.pathname.includes(`/${v.path}`));
+  const isExport = location.pathname.endsWith('/export');
 
   return (
     <div className={styles.app}>
@@ -31,31 +22,35 @@ export default function AppShell() {
         </Link>
 
         <div className={styles.chromeCenter}>
-          {projectId && activeView && (
+          {projectId && (
             <>
               <Link to="/projects" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
                 Projects
               </Link>
               <span className={styles.sep}>/</span>
-              <span className={styles.current}>{activeView.label}</span>
+              <span className={styles.current}>{isExport ? 'Export' : 'Workspace'}</span>
             </>
           )}
         </div>
 
         <div className={styles.chromeRight}>
-          {projectId && (
-            <div className={styles.viewSwitcher}>
-              {VIEWS.map((v) => (
-                <Link
-                  key={v.path}
-                  to={`/projects/$projectId/${v.path}` as '/projects/$projectId/papers'}
-                  params={{ projectId: projectId! }}
-                  className={`${styles.viewBtn} ${activeView?.path === v.path ? styles.viewBtnActive : ''}`}
-                >
-                  {v.label}
-                </Link>
-              ))}
-            </div>
+          {projectId && !isExport && (
+            <Link
+              to="/projects/$projectId/export"
+              params={{ projectId: projectId! }}
+              className={styles.viewBtn}
+            >
+              Export
+            </Link>
+          )}
+          {projectId && isExport && (
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId: projectId! }}
+              className={styles.viewBtn}
+            >
+              ← Workspace
+            </Link>
           )}
           {projectId && (
             <button

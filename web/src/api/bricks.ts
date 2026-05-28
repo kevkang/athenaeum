@@ -3,8 +3,9 @@ import { api } from './client';
 export interface Brick {
   id: string;
   project_id: string;
+  author_id: string | null;
   type: string;
-  status: 'draft' | 'cemented';
+  status: 'draft' | 'cemented' | 'open' | 'resolved' | 'wontfix';
   assertion: string;
   cemented_at: string | null;
   drafted_at: string;
@@ -38,7 +39,7 @@ export const bricksApi = {
       })
       .then((r) => r.data),
 
-  update: (id: string, fields: { assertion?: string; type?: string }) =>
+  update: (id: string, fields: { assertion?: string; type?: string; status?: string }) =>
     api.patch<Brick>(`/bricks/${id}`, fields).then((r) => r.data),
 
   delete: (id: string) => api.delete(`/bricks/${id}`),

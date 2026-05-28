@@ -3,6 +3,7 @@ import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bricksApi, type Brick, type BuildsOn, type RestsOn } from '../api/bricks';
 import { projectsApi } from '../api/projects';
+import { papersApi, type Paper } from '../api/papers';
 import styles from './KnowledgeView.module.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -158,6 +159,15 @@ function RestsOnSection({ brick, allBricks }: { brick: Brick; allBricks: Brick[]
     queryFn: () => bricksApi.restsOn(brick.id),
   });
 
+  const { data: papers } = useQuery({
+    queryKey: ['papers', brick.project_id],
+    queryFn: () => papersApi.listForProject(brick.project_id),
+  });
+
+  useEffect(() => {
+    setTargetId('');
+  }, [kind]);
+
   const addMutation = useMutation({
     mutationFn: () => bricksApi.addRestsOn(brick.id, kind, targetId.trim(), role.trim() || 'evidence'),
     onSuccess: () => {
@@ -172,12 +182,22 @@ function RestsOnSection({ brick, allBricks }: { brick: Brick; allBricks: Brick[]
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rests-on', brick.id] }),
   });
 
+  const linkedKeys = new Set((edges ?? []).map((e: RestsOn) => `${e.target_kind}:${e.target_id}`));
+  const availablePapers = (papers ?? []).filter((p) => !linkedKeys.has(`paper:${p.id}`));
+  const availableBricks = allBricks.filter((b) => b.id !== brick.id && !linkedKeys.has(`brick:${b.id}`));
+
+  const needsUUIDInput = kind === 'passage' || kind === 'dataset';
   const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId.trim());
+  const canAdd = needsUUIDInput ? isValidUUID : targetId.trim().length > 0;
 
   function labelFor(edge: RestsOn) {
     if (edge.target_kind === 'brick') {
       const found = allBricks.find((b) => b.id === edge.target_id);
       if (found) return found.assertion.slice(0, 80) + (found.assertion.length > 80 ? '…' : '');
+    }
+    if (edge.target_kind === 'paper') {
+      const found = (papers ?? []).find((p: Paper) => p.id === edge.target_id);
+      if (found) return found.title;
     }
     return edge.target_id;
   }
@@ -214,12 +234,42 @@ function RestsOnSection({ brick, allBricks }: { brick: Brick; allBricks: Brick[]
           <option value="brick">brick</option>
           <option value="dataset">dataset</option>
         </select>
-        <input
-          className={styles.targetIdInput}
-          value={targetId}
-          onChange={(e) => setTargetId(e.target.value)}
-          placeholder="target UUID"
-        />
+
+        {kind === 'paper' ? (
+          <select
+            className={styles.targetIdInput}
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          >
+            <option value="">— select paper —</option>
+            {availablePapers.map((p: Paper) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+        ) : kind === 'brick' ? (
+          <select
+            className={styles.targetIdInput}
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          >
+            <option value="">— select brick —</option>
+            {availableBricks.map((b) => (
+              <option key={b.id} value={b.id}>
+                [{b.type}] {b.assertion.slice(0, 70)}{b.assertion.length > 70 ? '…' : ''}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            className={styles.targetIdInput}
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            placeholder="target UUID"
+          />
+        )}
+
         <input
           className={styles.roleInput}
           value={role}
@@ -228,7 +278,7 @@ function RestsOnSection({ brick, allBricks }: { brick: Brick; allBricks: Brick[]
         />
         <button
           className={styles.addBtn}
-          disabled={!isValidUUID || addMutation.isPending}
+          disabled={!canAdd || addMutation.isPending}
           onClick={() => addMutation.mutate()}
         >
           + Add

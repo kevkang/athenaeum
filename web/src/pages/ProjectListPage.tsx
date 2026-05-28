@@ -92,7 +92,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       onClose();
-      navigate({ to: '/projects/$projectId/papers', params: { projectId: data.project_id } });
+      navigate({ to: '/projects/$projectId', params: { projectId: data.project_id } });
     },
   });
 
@@ -209,7 +209,7 @@ export default function ProjectListPage() {
             {projects.map((p: Project) => (
               <Link
                 key={p.id}
-                to="/projects/$projectId/papers"
+                to="/projects/$projectId"
                 params={{ projectId: p.id }}
                 className={styles.projectCard}
               >

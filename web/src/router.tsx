@@ -9,10 +9,7 @@ import { useAuthStore } from './store/auth';
 import LoginPage from './pages/LoginPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
-import PapersView from './pages/PapersView';
-import SynthesisView from './pages/SynthesisView';
-import KnowledgeView from './pages/KnowledgeView';
-import GraphView from './pages/GraphView';
+import WorkspaceView from './pages/WorkspaceView';
 import ExportView from './pages/ExportView';
 import AppShell from './components/AppShell';
 
@@ -46,28 +43,10 @@ const projectsRoute = createRoute({
   component: ProjectListPage,
 });
 
-const papersRoute = createRoute({
+const workspaceRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: '/projects/$projectId/papers',
-  component: PapersView,
-});
-
-const knowledgeRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/projects/$projectId/knowledge',
-  component: KnowledgeView,
-});
-
-const graphRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/projects/$projectId/graph',
-  component: GraphView,
-});
-
-const synthesisRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/projects/$projectId/synthesis',
-  component: SynthesisView,
+  path: '/projects/$projectId',
+  component: WorkspaceView,
 });
 
 const exportRoute = createRoute({
@@ -91,10 +70,7 @@ const routeTree = rootRoute.addChildren([
   authCallbackRoute,
   appRoute.addChildren([
     projectsRoute,
-    papersRoute,
-    knowledgeRoute,
-    graphRoute,
-    synthesisRoute,
+    workspaceRoute,
     exportRoute,
   ]),
 ]);
