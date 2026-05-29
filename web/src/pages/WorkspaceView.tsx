@@ -6,8 +6,7 @@ import dagre from 'cytoscape-dagre';
 import { api } from '../api/client';
 import { bricksApi, type Brick, type BuildsOn, type RestsOn } from '../api/bricks';
 import { papersApi, type Paper, type Section, type Sentence, firstAuthor } from '../api/papers';
-import { synthesisApi, type Synthesis, type EvidenceFull, type Evaluation } from '../api/syntheses';
-import { MentionTextarea } from '../components/MentionTextarea';
+import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
 import styles from './WorkspaceView.module.css';
 
 cytoscape.use(dagre);
