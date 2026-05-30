@@ -142,6 +142,10 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
       width: 1, 'line-style': 'dashed', 'line-color': '#3a3020',
       'target-arrow-color': '#5c4a30', 'target-arrow-shape': 'vee',
       'curve-style': 'bezier', 'arrow-scale': 0.8,
+      label: 'data(role)', 'font-size': '9px', color: '#7a6050',
+      'font-family': 'Inter, sans-serif', 'text-rotation': 'autorotate',
+      'text-margin-y': -7, 'text-background-color': '#0f0e0b',
+      'text-background-opacity': 1, 'text-background-padding': '2px',
     },
   },
   {
