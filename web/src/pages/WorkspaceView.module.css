@@ -208,6 +208,14 @@
 
 .paperTitle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.processingLabel {
+  font-size: 9px;
+  color: var(--accent-dim);
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
 .listHint { font-size: 11px; color: var(--text-faint); padding: 4px 2px; }
 
 .sidebarDivider {
@@ -380,12 +388,22 @@
 }
 
 /* ── Status dots ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
 .statusDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+.statusDot.processing {
+  background: var(--accent-dim);
+  animation: pulse 1.2s ease-in-out infinite;
 }
 .statusDot.full_text { background: var(--verified); }
 .statusDot.ghost     { background: var(--text-faint); }

@@ -156,6 +156,10 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
 
 // ── Left sidebar ──────────────────────────────────────────────────────────────
 
+function isProcessing(p: Paper) {
+  return p.status === 'ghost' && Date.now() - new Date(p.created_at).getTime() < 10 * 60 * 1000;
+}
+
 function LeftSidebar({
   projectId, papers, papersLoading, onSelectPaper, onBrickCreated,
 }: {
@@ -226,8 +230,9 @@ function LeftSidebar({
           {papersLoading && <div className={styles.listHint}>Loading…</div>}
           {papers.map((p) => (
             <button key={p.id} className={styles.paperItem} onClick={() => onSelectPaper(p.id)}>
-              <span className={`${styles.statusDot} ${styles[p.status]}`} />
+              <span className={`${styles.statusDot} ${isProcessing(p) ? styles.processing : styles[p.status]}`} />
               <span className={styles.paperTitle}>{trunc(p.title, 48)}</span>
+              {isProcessing(p) && <span className={styles.processingLabel}>processing</span>}
             </button>
           ))}
           {!papersLoading && papers.length === 0 && (
@@ -630,7 +635,12 @@ function BrickDetailPanel({
           ) : (
             <input className={styles.targetSelect} value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="UUID" />
           )}
-          <input className={styles.roleInput} value={role} onChange={(e) => setRole(e.target.value)} placeholder="role" />
+          <input className={styles.roleInput} value={role} onChange={(e) => setRole(e.target.value)} placeholder="role" list="brick-roles" />
+          <datalist id="brick-roles">
+            {['evidence', 'supports', 'contradicts', 'data', 'methodology', 'context'].map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
           <button
             className={styles.edgeAddBtn}
             disabled={!canAddRestsOn || addRestsOnMutation.isPending}
@@ -946,6 +956,15 @@ export default function WorkspaceView() {
   const { data: papers = [], isLoading: papersLoading } = useQuery({
     queryKey: ['papers', projectId],
     queryFn: () => papersApi.listForProject(projectId),
+    // Poll while any recently-added paper is still ghost (may still be processing)
+    refetchInterval: (q) => {
+      const data = q.state.data as Paper[] | undefined;
+      if (!data) return false;
+      const tenMinAgo = Date.now() - 10 * 60 * 1000;
+      return data.some(
+        (p) => p.status === 'ghost' && new Date(p.created_at).getTime() > tenMinAgo,
+      ) ? 3000 : false;
+    },
   });
 
   const handleSelectNode = useCallback((kind: 'paper' | 'brick', id: string) => {
@@ -963,53 +982,72 @@ export default function WorkspaceView() {
     setPanelMode({ kind: 'brick', id });
   }, []);
 
-  // Build / rebuild cytoscape whenever data or filters change
+  // Create cytoscape once on mount; event handlers are stable (setPanelMode is a stable setter)
   useEffect(() => {
-    if (!containerRef.current || !graph) return;
-    const elements = buildElements(graph, papers, showAllPapers, nodeFilter);
-
-    if (cyRef.current) { cyRef.current.destroy(); cyRef.current = null; }
-
+    if (!containerRef.current) return;
     const cy = cytoscape({
       container: containerRef.current,
-      elements,
+      elements: [],
       style: CY_STYLE,
-      layout: {
-        name: 'dagre',
-        rankDir: 'BT',
-        nodeSep: 40,
-        rankSep: 70,
-        padding: 50,
-      } as cytoscape.LayoutOptions,
+      layout: { name: 'preset' },
       wheelSensitivity: 0.3,
       minZoom: 0.08,
       maxZoom: 3,
     });
-
     cy.on('tap', 'node', (e: cytoscape.EventObject) => {
       const { id, kind } = e.target.data() as { id: string; kind: 'paper' | 'brick' };
       if (kind === 'paper' || kind === 'brick') setPanelMode({ kind, id });
     });
-
     cy.on('tap', (e: cytoscape.EventObject) => {
       if (e.target === cy) setPanelMode(null);
     });
-
     cyRef.current = cy;
+    return () => { cy.destroy(); cyRef.current = null; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Restore or apply pending selection
-    const pending = pendingSelectRef.current;
-    const activeId = pending?.id ?? (panelMode && panelMode.kind !== 'synthesis' ? panelMode.id : null);
-    if (activeId && cy.$(`#${activeId}`).length) {
-      cy.$(`#${activeId}`).select();
-      if (pending) {
-        cy.animate({ fit: { eles: cy.$(`#${activeId}`), padding: 80 }, duration: 300 });
-        pendingSelectRef.current = null;
+  // Incrementally sync elements; only re-layout when nodes are added or removed
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !graph) return;
+
+    const next = buildElements(graph, papers, showAllPapers, nodeFilter);
+    const nextIds = new Set(next.map((e) => e.data.id as string));
+    const toRemove = cy.elements().filter((e) => !nextIds.has(e.id()));
+    const toAdd = next.filter((e) => !cy.$(`#${e.data.id}`).length);
+    const prevNodeCount = cy.nodes().length;
+
+    cy.batch(() => {
+      toRemove.remove();
+      cy.add(toAdd);
+      next.forEach((e) => {
+        const el = cy.$(`#${e.data.id}`);
+        if (el.length) el.data(e.data);
+      });
+    });
+
+    const newNodeCount = cy.nodes().length;
+    if (newNodeCount !== prevNodeCount) {
+      const isFirst = prevNodeCount === 0;
+      const saved = isFirst ? null : { zoom: cy.zoom(), pan: { ...cy.pan() } };
+      cy.layout({ name: 'dagre', rankDir: 'BT', nodeSep: 40, rankSep: 70, padding: 50 } as cytoscape.LayoutOptions).run();
+      if (isFirst) {
+        cy.fit(undefined, 50);
+      } else if (saved && !pendingSelectRef.current) {
+        cy.zoom(saved.zoom);
+        cy.pan(saved.pan);
       }
     }
 
-    return () => { cy.destroy(); cyRef.current = null; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const pending = pendingSelectRef.current;
+    if (pending) {
+      const el = cy.$(`#${pending.id}`);
+      if (el.length) {
+        cy.elements().unselect();
+        el.select();
+        cy.animate({ fit: { eles: el, padding: 80 }, duration: 300 });
+        pendingSelectRef.current = null;
+      }
+    }
   }, [graph, papers, showAllPapers, nodeFilter]);
 
   const nodeCount = graph
