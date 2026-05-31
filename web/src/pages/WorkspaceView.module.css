@@ -474,7 +474,31 @@
   color: var(--text-muted);
   border-left: 2px solid var(--border);
   padding-left: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
+
+.sentenceText { flex: 1; }
+
+.sentenceCreateBtn {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  font-family: 'Inter', sans-serif;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s, border-color 0.12s, color 0.12s;
+  margin-top: 1px;
+}
+.sentence:hover .sentenceCreateBtn { opacity: 1; }
+.sentenceCreateBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.sentenceCreateBtn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .ghostNote {
   font-size: 11px;
@@ -812,6 +836,22 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+.evidenceCreateBtn {
+  margin-left: auto;
+  padding: 1px 7px;
+  font-size: 9.5px;
+  font-family: 'Inter', sans-serif;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.evidenceCreateBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.evidenceCreateBtn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ── Misc ── */
 .formError {

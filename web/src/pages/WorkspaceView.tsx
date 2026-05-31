@@ -270,7 +270,13 @@ function LeftSidebar({
 
 // ── Paper detail panel ────────────────────────────────────────────────────────
 
-function PaperDetailPanel({ paperId, projectId }: { paperId: string; projectId: string }) {
+function PaperDetailPanel({
+  paperId, projectId, onBrickCreated,
+}: {
+  paperId: string;
+  projectId: string;
+  onBrickCreated: (id: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [expandAbstract, setExpandAbstract] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -295,6 +301,18 @@ function PaperDetailPanel({ paperId, projectId }: { paperId: string; projectId: 
   const retryMutation = useMutation({
     mutationFn: () => papersApi.retry(paperId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  const createFromSentence = useMutation({
+    mutationFn: async (s: Sentence) => {
+      const brick = await bricksApi.create(projectId, 'claim', s.text);
+      await bricksApi.addRestsOn(brick.id, 'passage', s.id, 'evidence');
+      return brick;
+    },
+    onSuccess: (brick) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      onBrickCreated(brick.id);
+    },
   });
 
   if (!paper) return <div className={styles.panelLoading}>Loading…</div>;
@@ -355,7 +373,15 @@ function PaperDetailPanel({ paperId, projectId }: { paperId: string; projectId: 
                   {sentences
                     ?.filter((s: Sentence) => s.section_id === sec.id)
                     .map((s: Sentence) => (
-                      <div key={s.id} className={styles.sentence}>{s.text}</div>
+                      <div key={s.id} className={styles.sentence}>
+                        <span className={styles.sentenceText}>{s.text}</span>
+                        <button
+                          className={styles.sentenceCreateBtn}
+                          disabled={createFromSentence.isPending}
+                          onClick={() => createFromSentence.mutate(s)}
+                          title="Create brick from this passage"
+                        >→ brick</button>
+                      </div>
                     ))}
                 </div>
               )}
@@ -700,7 +726,7 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
   );
 }
 
-function SynthesisPanel({ projectId }: { projectId: string }) {
+function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBrickCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
   const [claim, setClaim] = useState('');
   const [corpus, setCorpus] = useState('project');
@@ -739,6 +765,18 @@ function SynthesisPanel({ projectId }: { projectId: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['syntheses', projectId] });
       setSelectedId(null);
+    },
+  });
+
+  const createFromEvidence = useMutation({
+    mutationFn: async (ev: EvidenceFull) => {
+      const brick = await bricksApi.create(projectId, 'claim', ev.verbatim_text, selectedId ?? undefined);
+      await bricksApi.addRestsOn(brick.id, 'passage', ev.passage_id, ev.role);
+      return brick;
+    },
+    onSuccess: (brick) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      onBrickCreated(brick.id);
     },
   });
 
@@ -833,6 +871,12 @@ function SynthesisPanel({ projectId }: { projectId: string }) {
                     {ev.paper_year && <span className={styles.evidenceYear}>{ev.paper_year}</span>}
                     <span className={styles.evidenceRole}>{ev.role}</span>
                     {ev.verified && <span className={styles.verifiedDot} title="verified" />}
+                    <button
+                      className={styles.evidenceCreateBtn}
+                      disabled={createFromEvidence.isPending}
+                      onClick={() => createFromEvidence.mutate(ev)}
+                      title="Promote to brick"
+                    >→ brick</button>
                   </div>
                   <div className={styles.evidenceQuote}>{ev.verbatim_text}</div>
                 </div>
@@ -848,13 +892,14 @@ function SynthesisPanel({ projectId }: { projectId: string }) {
 // ── Right panel ───────────────────────────────────────────────────────────────
 
 function RightPanel({
-  panelMode, onClose, projectId, papers, allBricks,
+  panelMode, onClose, projectId, papers, allBricks, onBrickCreated,
 }: {
   panelMode: Exclude<PanelMode, null>;
   onClose: () => void;
   projectId: string;
   papers: Paper[];
   allBricks: BrickNode[];
+  onBrickCreated: (id: string) => void;
 }) {
   return (
     <div className={styles.rightPanel}>
@@ -863,7 +908,7 @@ function RightPanel({
       </div>
       <div className={styles.rightPanelScroll}>
         {panelMode.kind === 'paper' && (
-          <PaperDetailPanel paperId={panelMode.id} projectId={projectId} />
+          <PaperDetailPanel paperId={panelMode.id} projectId={projectId} onBrickCreated={onBrickCreated} />
         )}
         {panelMode.kind === 'brick' && (
           <BrickDetailPanel
@@ -874,7 +919,7 @@ function RightPanel({
           />
         )}
         {panelMode.kind === 'synthesis' && (
-          <SynthesisPanel projectId={projectId} />
+          <SynthesisPanel projectId={projectId} onBrickCreated={onBrickCreated} />
         )}
       </div>
     </div>
@@ -1050,6 +1095,7 @@ export default function WorkspaceView() {
               projectId={projectId}
               papers={papers}
               allBricks={graph?.nodes ?? []}
+              onBrickCreated={handleBrickCreated}
             />
           )}
         </div>
