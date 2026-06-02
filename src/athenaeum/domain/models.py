@@ -120,6 +120,19 @@ class SentenceOut(BaseModel):
     char_end: int
 
 
+# ── OpenAlex discovery ────────────────────────────────────────────────────────
+
+class OpenAlexSearchResult(BaseModel):
+    openalex_id: str | None
+    doi: str | None
+    title: str
+    first_author: str | None
+    venue: str | None
+    year: int | None
+    abstract: str | None
+    cited_by_count: int
+
+
 # ── Search ────────────────────────────────────────────────────────────────────
 
 class SearchMode(str):

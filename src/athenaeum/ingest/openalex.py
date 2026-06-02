@@ -38,6 +38,59 @@ def _normalize_doi(doi: str) -> str:
     return doi
 
 
+@dataclass
+class OpenAlexSearchHit:
+    openalex_id: str | None
+    doi: str | None
+    title: str
+    first_author: str | None
+    venue: str | None
+    year: int | None
+    abstract: str | None
+    cited_by_count: int
+
+
+def search_works(
+    query: str,
+    per_page: int = 15,
+    email: str = "contact@athenaeum.app",
+) -> list[OpenAlexSearchHit]:
+    """Synchronous — run in a thread executor from async context."""
+    pyalex.config.email = email
+    works = Works().search(query).get(per_page=per_page)
+    hits: list[OpenAlexSearchHit] = []
+    for work in works:
+        raw_doi = work.get("doi")
+        doi = _normalize_doi(raw_doi) if raw_doi else None
+        openalex_id: str | None = work.get("id")
+        title: str = work.get("title") or ""
+        year: int | None = work.get("publication_year")
+        cited_by_count: int = work.get("cited_by_count") or 0
+
+        authorships = work.get("authorships") or []
+        first_author: str | None = None
+        if authorships:
+            first_author = (authorships[0].get("author") or {}).get("display_name")
+
+        primary = work.get("primary_location") or {}
+        source = primary.get("source") or {}
+        venue: str | None = source.get("display_name")
+
+        abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
+
+        hits.append(OpenAlexSearchHit(
+            openalex_id=openalex_id,
+            doi=doi,
+            title=title,
+            first_author=first_author,
+            venue=venue,
+            year=year,
+            abstract=abstract,
+            cited_by_count=cited_by_count,
+        ))
+    return hits
+
+
 def fetch_referenced_work_ids(openalex_id: str) -> list[str]:
     """Return OpenAlex work IDs referenced by the given work. Synchronous — run in executor."""
     try:

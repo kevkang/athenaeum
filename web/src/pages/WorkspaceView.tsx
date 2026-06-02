@@ -5,7 +5,7 @@ import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import { api } from '../api/client';
 import { bricksApi, type Brick, type BuildsOn, type RestsOn } from '../api/bricks';
-import { papersApi, type Paper, type Section, type Sentence, firstAuthor } from '../api/papers';
+import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, firstAuthor } from '../api/papers';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
 import styles from './WorkspaceView.module.css';
 
@@ -171,9 +171,17 @@ function LeftSidebar({
 }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState<'doi' | 'search'>('doi');
   const [doi, setDoi] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [brickType, setBrickType] = useState('claim');
   const [brickText, setBrickText] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const ingestMutation = useMutation({
     mutationFn: () => papersApi.ingest(doi.trim(), projectId),
@@ -184,6 +192,18 @@ function LeftSidebar({
     },
   });
 
+  const addFromSearchMutation = useMutation({
+    mutationFn: (d: string) => papersApi.ingest(d, projectId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  const { data: searchResults, isFetching: searchFetching } = useQuery({
+    queryKey: ['openalex-search', debouncedQuery],
+    queryFn: () => papersApi.searchOpenalex(debouncedQuery),
+    enabled: debouncedQuery.length >= 3,
+    staleTime: 60_000,
+  });
+
   const createBrickMutation = useMutation({
     mutationFn: () => bricksApi.create(projectId, brickType, brickText.trim()),
     onSuccess: (brick) => {
@@ -192,6 +212,8 @@ function LeftSidebar({
       onBrickCreated(brick.id);
     },
   });
+
+  const alreadyInProject = new Set(papers.map((p) => p.doi).filter(Boolean) as string[]);
 
   return (
     <aside className={styles.sidebar}>
@@ -206,22 +228,77 @@ function LeftSidebar({
 
         {addOpen && (
           <div className={styles.addPaperForm}>
-            <input
-              className={styles.doiInput}
-              value={doi}
-              onChange={(e) => setDoi(e.target.value)}
-              placeholder="DOI  e.g. 10.xxxx/xxxx"
-              onKeyDown={(e) => e.key === 'Enter' && doi.trim() && ingestMutation.mutate()}
-            />
-            <button
-              className={styles.ingestBtn}
-              disabled={!doi.trim() || ingestMutation.isPending}
-              onClick={() => ingestMutation.mutate()}
-            >
-              {ingestMutation.isPending ? '…' : 'Add'}
-            </button>
-            {ingestMutation.error && (
-              <div className={styles.formError}>{String((ingestMutation.error as Error).message)}</div>
+            <div className={styles.addModeTabs}>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'doi' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('doi')}
+              >DOI</button>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'search' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('search')}
+              >Search</button>
+            </div>
+
+            {addMode === 'doi' && (
+              <>
+                <input
+                  className={styles.doiInput}
+                  value={doi}
+                  onChange={(e) => setDoi(e.target.value)}
+                  placeholder="DOI  e.g. 10.xxxx/xxxx"
+                  onKeyDown={(e) => e.key === 'Enter' && doi.trim() && ingestMutation.mutate()}
+                />
+                <button
+                  className={styles.ingestBtn}
+                  disabled={!doi.trim() || ingestMutation.isPending}
+                  onClick={() => ingestMutation.mutate()}
+                >
+                  {ingestMutation.isPending ? '…' : 'Add'}
+                </button>
+                {ingestMutation.error && (
+                  <div className={styles.formError}>{String((ingestMutation.error as Error).message)}</div>
+                )}
+              </>
+            )}
+
+            {addMode === 'search' && (
+              <>
+                <input
+                  className={styles.doiInput}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Title, topic, or keywords…"
+                  autoFocus
+                />
+                {searchFetching && <div className={styles.searchHint}>Searching…</div>}
+                {searchResults && searchResults.length === 0 && !searchFetching && debouncedQuery.length >= 3 && (
+                  <div className={styles.searchHint}>No results</div>
+                )}
+                {searchResults && searchResults.length > 0 && (
+                  <div className={styles.searchResults}>
+                    {searchResults.map((r: OpenAlexResult) => {
+                      const inProject = r.doi ? alreadyInProject.has(r.doi) : false;
+                      return (
+                        <div key={r.openalex_id ?? r.doi ?? r.title} className={styles.searchResultItem}>
+                          <div className={styles.searchResultTitle}>{r.title}</div>
+                          <div className={styles.searchResultMeta}>
+                            {[r.first_author && `${r.first_author} et al.`, r.year, r.venue].filter(Boolean).join(' · ')}
+                            {r.cited_by_count > 0 && <span className={styles.citedBy}> · {r.cited_by_count.toLocaleString()} citations</span>}
+                          </div>
+                          <button
+                            className={styles.searchResultAddBtn}
+                            disabled={!r.doi || inProject || addFromSearchMutation.isPending}
+                            title={!r.doi ? 'No DOI available' : inProject ? 'Already in project' : 'Add to project'}
+                            onClick={() => r.doi && addFromSearchMutation.mutate(r.doi)}
+                          >
+                            {inProject ? '✓' : '+'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -303,22 +380,70 @@ function PaperDetailPanel({
     enabled: !!openSection,
   });
 
+  const passagesRef = useRef<HTMLDivElement>(null);
+  const selectionTipBtnRef = useRef<HTMLButtonElement>(null);
+  const [selectionTip, setSelectionTip] = useState<{
+    text: string;
+    sentenceId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   const retryMutation = useMutation({
     mutationFn: () => papersApi.retry(paperId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
   });
 
   const createFromSentence = useMutation({
-    mutationFn: async (s: Sentence) => {
-      const brick = await bricksApi.create(projectId, 'claim', s.text);
-      await bricksApi.addRestsOn(brick.id, 'passage', s.id, 'evidence');
+    mutationFn: async ({ text, sentenceId }: { text: string; sentenceId: string }) => {
+      const brick = await bricksApi.create(projectId, 'claim', text);
+      await bricksApi.addRestsOn(brick.id, 'passage', sentenceId, 'evidence');
       return brick;
     },
     onSuccess: (brick) => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      setSelectionTip(null);
       onBrickCreated(brick.id);
     },
   });
+
+  useEffect(() => {
+    const container = passagesRef.current;
+    if (!container) return;
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (selectionTipBtnRef.current?.contains(e.target as Node)) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { setSelectionTip(null); return; }
+      const text = sel.toString().trim();
+      if (!text) { setSelectionTip(null); return; }
+      let node: Node | null = sel.anchorNode;
+      let sentenceId: string | null = null;
+      while (node) {
+        if (node instanceof Element && (node as HTMLElement).dataset.sentenceId) {
+          sentenceId = (node as HTMLElement).dataset.sentenceId!;
+          break;
+        }
+        node = node.parentElement;
+      }
+      if (!sentenceId) { setSelectionTip(null); return; }
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setSelectionTip({ text, sentenceId, x: rect.left + rect.width / 2, y: rect.bottom + 6 });
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (selectionTipBtnRef.current?.contains(e.target as Node)) return;
+      setSelectionTip(null);
+    };
+
+    container.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      container.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, []);
 
   if (!paper) return <div className={styles.panelLoading}>Loading…</div>;
 
@@ -362,7 +487,7 @@ function PaperDetailPanel({
       )}
 
       {paper.status === 'full_text' && sections && sections.length > 0 && (
-        <div className={styles.sectionsSection}>
+        <div className={styles.sectionsSection} ref={passagesRef}>
           <div className={styles.panelSectionLabel}>Passages</div>
           {sections.map((sec: Section) => (
             <div key={sec.id} className={styles.sectionItem}>
@@ -378,12 +503,12 @@ function PaperDetailPanel({
                   {sentences
                     ?.filter((s: Sentence) => s.section_id === sec.id)
                     .map((s: Sentence) => (
-                      <div key={s.id} className={styles.sentence}>
+                      <div key={s.id} className={styles.sentence} data-sentence-id={s.id}>
                         <span className={styles.sentenceText}>{s.text}</span>
                         <button
                           className={styles.sentenceCreateBtn}
                           disabled={createFromSentence.isPending}
-                          onClick={() => createFromSentence.mutate(s)}
+                          onClick={() => createFromSentence.mutate({ text: s.text, sentenceId: s.id })}
                           title="Create brick from this passage"
                         >→ brick</button>
                       </div>
@@ -399,6 +524,19 @@ function PaperDetailPanel({
         <div className={styles.ghostNote}>
           Full text not available. Add a PDF to see passages.
         </div>
+      )}
+
+      {selectionTip && (
+        <button
+          ref={selectionTipBtnRef}
+          className={styles.selectionTooltip}
+          style={{ left: selectionTip.x, top: selectionTip.y }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => createFromSentence.mutate({ text: selectionTip.text, sentenceId: selectionTip.sentenceId })}
+          disabled={createFromSentence.isPending}
+        >
+          → brick
+        </button>
       )}
     </div>
   );

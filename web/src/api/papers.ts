@@ -52,6 +52,17 @@ export interface SearchResponse {
   hits: SearchHit[];
 }
 
+export interface OpenAlexResult {
+  openalex_id: string | null;
+  doi: string | null;
+  title: string;
+  first_author: string | null;
+  venue: string | null;
+  year: number | null;
+  abstract: string | null;
+  cited_by_count: number;
+}
+
 export function firstAuthor(authors: unknown): string {
   if (!Array.isArray(authors) || authors.length === 0) return '';
   const a = authors[0];
@@ -106,6 +117,9 @@ export const papersApi = {
 
   retry: (paperId: string) =>
     api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
+
+  searchOpenalex: (q: string, perPage = 15) =>
+    api.get<OpenAlexResult[]>('/papers/search', { params: { q, per_page: perPage } }).then((r) => r.data),
 
   search: (query: string, projectId: string, mode = 'hybrid', topK = 20) =>
     api

@@ -518,6 +518,25 @@
 .sentenceCreateBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
 .sentenceCreateBtn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+.selectionTooltip {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 300;
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: background 0.1s;
+}
+.selectionTooltip:hover { background: var(--bg-hover); }
+.selectionTooltip:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .ghostNote {
   font-size: 11px;
   color: var(--text-faint);
@@ -870,6 +889,82 @@
 }
 .evidenceCreateBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
 .evidenceCreateBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Add-paper mode tabs ── */
+.addModeTabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px;
+}
+.addModeTab {
+  flex: 1;
+  padding: 3px 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.addModeTab:hover { color: var(--text-muted); }
+.addModeTabActive { background: var(--bg-hover); color: var(--text); }
+
+/* ── OpenAlex search results ── */
+.searchHint {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 4px 0;
+}
+.searchResults {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.searchResultItem {
+  position: relative;
+  padding: 7px 32px 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.searchResultItem:last-child { border-bottom: none; }
+.searchResultTitle {
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+.searchResultMeta {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  line-height: 1.3;
+}
+.citedBy { color: var(--text-faint); }
+.searchResultAddBtn {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.searchResultAddBtn:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+.searchResultAddBtn:disabled { opacity: 0.35; cursor: default; }
 
 /* ── Misc ── */
 .formError {

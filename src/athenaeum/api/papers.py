@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
-from athenaeum.domain.models import PaperIngest, PaperOut, PaperUpdate, SectionOut, SentenceOut
+from athenaeum.domain.models import OpenAlexSearchResult, PaperIngest, PaperOut, PaperUpdate, SectionOut, SentenceOut
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import Paper, PaperSection, PaperSentence, Project, ProjectMember, ProjectPaper
 
@@ -322,6 +322,35 @@ async def retry_ingest(
         log.warning("papers.retry_enqueue_failed", paper_id=str(paper.id), error=str(exc))
 
     return paper
+
+
+@router.get("/search", response_model=list[OpenAlexSearchResult])
+async def search_openalex(
+    q: str = Query(min_length=3, max_length=500),
+    per_page: int = Query(default=15, ge=1, le=25),
+    user: CurrentUserDep = ...,
+) -> list[OpenAlexSearchResult]:
+    from athenaeum.ingest.openalex import search_works
+
+    loop = asyncio.get_running_loop()
+    try:
+        hits = await loop.run_in_executor(None, search_works, q, per_page)
+    except Exception as exc:
+        log.warning("papers.openalex_search_failed", q=q, error=str(exc))
+        raise HTTPException(status_code=502, detail="OpenAlex search failed")
+    return [
+        OpenAlexSearchResult(
+            openalex_id=h.openalex_id,
+            doi=h.doi,
+            title=h.title,
+            first_author=h.first_author,
+            venue=h.venue,
+            year=h.year,
+            abstract=h.abstract,
+            cited_by_count=h.cited_by_count,
+        )
+        for h in hits
+    ]
 
 
 @router.get("/{paper_id}", response_model=PaperOut)
