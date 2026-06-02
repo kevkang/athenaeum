@@ -31,6 +31,10 @@ type NodeFilter = 'all' | 'questions' | 'bricks';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function trunc(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function stripHtml(s: string) { return s.replace(/<[^>]*>/g, ''); }
+function safeHtml(s: string): { __html: string } {
+  return { __html: s.replace(/<(?!\/?(?:i|em|b|strong|sup|sub)\b)[^>]*>/gi, '') };
+}
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -64,7 +68,7 @@ function buildElements(
 
   return [
     ...papersToShow.map((p) => ({
-      data: { id: p.id, kind: 'paper', label: trunc(p.title, 52), status: p.status },
+      data: { id: p.id, kind: 'paper', label: trunc(stripHtml(p.title), 52), status: p.status },
     })),
     ...visibleBricks.map((n) => ({
       data: { id: n.id, kind: 'brick', label: trunc(n.assertion, 62), type: n.type, status: n.status },
@@ -280,7 +284,7 @@ function LeftSidebar({
                       const inProject = r.doi ? alreadyInProject.has(r.doi) : false;
                       return (
                         <div key={r.openalex_id ?? r.doi ?? r.title} className={styles.searchResultItem}>
-                          <div className={styles.searchResultTitle}>{r.title}</div>
+                          <div className={styles.searchResultTitle} dangerouslySetInnerHTML={safeHtml(r.title)} />
                           <div className={styles.searchResultMeta}>
                             {[r.first_author && `${r.first_author} et al.`, r.year, r.venue].filter(Boolean).join(' · ')}
                             {r.cited_by_count > 0 && <span className={styles.citedBy}> · {r.cited_by_count.toLocaleString()} citations</span>}
@@ -308,7 +312,7 @@ function LeftSidebar({
           {papers.map((p) => (
             <button key={p.id} className={styles.paperItem} onClick={() => onSelectPaper(p.id)}>
               <span className={`${styles.statusDot} ${isProcessing(p) ? styles.processing : styles[p.status]}`} />
-              <span className={styles.paperTitle}>{trunc(p.title, 48)}</span>
+              <span className={styles.paperTitle}>{trunc(stripHtml(p.title), 48)}</span>
               {isProcessing(p) && <span className={styles.processingLabel}>processing</span>}
             </button>
           ))}
@@ -453,7 +457,7 @@ function PaperDetailPanel({
   return (
     <div className={styles.panelContent}>
       <div className={styles.panelKind}>paper</div>
-      <div className={styles.panelTitle}>{paper.title}</div>
+      <div className={styles.panelTitle} dangerouslySetInnerHTML={safeHtml(paper.title)} />
       {meta && <div className={styles.panelMeta}>{meta}</div>}
 
       <div className={styles.paperStatusRow}>
@@ -760,7 +764,7 @@ function BrickDetailPanel({
             <select className={styles.targetSelect} value={targetId} onChange={(e) => setTargetId(e.target.value)}>
               <option value="">— select —</option>
               {availablePapers.map((p) => (
-                <option key={p.id} value={p.id}>{trunc(p.title, 40)}</option>
+                <option key={p.id} value={p.id}>{trunc(stripHtml(p.title), 40)}</option>
               ))}
             </select>
           ) : targetKind === 'brick' ? (
