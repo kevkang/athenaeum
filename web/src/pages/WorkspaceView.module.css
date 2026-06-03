@@ -542,6 +542,38 @@
   color: var(--text-faint);
   font-style: italic;
   padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.paperActionsRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.uploadFileInput {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+}
+.uploadFileInput::file-selector-button {
+  padding: 4px 10px;
+  margin-right: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.uploadFileInput::file-selector-button:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 /* ── Brick detail ── */

@@ -175,12 +175,15 @@ function LeftSidebar({
 }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
-  const [addMode, setAddMode] = useState<'doi' | 'search'>('doi');
+  const [addMode, setAddMode] = useState<'doi' | 'search' | 'upload'>('doi');
   const [doi, setDoi] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [brickType, setBrickType] = useState('claim');
   const [brickText, setBrickText] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 350);
@@ -199,6 +202,22 @@ function LeftSidebar({
   const addFromSearchMutation = useMutation({
     mutationFn: (d: string) => papersApi.ingest(d, projectId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error('No file selected');
+      return papersApi.upload(uploadFile, projectId, {
+        title: uploadTitle.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setUploadFile(null);
+      setUploadTitle('');
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+      setAddOpen(false);
+    },
   });
 
   const { data: searchResults, isFetching: searchFetching } = useQuery({
@@ -241,6 +260,10 @@ function LeftSidebar({
                 className={`${styles.addModeTab} ${addMode === 'search' ? styles.addModeTabActive : ''}`}
                 onClick={() => setAddMode('search')}
               >Search</button>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'upload' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('upload')}
+              >Upload</button>
             </div>
 
             {addMode === 'doi' && (
@@ -301,6 +324,34 @@ function LeftSidebar({
                       );
                     })}
                   </div>
+                )}
+              </>
+            )}
+
+            {addMode === 'upload' && (
+              <>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept=".pdf,.txt,application/pdf,text/plain"
+                  className={styles.uploadFileInput}
+                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                />
+                <input
+                  className={styles.doiInput}
+                  value={uploadTitle}
+                  onChange={(e) => setUploadTitle(e.target.value)}
+                  placeholder="Title (optional)"
+                />
+                <button
+                  className={styles.ingestBtn}
+                  disabled={!uploadFile || uploadMutation.isPending}
+                  onClick={() => uploadMutation.mutate()}
+                >
+                  {uploadMutation.isPending ? 'Uploading…' : 'Upload'}
+                </button>
+                {uploadMutation.error && (
+                  <div className={styles.formError}>{String((uploadMutation.error as Error).message)}</div>
                 )}
               </>
             )}
@@ -398,6 +449,16 @@ function PaperDetailPanel({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
   });
 
+  const reuploadInputRef = useRef<HTMLInputElement>(null);
+  const reuploadMutation = useMutation({
+    mutationFn: (file: File) => papersApi.reupload(paperId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['paper', paperId] });
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      if (reuploadInputRef.current) reuploadInputRef.current.value = '';
+    },
+  });
+
   const createFromSentence = useMutation({
     mutationFn: async ({ text, sentenceId }: { text: string; sentenceId: string }) => {
       const brick = await bricksApi.create(projectId, 'claim', text);
@@ -467,14 +528,34 @@ function PaperDetailPanel({
       </div>
 
       {paper.status === 'failed' && (
-        <button
-          className={styles.retryBtn}
-          onClick={() => retryMutation.mutate()}
-          disabled={retryMutation.isPending}
-        >
-          {retryMutation.isPending ? 'Retrying…' : 'Retry ingestion'}
-        </button>
+        <div className={styles.paperActionsRow}>
+          <button
+            className={styles.retryBtn}
+            onClick={() => retryMutation.mutate()}
+            disabled={retryMutation.isPending}
+          >
+            {retryMutation.isPending ? 'Retrying…' : 'Retry ingestion'}
+          </button>
+          <button
+            className={styles.retryBtn}
+            onClick={() => reuploadInputRef.current?.click()}
+            disabled={reuploadMutation.isPending}
+          >
+            {reuploadMutation.isPending ? 'Uploading…' : 'Upload PDF'}
+          </button>
+        </div>
       )}
+
+      <input
+        ref={reuploadInputRef}
+        type="file"
+        accept=".pdf,.txt,application/pdf,text/plain"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) reuploadMutation.mutate(f);
+        }}
+      />
 
       {paper.abstract && (
         <div className={styles.abstractSection}>
@@ -526,7 +607,17 @@ function PaperDetailPanel({
 
       {paper.status === 'ghost' && (
         <div className={styles.ghostNote}>
-          Full text not available. Add a PDF to see passages.
+          <div>Full text not available. Add a PDF to see passages.</div>
+          <button
+            className={styles.retryBtn}
+            onClick={() => reuploadInputRef.current?.click()}
+            disabled={reuploadMutation.isPending}
+          >
+            {reuploadMutation.isPending ? 'Uploading…' : 'Upload PDF'}
+          </button>
+          {reuploadMutation.error && (
+            <div className={styles.formError}>{String((reuploadMutation.error as Error).message)}</div>
+          )}
         </div>
       )}
 
