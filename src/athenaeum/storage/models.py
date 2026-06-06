@@ -412,18 +412,40 @@ class Evaluation(Base):
     )
 
 
-class ProvenanceLog(Base):
-    __tablename__ = "provenance_log"
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("project_id", "project_seq", name="events_project_seq_uq"),
+        Index("events_entity_idx", "entity_kind", "entity_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
+    project_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    prev_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ProjectEventSeq(Base):
+    __tablename__ = "project_event_seq"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    next_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
 
 class CitationEdge(Base):

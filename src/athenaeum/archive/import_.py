@@ -20,7 +20,8 @@ from athenaeum.storage.models import (
     Project,
     ProjectMember,
     ProjectPaper,
-    ProvenanceLog,
+    Event,
+    ProjectEventSeq,
     Synthesis,
     SynthesisEvidence,
 )
@@ -198,14 +199,25 @@ async def import_project(
             storage_uri=d.get("storage_uri"),
         ))
 
-    # Provenance log
-    for p in data.get("provenance", []):
-        session.add(ProvenanceLog(
+    # Event log (preserves project_seq when present; otherwise assigns sequentially)
+    raw_events = data.get("provenance", [])
+    next_seq = 1
+    for p in raw_events:
+        seq = p.get("project_seq") or next_seq
+        next_seq = max(next_seq, seq + 1)
+        session.add(Event(
             id=uuid.UUID(p["id"]),
             project_id=project_id,
+            project_seq=seq,
+            actor_id=_u(p.get("actor_id")),
             kind=p["kind"],
+            entity_kind=p.get("entity_kind") or "unknown",
+            entity_id=_u(p.get("entity_id")),
+            prev_json=p.get("prev_json"),
             payload_json=p["payload_json"],
         ))
+    if raw_events:
+        session.add(ProjectEventSeq(project_id=project_id, next_seq=next_seq))
 
     await session.commit()
     return project_id

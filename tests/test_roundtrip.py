@@ -114,7 +114,7 @@ SAMPLE: dict = {
     "provenance": [
         {
             "id": str(uuid.uuid4()),
-            "kind": "brick_cemented",
+            "kind": "brick.cemented",
             "payload_json": {"brick_id": _BRICK_ID},
             "created_at": "2026-05-17T02:00:00+00:00",
         }

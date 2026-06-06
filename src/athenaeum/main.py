@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from athenaeum import __version__
-from athenaeum.api import annotations, archive, auth, bricks, graph, links, members, papers, projects, public, search, syntheses
+from athenaeum.api import annotations, archive, auth, bricks, graph, history, links, members, papers, projects, public, search, syntheses
 from athenaeum.config import get_settings
 
 log = structlog.get_logger()
@@ -68,6 +68,7 @@ app.include_router(archive.router)
 app.include_router(members.router)
 app.include_router(public.router)
 app.include_router(links.router)
+app.include_router(history.router)
 
 
 @app.get("/health")

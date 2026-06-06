@@ -21,7 +21,7 @@ from athenaeum.storage.models import (
     Passage,
     Project,
     ProjectPaper,
-    ProvenanceLog,
+    Event,
     Synthesis,
     SynthesisEvidence,
 )
@@ -84,9 +84,9 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
         select(Dataset).where(Dataset.project_id == project_id)
     ))
     provenance = list(await session.scalars(
-        select(ProvenanceLog)
-        .where(ProvenanceLog.project_id == project_id)
-        .order_by(ProvenanceLog.created_at)
+        select(Event)
+        .where(Event.project_id == project_id)
+        .order_by(Event.project_seq)
     ))
 
     # Group by parent for embedding
@@ -225,7 +225,12 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
         "provenance": [
             {
                 "id": str(p.id),
+                "project_seq": p.project_seq,
+                "actor_id": str(p.actor_id) if p.actor_id else None,
                 "kind": p.kind,
+                "entity_kind": p.entity_kind,
+                "entity_id": str(p.entity_id) if p.entity_id else None,
+                "prev_json": p.prev_json,
                 "payload_json": p.payload_json,
                 "created_at": _iso(p.created_at),
             }

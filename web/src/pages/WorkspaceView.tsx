@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { bricksApi, type Brick, type BuildsOn, type RestsOn } from '../api/bricks';
 import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, firstAuthor } from '../api/papers';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
+import { historyApi, type EventOut } from '../api/history';
 import styles from './WorkspaceView.module.css';
 
 cytoscape.use(dagre);
@@ -25,7 +26,12 @@ interface BuildsOnEdge { brick_id: string; parent_brick_id: string; ord: number 
 interface RestsOnEdge  { brick_id: string; target_kind: string; target_id: string; role: string }
 interface BrickGraph   { nodes: BrickNode[]; builds_on: BuildsOnEdge[]; rests_on: RestsOnEdge[] }
 
-type PanelMode = null | { kind: 'paper'; id: string } | { kind: 'brick'; id: string } | { kind: 'synthesis' };
+type PanelMode =
+  | null
+  | { kind: 'paper'; id: string }
+  | { kind: 'brick'; id: string }
+  | { kind: 'synthesis' }
+  | { kind: 'history' };
 type NodeFilter = 'all' | 'questions' | 'bricks';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1132,6 +1138,133 @@ function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBr
   );
 }
 
+// ── History panel ─────────────────────────────────────────────────────────────
+
+function formatRelative(iso: string) {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function eventSummary(ev: EventOut): string {
+  const p = ev.payload_json as Record<string, unknown>;
+  switch (ev.kind) {
+    case 'brick.created':
+      return `created ${typeof p.type === 'string' ? p.type : 'brick'}: ${trunc(String(p.assertion ?? ''), 60)}`;
+    case 'brick.edited': {
+      const undoes = p.undoes_seq;
+      if (typeof undoes === 'number') return `undid #${undoes}: ${trunc(String(p.assertion ?? ''), 60)}`;
+      return `edited: ${trunc(String(p.assertion ?? ''), 60)}`;
+    }
+    case 'brick.cemented':
+      return `cemented: ${trunc(String(p.assertion_preview ?? ''), 60)}`;
+    case 'brick.deleted':
+      return `deleted: ${trunc(String(p.assertion_preview ?? ''), 60)}`;
+    default:
+      return ev.kind;
+  }
+}
+
+function HistoryPanel({
+  projectId, onSelectBrick,
+}: {
+  projectId: string;
+  onSelectBrick: (id: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [undoError, setUndoError] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['history', projectId],
+    queryFn: () => historyApi.list(projectId, { limit: 50 }),
+    refetchInterval: 3000,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (seq: number) => historyApi.undo(projectId, seq),
+    onSuccess: () => {
+      setUndoError(null);
+      queryClient.invalidateQueries({ queryKey: ['history', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['brick'] });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setUndoError(e.response?.data?.detail ?? e.message ?? 'Undo failed');
+    },
+  });
+
+  const events = data?.events ?? [];
+  const undoneSeqs = new Set(
+    events
+      .map((e) => e.payload_json.undoes_seq)
+      .filter((s): s is number => typeof s === 'number'),
+  );
+
+  return (
+    <div className={styles.panelContent}>
+      <div className={styles.panelKind}>history</div>
+
+      {undoError && (
+        <div className={styles.formError} style={{ marginBottom: 8 }}>{undoError}</div>
+      )}
+
+      {isLoading && <div className={styles.panelLoading}>Loading…</div>}
+
+      {!isLoading && events.length === 0 && (
+        <div className={styles.panelLoading}>No events yet.</div>
+      )}
+
+      <div className={styles.historyList}>
+        {events.map((ev) => {
+          const isUndone = undoneSeqs.has(ev.project_seq);
+          const isUndoable = ev.kind === 'brick.edited' && !isUndone;
+          return (
+            <div
+              key={ev.id}
+              className={`${styles.historyItem} ${isUndone ? styles.historyItemUndone : ''}`}
+            >
+              <div className={styles.historyMeta}>
+                <span className={styles.historySeq}>#{ev.project_seq}</span>
+                <span className={styles.historyKind}>{ev.kind}</span>
+                <span className={styles.historyActor}>
+                  {ev.actor_display_name ?? 'unknown'}
+                </span>
+                <span className={styles.historyTime}>{formatRelative(ev.created_at)}</span>
+              </div>
+              <div className={styles.historySummary}>
+                {ev.entity_kind === 'brick' && ev.entity_id ? (
+                  <button
+                    className={styles.historyLink}
+                    onClick={() => onSelectBrick(ev.entity_id!)}
+                  >
+                    {eventSummary(ev)}
+                  </button>
+                ) : (
+                  <span>{eventSummary(ev)}</span>
+                )}
+                {isUndoable && (
+                  <button
+                    className={styles.historyUndoBtn}
+                    disabled={undoMutation.isPending}
+                    onClick={() => undoMutation.mutate(ev.project_seq)}
+                  >
+                    Undo
+                  </button>
+                )}
+                {isUndone && <span className={styles.historyUndoneLabel}>undone</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Right panel ───────────────────────────────────────────────────────────────
 
 function RightPanel({
@@ -1163,6 +1296,12 @@ function RightPanel({
         )}
         {panelMode.kind === 'synthesis' && (
           <SynthesisPanel projectId={projectId} onBrickCreated={onBrickCreated} />
+        )}
+        {panelMode.kind === 'history' && (
+          <HistoryPanel
+            projectId={projectId}
+            onSelectBrick={(id) => onBrickCreated(id)}
+          />
         )}
       </div>
     </div>
@@ -1327,6 +1466,12 @@ export default function WorkspaceView() {
         <span className={styles.countBadge}>{edgeCount} edge{edgeCount !== 1 ? 's' : ''}</span>
 
         <div style={{ marginLeft: 'auto' }} />
+        <button
+          className={`${styles.synthBtn} ${panelMode?.kind === 'history' ? styles.synthBtnActive : ''}`}
+          onClick={() => setPanelMode(panelMode?.kind === 'history' ? null : { kind: 'history' })}
+        >
+          History
+        </button>
         <button
           className={`${styles.synthBtn} ${panelMode?.kind === 'synthesis' ? styles.synthBtnActive : ''}`}
           onClick={() => setPanelMode(panelMode?.kind === 'synthesis' ? null : { kind: 'synthesis' })}

@@ -19,13 +19,13 @@ from athenaeum.domain.models import (
     RestsOnCreate,
     RestsOnOut,
 )
+from athenaeum.events import apply_event
 from athenaeum.storage.models import (
     Brick,
     BrickBuildsOn,
     BrickRestsOn,
     Project,
     ProjectMember,
-    ProvenanceLog,
 )
 
 log = structlog.get_logger()
@@ -93,22 +93,6 @@ async def _would_create_cycle(
     return result.fetchone() is not None
 
 
-def _log_provenance(
-    session: AsyncSession,
-    project_id: uuid.UUID,
-    kind: str,
-    payload: dict,
-) -> None:
-    session.add(
-        ProvenanceLog(
-            id=uuid.uuid4(),
-            project_id=project_id,
-            kind=kind,
-            payload_json=payload,
-        )
-    )
-
-
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=BrickOut, status_code=201)
@@ -130,11 +114,14 @@ async def create_brick(
         status="open" if payload.type == "question" else "draft",
     )
     session.add(brick)
-    _log_provenance(
+    await apply_event(
         session,
-        payload.project_id,
-        "brick_created",
-        {"brick_id": str(brick.id), "type": payload.type},
+        project_id=payload.project_id,
+        actor_id=user.id,
+        kind="brick.created",
+        entity_kind="brick",
+        entity_id=brick.id,
+        payload={"type": payload.type, "assertion": brick.assertion},
     )
     await session.commit()
     await session.refresh(brick)
@@ -165,6 +152,12 @@ async def update_brick(
     await _assert_member(session, brick.project_id, user.id)
 
     was_cemented = brick.status == "cemented"
+    prev = {
+        "assertion": brick.assertion,
+        "type": brick.type,
+        "status": brick.status,
+        "cemented_at": brick.cemented_at.isoformat() if brick.cemented_at else None,
+    }
     changed: dict = {}
 
     if payload.assertion is not None and payload.assertion != brick.assertion:
@@ -182,14 +175,24 @@ async def update_brick(
         brick.status = payload.status
         changed["status"] = payload.status
 
-    if changed and was_cemented:
-        brick.status = "draft"
-        brick.cemented_at = None
-        _log_provenance(
+    if changed:
+        if was_cemented:
+            brick.status = "draft"
+            brick.cemented_at = None
+        await apply_event(
             session,
-            brick.project_id,
-            "brick_uncemented",
-            {"brick_id": str(brick.id), "reason": "edited", "changed": list(changed)},
+            project_id=brick.project_id,
+            actor_id=user.id,
+            kind="brick.edited",
+            entity_kind="brick",
+            entity_id=brick.id,
+            prev=prev,
+            payload={
+                "assertion": brick.assertion,
+                "type": brick.type,
+                "status": brick.status,
+                "uncemented": was_cemented,
+            },
         )
 
     await session.commit()
@@ -210,11 +213,24 @@ async def delete_brick(
     if brick.status == "cemented":
         raise HTTPException(status_code=409, detail="Cannot delete a cemented brick")
     project_id = brick.project_id
-    _log_provenance(
+    await apply_event(
         session,
-        brick.project_id,
-        "brick_deleted",
-        {"brick_id": str(brick.id), "assertion_preview": brick.assertion[:100]},
+        project_id=brick.project_id,
+        actor_id=user.id,
+        kind="brick.deleted",
+        entity_kind="brick",
+        entity_id=brick.id,
+        prev={
+            "type": brick.type,
+            "status": brick.status,
+            "assertion": brick.assertion,
+            "author_id": str(brick.author_id) if brick.author_id else None,
+            "built_from_synthesis_id": (
+                str(brick.built_from_synthesis_id)
+                if brick.built_from_synthesis_id else None
+            ),
+        },
+        payload={"assertion_preview": brick.assertion[:100]},
     )
     await session.delete(brick)
     await session.commit()
@@ -238,11 +254,14 @@ async def cement_brick(
 
     brick.status = "cemented"
     brick.cemented_at = datetime.now(timezone.utc)
-    _log_provenance(
+    await apply_event(
         session,
-        brick.project_id,
-        "brick_cemented",
-        {"brick_id": str(brick.id), "assertion_preview": brick.assertion[:200]},
+        project_id=brick.project_id,
+        actor_id=user.id,
+        kind="brick.cemented",
+        entity_kind="brick",
+        entity_id=brick.id,
+        payload={"assertion_preview": brick.assertion[:200]},
     )
     await session.commit()
     await session.refresh(brick)
