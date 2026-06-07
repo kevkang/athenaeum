@@ -38,6 +38,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - certbot-webroot:/var/www/certbot
+      - /opt/athenaeum/previews:/usr/share/nginx/previews:ro
     depends_on:
       - api
     restart: always
