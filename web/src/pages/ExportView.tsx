@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { projectsApi } from '../api/projects';
+import { statementsApi } from '../api/statements';
 import styles from './ExportView.module.css';
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
@@ -81,7 +82,7 @@ function parseStats(text: string) {
     papers:    countSection('doi'),
     passages:  countSection('verbatim_text'),
     syntheses: countSection('claim_text'),
-    bricks:    countSection('assertion'),
+    statements: countSection('assertion'),
   };
 }
 
@@ -89,11 +90,20 @@ function parseStats(text: string) {
 
 export default function ExportView() {
   const { projectId } = useParams({ from: '/app/projects/$projectId/export' });
+  const queryClient = useQueryClient();
+  const [pendingDownload, setPendingDownload] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => projectsApi.get(projectId),
   });
+
+  const { data: statements } = useQuery({
+    queryKey: ['statements', projectId],
+    queryFn: () => statementsApi.list(projectId),
+  });
+
+  const unlockedStatements = (statements ?? []).filter((s) => s.status === 'draft');
 
   const { data: yamlText, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ['export', projectId],
@@ -112,9 +122,8 @@ export default function ExportView() {
     ? `${project.title.slice(0, 40).replace(/[\s/]/g, '_')}.ath`
     : 'project.ath';
 
-  const handleDownload = useCallback(async () => {
-    if (!yamlText) return;
-    const blob = new Blob([yamlText], { type: 'application/x-yaml' });
+  const downloadNow = useCallback((text: string) => {
+    const blob = new Blob([text], { type: 'application/x-yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -123,7 +132,33 @@ export default function ExportView() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [yamlText, filename]);
+  }, [filename]);
+
+  const lockAllMutation = useMutation({
+    mutationFn: () => statementsApi.lockAll(projectId),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['statements', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      if (pendingDownload) {
+        const fresh = await queryClient.fetchQuery({
+          queryKey: ['export', projectId],
+          queryFn: () =>
+            api.get<string>(`/projects/${projectId}/export`, { responseType: 'text' }).then((r) => r.data),
+        });
+        downloadNow(fresh);
+        setPendingDownload(false);
+      }
+    },
+  });
+
+  const handleDownload = useCallback(() => {
+    if (!yamlText) return;
+    if (unlockedStatements.length > 0) {
+      setPendingDownload(true);
+      return;
+    }
+    downloadNow(yamlText);
+  }, [yamlText, unlockedStatements.length, downloadNow]);
 
   const exportedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -136,14 +171,41 @@ export default function ExportView() {
         {/* Download */}
         <div className={styles.sidebarSection}>
           <div className={styles.sidebarLabel}>Archive</div>
-          <button
-            className={styles.downloadBtn}
-            onClick={handleDownload}
-            disabled={!yamlText}
-          >
-            <span className={styles.downloadIcon}>↓</span>
-            Download .ath
-          </button>
+          {pendingDownload ? (
+            <div className={styles.lockPrompt}>
+              <div className={styles.lockPromptText}>
+                {unlockedStatements.length} statement{unlockedStatements.length !== 1 ? 's are' : ' is'} still
+                unlocked. All statements must be locked before exporting.
+              </div>
+              <div className={styles.lockPromptActions}>
+                <button
+                  className={styles.downloadBtn}
+                  onClick={() => lockAllMutation.mutate()}
+                  disabled={lockAllMutation.isPending}
+                >
+                  {lockAllMutation.isPending ? 'Locking…' : 'Lock all & export'}
+                </button>
+                <button className={styles.cancelBtn} onClick={() => setPendingDownload(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className={styles.downloadBtn}
+              onClick={handleDownload}
+              disabled={!yamlText}
+            >
+              <span className={styles.downloadIcon}>↓</span>
+              Download .ath
+            </button>
+          )}
+          {!pendingDownload && unlockedStatements.length > 0 && (
+            <div className={styles.lockHint}>
+              {unlockedStatements.length} unlocked statement{unlockedStatements.length !== 1 ? 's' : ''} — exporting
+              will ask you to lock {unlockedStatements.length !== 1 ? 'them' : 'it'} first.
+            </div>
+          )}
           <div className={styles.versionBadge}>ath_version: 1</div>
         </div>
 
@@ -155,7 +217,7 @@ export default function ExportView() {
               { label: 'Papers',    value: stats.papers },
               { label: 'Passages',  value: stats.passages },
               { label: 'Syntheses', value: stats.syntheses },
-              { label: 'Bricks',    value: stats.bricks },
+              { label: 'Statements', value: stats.statements },
               { label: 'Lines',     value: stats.lines.toLocaleString() },
               { label: 'Size',      value: `${(stats.chars / 1024).toFixed(1)} KB` },
             ].map(({ label, value }) => (

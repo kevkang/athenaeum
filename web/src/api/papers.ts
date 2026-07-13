@@ -11,6 +11,7 @@ export interface Paper {
   abstract: string | null;
   status: 'ghost' | 'full_text' | 'failed';
   created_at: string;
+  zotero_item_key: string | null;
 }
 
 export interface Section {
@@ -64,8 +65,16 @@ export interface OpenAlexResult {
 }
 
 export function firstAuthor(authors: unknown): string {
-  if (!Array.isArray(authors) || authors.length === 0) return '';
-  const a = authors[0];
+  // OpenAlex-ingested papers store a bare array of author objects; Zotero
+  // ones store `{ names: [...] }` (see zotero_item_to_paper_fields on the
+  // backend) — handle both shapes rather than only the OpenAlex one.
+  const list = Array.isArray(authors)
+    ? authors
+    : Array.isArray((authors as { names?: unknown })?.names)
+      ? (authors as { names: unknown[] }).names
+      : [];
+  if (list.length === 0) return '';
+  const a = list[0];
   if (typeof a === 'string') return a;
   if (typeof a === 'object' && a !== null) {
     const obj = a as Record<string, string>;
@@ -117,6 +126,11 @@ export const papersApi = {
 
   retry: (paperId: string) =>
     api.post<Paper>(`/papers/${paperId}/retry`).then((r) => r.data),
+
+  /** Unlinks the paper from this project; the Paper row itself is only
+   * fully deleted server-side if no other project still references it. */
+  delete: (paperId: string, projectId: string) =>
+    api.delete(`/papers/${paperId}`, { params: { project_id: projectId } }),
 
   searchOpenalex: (q: string, perPage = 15) =>
     api.get<OpenAlexResult[]>('/papers/search', { params: { q, per_page: perPage } }).then((r) => r.data),

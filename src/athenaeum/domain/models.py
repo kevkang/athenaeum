@@ -62,8 +62,8 @@ class PublicProjectOut(BaseModel):
     description: str | None
     license: str
     created_at: datetime
-    brick_count: int
-    cemented_count: int
+    statement_count: int
+    locked_count: int
     synthesis_count: int
     avg_verification_rate: float | None
 
@@ -97,6 +97,7 @@ class PaperOut(BaseModel):
     abstract: str | None
     status: str
     created_at: datetime
+    zotero_item_key: str | None = None
 
 
 class SectionOut(BaseModel):
@@ -118,6 +119,19 @@ class SentenceOut(BaseModel):
     text: str
     char_start: int
     char_end: int
+
+
+class PassageEvidenceOut(BaseModel):
+    """A passage plus enough of its source paper's metadata to render a
+    citation (e.g. "Borton et al. 2026") — for the evidence-preview popover."""
+
+    id: UUID
+    paper_id: UUID
+    verbatim_text: str
+    verified: bool
+    paper_title: str
+    paper_year: int | None
+    paper_first_author: str | None
 
 
 # ── OpenAlex discovery ────────────────────────────────────────────────────────
@@ -264,53 +278,56 @@ class EvaluationOut(BaseModel):
     created_at: datetime
 
 
-# ── Bricks ────────────────────────────────────────────────────────────────────
+# ── Statements ────────────────────────────────────────────────────────────────
 
 _QUESTION_STATUSES = {"open", "resolved", "wontfix"}
+_STATEMENT_EDGE_RELATIONS = "^(relates_to|supports|tension)$"
 
 
-class BrickCreate(BaseModel):
+class StatementCreate(BaseModel):
     project_id: UUID
     type: str = Field(min_length=1, max_length=50)
     assertion: str = Field(min_length=1)
     built_from_synthesis_id: UUID | None = None
 
 
-class BrickUpdate(BaseModel):
+class StatementUpdate(BaseModel):
     assertion: str | None = None
     type: str | None = None
     status: str | None = Field(default=None, pattern="^(open|resolved|wontfix)$")
 
 
-class RestsOnCreate(BaseModel):
-    target_kind: str = Field(pattern="^(paper|passage|dataset|brick)$")
+class EvidenceCreate(BaseModel):
+    target_kind: str = Field(pattern="^(paper|passage|dataset|statement)$")
     target_id: UUID
     role: str = Field(default="evidence", max_length=50)
 
 
-class RestsOnOut(BaseModel):
+class EvidenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    brick_id: UUID
+    statement_id: UUID
     target_kind: str
     target_id: UUID
     role: str
 
 
-class BuildsOnCreate(BaseModel):
-    parent_brick_id: UUID
-    ord: int = 0
+class StatementEdgeCreate(BaseModel):
+    to_statement_id: UUID
+    relation: str = Field(pattern=_STATEMENT_EDGE_RELATIONS)
 
 
-class BuildsOnOut(BaseModel):
+class StatementEdgeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    brick_id: UUID
-    parent_brick_id: UUID
-    ord: int
+    from_statement_id: UUID
+    to_statement_id: UUID
+    relation: str
+    created_by: UUID | None
+    created_at: datetime
 
 
-class BrickOut(BaseModel):
+class StatementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -319,7 +336,7 @@ class BrickOut(BaseModel):
     type: str
     status: str
     assertion: str
-    cemented_at: datetime | None
+    locked_at: datetime | None
     drafted_at: datetime
     built_from_synthesis_id: UUID | None
 
@@ -328,7 +345,7 @@ class BrickOut(BaseModel):
 
 class AnnotationCreate(BaseModel):
     project_id: UUID
-    target_kind: str = Field(pattern="^(paper|passage|brick|sentence|section)$")
+    target_kind: str = Field(pattern="^(paper|passage|statement|sentence|section)$")
     target_id: UUID
     body: str = Field(min_length=1)
 
@@ -349,7 +366,7 @@ class AnnotationOut(BaseModel):
 
 # ── Graph ─────────────────────────────────────────────────────────────────────
 
-class BrickNodeOut(BaseModel):
+class StatementNodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -357,29 +374,12 @@ class BrickNodeOut(BaseModel):
     type: str
     status: str
     assertion: str
+    evidence_count: int
 
 
-class GraphBuildsOnOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    brick_id: UUID
-    parent_brick_id: UUID
-    ord: int
-
-
-class GraphRestsOnOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    brick_id: UUID
-    target_kind: str
-    target_id: UUID
-    role: str
-
-
-class BrickGraphOut(BaseModel):
-    nodes: list[BrickNodeOut]
-    builds_on: list[GraphBuildsOnOut]
-    rests_on: list[GraphRestsOnOut]
+class StatementGraphOut(BaseModel):
+    nodes: list[StatementNodeOut]
+    edges: list[StatementEdgeOut]
 
 
 class GhostPaperOut(BaseModel):
@@ -455,3 +455,64 @@ class DatasetOut(BaseModel):
     title: str
     storage_uri: str | None
     created_at: datetime
+
+
+# ── Zotero ────────────────────────────────────────────────────────────────────
+
+class ZoteroCredentialsIn(BaseModel):
+    api_key: str = Field(min_length=1, max_length=200)
+
+
+class ZoteroCredentialsStatus(BaseModel):
+    connected: bool
+    zotero_user_id: str | None = None
+
+
+class ZoteroSearchResultOut(BaseModel):
+    item_key: str
+    title: str
+    creators: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+    item_type: str
+    already_in_project: bool
+    date_added: str | None = None
+
+
+class ZoteroImportRequest(BaseModel):
+    project_id: UUID
+    zotero_item_key: str = Field(min_length=1, max_length=50)
+
+
+class ZoteroCollectionOut(BaseModel):
+    key: str
+    name: str
+    parent_key: str | None
+
+
+class ZoteroBrowseResponse(BaseModel):
+    items: list[ZoteroSearchResultOut]
+    total: int
+
+
+class ZoteroLocalStatus(BaseModel):
+    available: bool
+    relative_path: str | None = None
+
+
+class ZoteroLocalSelectRequest(BaseModel):
+    # Relative to ZOTERO_LOCAL_HOST_MOUNT (the operator's bind-mounted home
+    # directory) — e.g. "Zotero" for the common ~/Zotero default.
+    relative_path: str = Field(min_length=1, max_length=500)
+
+
+class ZoteroLocalDirEntry(BaseModel):
+    name: str
+    has_zotero_sqlite: bool
+
+
+class ZoteroLocalBrowseDirsResponse(BaseModel):
+    path: str
+    parent: str | None
+    entries: list[ZoteroLocalDirEntry]

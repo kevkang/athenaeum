@@ -38,6 +38,40 @@ services:
     ports:
       - "8070:8070"
 
+  # S3-compatible object storage for local dev (the API/worker hand off
+  # uploaded PDFs through S3 — see storage/s3.py). Production points
+  # S3_ENDPOINT_URL at nothing and hits real AWS instead; this exists purely
+  # so uploads work without needing an AWS account for local development.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: athenaeum
+      MINIO_ROOT_PASSWORD: athenaeum-dev-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: MinIO doesn't pre-create buckets, so create ours idempotently
+  # on every `docker compose up` and then exit.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 athenaeum athenaeum-dev-secret &&
+      mc mb --ignore-existing local/athenaeum-papers
+      "
+
   api:
     build: .
     command: uvicorn athenaeum.main:app --host 0.0.0.0 --port 8000 --reload
@@ -48,10 +82,19 @@ services:
       NEO4J_PASSWORD: athenaeum
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: dev-secret-change-me
-      ORCID_REDIRECT_URI: http://localhost:8000/auth/orcid/callback
+      ORCID_CLIENT_ID: ${ORCID_CLIENT_ID:-}
+      ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET:-}
+      ORCID_REDIRECT_URI: http://127.0.0.1:8000/auth/orcid/callback
       ORCID_API_BASE: https://sandbox.orcid.org
       GROBID_URL: http://grobid:8070
       UNPAYWALL_EMAIL: contact@athenaeum.app
+      SECRET_ENCRYPTION_KEY: s5CfwQ2M9uFZEZ912pomPM9IfFn_dsuPIMW3JFj5-rg=  # dev-only, do not use in production
+      S3_BUCKET: athenaeum-papers
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: athenaeum
+      AWS_SECRET_ACCESS_KEY: athenaeum-dev-secret
+      ZOTERO_LOCAL_HOST_MOUNT: /host-home
     ports:
       - "8000:8000"
     depends_on:
@@ -63,9 +106,15 @@ services:
         condition: service_started
       grobid:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
+      # Read-only mount of the whole host home directory so "Zotero (Local)"
+      # can browse/pick the actual Zotero data subfolder from the UI, without
+      # needing a container restart every time that choice changes.
+      - ${HOME}:/host-home:ro
 
   worker:
     build: .
@@ -78,6 +127,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       GROBID_URL: http://grobid:8070
       UNPAYWALL_EMAIL: contact@athenaeum.app
+      SECRET_ENCRYPTION_KEY: s5CfwQ2M9uFZEZ912pomPM9IfFn_dsuPIMW3JFj5-rg=  # dev-only, do not use in production
+      S3_BUCKET: athenaeum-papers
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: athenaeum
+      AWS_SECRET_ACCESS_KEY: athenaeum-dev-secret
+      ZOTERO_LOCAL_HOST_MOUNT: /host-home
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,12 +143,16 @@ services:
         condition: service_started
       grobid:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     volumes:
       - ./src:/app/src
       - model-cache:/root/.cache/huggingface
+      - ${HOME}:/host-home:ro
 
 volumes:
   postgres-data:
   neo4j-data:
   redis-data:
   model-cache:
+  minio-data:

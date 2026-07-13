@@ -41,6 +41,20 @@ class Settings(BaseSettings):
 
     s3_bucket: str | None = None
     aws_region: str = "us-east-1"
+    s3_endpoint_url: str | None = None  # set only for local MinIO; unset hits real AWS
+
+    secret_encryption_key: str | None = None
+    zotero_api_base: str = "https://api.zotero.org"
+
+    # Path (inside the api/worker containers) where the operator's *entire*
+    # home directory is bind-mounted read-only — see docker-compose.yml.
+    # Only meaningful for a single-operator local deployment — there's no
+    # sense in which a browser-facing multi-user server could resolve "the
+    # user's local Zotero install" otherwise. Which *subfolder* under this
+    # mount is the actual Zotero data directory is a runtime choice made from
+    # the UI (persisted in the zotero_local_config table), not a static env
+    # var — that mount itself is the only part that needs a container restart.
+    zotero_local_host_mount: str | None = "/host-home"
 
 
 @lru_cache

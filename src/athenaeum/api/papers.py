@@ -10,13 +10,24 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
 from athenaeum.domain.models import OpenAlexSearchResult, PaperIngest, PaperOut, PaperUpdate, SectionOut, SentenceOut
 from athenaeum.ingest.openalex import fetch_metadata
-from athenaeum.storage.models import Paper, PaperSection, PaperSentence, Project, ProjectMember, ProjectPaper
+from athenaeum.storage.models import (
+    Paper,
+    PaperSection,
+    PaperSentence,
+    Passage,
+    Project,
+    ProjectMember,
+    ProjectPaper,
+    ProvenanceLog,
+    StatementEvidence,
+    ZoteroCredentials,
+)
 
 log = structlog.get_logger()
 router = APIRouter(prefix="/papers", tags=["papers"])
@@ -160,7 +171,9 @@ async def upload_paper(
     s3_key = f"uploads/{paper_id}{suffix}"
 
     from athenaeum.storage.s3 import upload_fileobj
-    await upload_fileobj(content, settings.s3_bucket, s3_key, settings.aws_region)
+    await upload_fileobj(
+        content, settings.s3_bucket, s3_key, settings.aws_region, settings.s3_endpoint_url
+    )
 
     bare_doi = _normalize_doi(doi.strip()) if doi else None
     paper = Paper(
@@ -204,6 +217,85 @@ async def update_paper(
     return paper
 
 
+async def _enqueue_graph_sync(request: Request, project_id: uuid.UUID) -> None:
+    pool = getattr(request.app.state, "arq_pool", None)
+    if pool is not None:
+        try:
+            await pool.enqueue_job(
+                "sync_project_graph",
+                str(project_id),
+                _job_id=f"sync_graph_{project_id}",
+            )
+        except Exception:
+            log.warning("graph_sync.enqueue_failed", project_id=str(project_id))
+
+
+@router.delete("/{paper_id}", status_code=204)
+async def delete_paper(
+    paper_id: uuid.UUID,
+    project_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+) -> None:
+    """Unlinks a paper from the given project. If no other project still
+    references the paper, the underlying Paper row (and its sections,
+    sentences, and passages) is fully deleted too."""
+    membership = await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Not a project member")
+
+    link = await session.get(ProjectPaper, (project_id, paper_id))
+    if link is None:
+        raise HTTPException(status_code=404, detail="Paper is not part of this project")
+
+    await session.delete(link)
+    await session.flush()
+
+    other_link = await session.scalar(
+        select(ProjectPaper).where(ProjectPaper.paper_id == paper_id)
+    )
+    if other_link is None:
+        # Last project referencing this paper — fully delete it, and clean up
+        # statement-evidence rows that pointed at it or its passages (not
+        # FK-constrained, since target_id is polymorphic across target_kind).
+        passage_ids = list(await session.scalars(
+            select(Passage.id).where(Passage.paper_id == paper_id)
+        ))
+        await session.execute(
+            delete(StatementEvidence).where(
+                (StatementEvidence.target_kind == "paper")
+                & (StatementEvidence.target_id == paper_id)
+            )
+        )
+        if passage_ids:
+            await session.execute(
+                delete(StatementEvidence).where(
+                    (StatementEvidence.target_kind == "passage")
+                    & (StatementEvidence.target_id.in_(passage_ids))
+                )
+            )
+        paper = await session.get(Paper, paper_id)
+        if paper is not None:
+            await session.delete(paper)
+
+    session.add(
+        ProvenanceLog(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            kind="paper_removed",
+            payload_json={"paper_id": str(paper_id), "fully_deleted": other_link is None},
+        )
+    )
+    await session.commit()
+    await _enqueue_graph_sync(request, project_id)
+
+
 @router.post("/{paper_id}/reupload", response_model=PaperOut)
 async def reupload_paper(
     paper_id: uuid.UUID,
@@ -230,7 +322,9 @@ async def reupload_paper(
 
     s3_key = f"uploads/{paper_id}{suffix}"
     from athenaeum.storage.s3 import upload_fileobj
-    await upload_fileobj(content, settings.s3_bucket, s3_key, settings.aws_region)
+    await upload_fileobj(
+        content, settings.s3_bucket, s3_key, settings.aws_region, settings.s3_endpoint_url
+    )
 
     paper.status = "ghost"
     await session.commit()
@@ -310,6 +404,49 @@ async def retry_ingest(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+
+    if paper.zotero_item_key and paper.zotero_source == "local":
+        paper.status = "ghost"
+        await session.commit()
+        await session.refresh(paper)
+
+        try:
+            await request.app.state.arq_pool.enqueue_job(
+                "ingest_local_zotero_item", str(paper.id), paper.zotero_item_key
+            )
+            log.info("papers.local_zotero_retry_enqueued", paper_id=str(paper.id))
+        except Exception as exc:
+            log.warning(
+                "papers.local_zotero_retry_enqueue_failed", paper_id=str(paper.id), error=str(exc)
+            )
+
+        return paper
+
+    if paper.zotero_item_key:
+        if paper.zotero_imported_by is None or (
+            await session.get(ZoteroCredentials, paper.zotero_imported_by)
+        ) is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The Zotero account that imported this paper is no longer connected",
+            )
+
+        paper.status = "ghost"
+        await session.commit()
+        await session.refresh(paper)
+
+        try:
+            await request.app.state.arq_pool.enqueue_job(
+                "ingest_zotero_item",
+                str(paper.id),
+                paper.zotero_item_key,
+                str(paper.zotero_imported_by),
+            )
+            log.info("papers.zotero_retry_enqueued", paper_id=str(paper.id))
+        except Exception as exc:
+            log.warning("papers.zotero_retry_enqueue_failed", paper_id=str(paper.id), error=str(exc))
+
+        return paper
 
     paper.status = "ghost"
     await session.commit()

@@ -6,7 +6,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from athenaeum import __version__
-from athenaeum.api import annotations, archive, auth, bricks, graph, links, members, papers, projects, public, search, syntheses
+from athenaeum.api import (
+    annotations,
+    archive,
+    auth,
+    graph,
+    links,
+    members,
+    papers,
+    passages,
+    projects,
+    public,
+    search,
+    statements,
+    syntheses,
+    zotero,
+    zotero_local,
+)
 from athenaeum.config import get_settings
 
 log = structlog.get_logger()
@@ -59,15 +75,18 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(papers.router)
+app.include_router(passages.router)
 app.include_router(search.router)
 app.include_router(syntheses.router)
-app.include_router(bricks.router)
+app.include_router(statements.router)
 app.include_router(annotations.router)
 app.include_router(graph.router)
 app.include_router(archive.router)
 app.include_router(members.router)
 app.include_router(public.router)
 app.include_router(links.router)
+app.include_router(zotero.router)
+app.include_router(zotero_local.router)
 
 
 @app.get("/health")

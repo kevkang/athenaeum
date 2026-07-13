@@ -33,9 +33,9 @@ def test_papers_post_requires_auth() -> None:
     assert resp.status_code == 401
 
 
-def test_bricks_requires_auth() -> None:
+def test_statements_requires_auth() -> None:
     with TestClient(app) as client:
-        resp = client.get("/bricks/00000000-0000-0000-0000-000000000000")
+        resp = client.get("/statements/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 401
 
 
@@ -68,5 +68,112 @@ def test_search_requires_auth() -> None:
                 "query": "test query",
                 "project_id": "00000000-0000-0000-0000-000000000000",
             },
+        )
+    assert resp.status_code == 401
+
+
+def test_zotero_credentials_get_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/zotero/credentials")
+    assert resp.status_code == 401
+
+
+def test_zotero_credentials_put_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.put(
+            "/zotero/credentials",
+            json={"api_key": "fake-key", "zotero_user_id": "12345"},
+        )
+    assert resp.status_code == 401
+
+
+def test_zotero_credentials_delete_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.delete("/zotero/credentials")
+    assert resp.status_code == 401
+
+
+def test_zotero_search_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get(
+            "/zotero/search",
+            params={"q": "test query", "project_id": "00000000-0000-0000-0000-000000000000"},
+        )
+    assert resp.status_code == 401
+
+
+def test_zotero_import_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/zotero/import",
+            json={
+                "project_id": "00000000-0000-0000-0000-000000000000",
+                "zotero_item_key": "ABCD1234",
+            },
+        )
+    assert resp.status_code == 401
+
+
+def test_zotero_local_status_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/zotero-local/status")
+    assert resp.status_code == 401
+
+
+def test_zotero_local_browse_dirs_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/zotero-local/browse-dirs")
+    assert resp.status_code == 401
+
+
+def test_zotero_local_select_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post("/zotero-local/select", json={"relative_path": "Zotero"})
+    assert resp.status_code == 401
+
+
+def test_zotero_local_import_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/zotero-local/import",
+            json={
+                "project_id": "00000000-0000-0000-0000-000000000000",
+                "zotero_item_key": "ABCD1234",
+            },
+        )
+    assert resp.status_code == 401
+
+
+def test_passages_get_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/passages/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 401
+
+
+def test_papers_delete_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.delete(
+            "/papers/00000000-0000-0000-0000-000000000000",
+            params={"project_id": "00000000-0000-0000-0000-000000000000"},
+        )
+    assert resp.status_code == 401
+
+
+def test_statements_lock_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post("/statements/00000000-0000-0000-0000-000000000000/lock")
+    assert resp.status_code == 401
+
+
+def test_statements_unlock_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post("/statements/00000000-0000-0000-0000-000000000000/unlock")
+    assert resp.status_code == 401
+
+
+def test_statements_lock_all_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/statements/by-project/00000000-0000-0000-0000-000000000000/lock-all"
         )
     assert resp.status_code == 401

@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useAuthStore } from '../store/auth';
+import { useUIStore } from '../store/ui';
 import ProjectSettingsModal from './ProjectSettingsModal';
+import AccountSettingsModal from './AccountSettingsModal';
 import styles from './AppShell.module.css';
 
 export default function AppShell() {
   const user = useAuthStore((s) => s.user);
   const location = useRouterState({ select: (s) => s.location });
   const [showSettings, setShowSettings] = useState(false);
+  const accountModalOpen = useUIStore((s) => s.accountModalOpen);
+  const openAccountModal = useUIStore((s) => s.openAccountModal);
+  const closeAccountModal = useUIStore((s) => s.closeAccountModal);
 
   const projectMatch = location.pathname.match(/\/projects\/([^/]+)/);
   const projectId = projectMatch?.[1];
-  const isExport = location.pathname.endsWith('/export');
 
   return (
     <div className={styles.app}>
@@ -23,35 +27,28 @@ export default function AppShell() {
 
         <div className={styles.chromeCenter}>
           {projectId && (
-            <>
-              <Link to="/projects" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
-                Projects
+            <div className={styles.viewSwitcher}>
+              <Link
+                to="/projects/$projectId/workspace"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Workspace
               </Link>
-              <span className={styles.sep}>/</span>
-              <span className={styles.current}>{isExport ? 'Export' : 'Workspace'}</span>
-            </>
+              <Link
+                to="/projects/$projectId/export"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Export
+              </Link>
+            </div>
           )}
         </div>
 
         <div className={styles.chromeRight}>
-          {projectId && !isExport && (
-            <Link
-              to="/projects/$projectId/export"
-              params={{ projectId: projectId! }}
-              className={styles.viewBtn}
-            >
-              Export
-            </Link>
-          )}
-          {projectId && isExport && (
-            <Link
-              to="/projects/$projectId"
-              params={{ projectId: projectId! }}
-              className={styles.viewBtn}
-            >
-              ← Workspace
-            </Link>
-          )}
           {projectId && (
             <button
               className={styles.settingsBtn}
@@ -62,10 +59,14 @@ export default function AppShell() {
             </button>
           )}
           {user && (
-            <div className={styles.orcidChip}>
+            <button
+              className={styles.orcidChip}
+              onClick={() => openAccountModal()}
+              title="Account settings"
+            >
               <div className={styles.orcidDot} />
               <span className="mono">{user.orcid}</span>
-            </div>
+            </button>
           )}
         </div>
       </header>
@@ -79,6 +80,10 @@ export default function AppShell() {
           projectId={projectId}
           onClose={() => setShowSettings(false)}
         />
+      )}
+
+      {accountModalOpen && (
+        <AccountSettingsModal onClose={closeAccountModal} />
       )}
     </div>
   );

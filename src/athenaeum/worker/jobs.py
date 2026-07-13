@@ -13,9 +13,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from athenaeum.config import get_settings
+from athenaeum.crypto import decrypt_secret
 from athenaeum.ingest.openalex import fetch_referenced_work_ids
-from athenaeum.ingest.pipeline import run_ingest
-from athenaeum.storage.models import CitationEdge, Paper
+from athenaeum.ingest.pipeline import run_ingest, run_local_zotero_ingest, run_zotero_ingest
+from athenaeum.ingest.zotero import ZoteroCreds
+from athenaeum.storage.models import CitationEdge, Paper, ZoteroCredentials
 from athenaeum.synthesize.orchestrator import run_synthesis
 
 log = structlog.get_logger()
@@ -133,6 +135,84 @@ async def _sync_citations(ctx: dict, paper_id: uuid.UUID, settings) -> None:
             paper_id=str(paper_id),
             refs_found=len(found),
         )
+
+
+async def ingest_zotero_item(
+    ctx: dict,
+    paper_id: str,
+    zotero_item_key: str,
+    requesting_user_id: str,
+) -> None:
+    """Ingest a paper acquired from a user's Zotero library.
+
+    Credentials are re-read fresh from the DB and decrypted here — never passed
+    through the Redis job payload.
+    """
+    settings = get_settings()
+    pid = uuid.UUID(paper_id)
+    engine: AsyncEngine = ctx["engine"]
+    log.info("job.ingest_zotero_item.start", paper_id=paper_id, zotero_item_key=zotero_item_key)
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        creds_row = await session.get(ZoteroCredentials, uuid.UUID(requesting_user_id))
+        if creds_row is None:
+            log.warning("job.ingest_zotero_item.no_credentials", paper_id=paper_id)
+            paper = await session.get(Paper, pid)
+            if paper is not None:
+                paper.status = "failed"
+                await session.commit()
+            return
+
+        creds = ZoteroCreds(
+            zotero_user_id=creds_row.zotero_user_id,
+            api_key=decrypt_secret(creds_row.api_key_encrypted),
+            library_type=creds_row.library_type,
+        )
+
+    await run_zotero_ingest(
+        paper_id=pid,
+        zotero_item_key=zotero_item_key,
+        creds=creds,
+        engine=engine,
+        http=ctx["http"],
+        settings=settings,
+    )
+
+    # Harmless no-op for most Zotero-sourced papers (they have no openalex_id),
+    # but still worth attempting when a Zotero item happens to carry a DOI that
+    # OpenAlex can resolve.
+    await _sync_citations(ctx, pid, settings)
+
+    log.info("job.ingest_zotero_item.done", paper_id=paper_id)
+
+
+async def ingest_local_zotero_item(
+    ctx: dict,
+    paper_id: str,
+    zotero_item_key: str,
+) -> None:
+    """Ingest a paper acquired from a user's local Zotero library — no
+    credentials involved, just the operator's chosen subfolder of the
+    bind-mounted home directory (see zotero_local_config / "Select local
+    library")."""
+    settings = get_settings()
+    pid = uuid.UUID(paper_id)
+    engine: AsyncEngine = ctx["engine"]
+    log.info(
+        "job.ingest_local_zotero_item.start", paper_id=paper_id, zotero_item_key=zotero_item_key
+    )
+
+    await run_local_zotero_ingest(
+        paper_id=pid,
+        zotero_item_key=zotero_item_key,
+        engine=engine,
+        http=ctx["http"],
+        settings=settings,
+    )
+
+    await _sync_citations(ctx, pid, settings)
+
+    log.info("job.ingest_local_zotero_item.done", paper_id=paper_id)
 
 
 # ── Synthesis ──────────────────────────────────────────────────────────────────

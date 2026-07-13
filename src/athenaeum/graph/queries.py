@@ -5,11 +5,11 @@ import neo4j
 
 
 async def ghost_papers(driver: neo4j.AsyncDriver, project_id: str) -> list[dict]:
-    """Papers referenced in brick RESTS_ON edges but not added to the project."""
+    """Papers referenced as statement evidence but not added to the project."""
     async with driver.session() as session:
         result = await session.run(
             """
-            MATCH (b:Brick {project_id: $pid})-[r:RESTS_ON]->(p:Paper)
+            MATCH (s:Statement {project_id: $pid})-[r:HAS_EVIDENCE]->(p:Paper)
             WHERE r.target_kind = 'paper'
               AND NOT EXISTS {
                   MATCH (:Project {id: $pid})-[:HAS_PAPER]->(p)

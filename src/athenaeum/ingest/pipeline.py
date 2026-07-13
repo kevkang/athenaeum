@@ -13,7 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from athenaeum.config import Settings
 from athenaeum.ingest.acquire import acquire_pdf
 from athenaeum.ingest.embed import embed_sentences
-from athenaeum.ingest.grobid import parse_pdf
+from athenaeum.ingest.grobid import Section, parse_pdf
+from athenaeum.ingest.htmlextract import extract_main_text
+from athenaeum.ingest.zotero import (
+    ZoteroAuthError,
+    ZoteroCreds,
+    download_attachment,
+    list_attachments,
+    pick_best_attachment,
+)
+from athenaeum.ingest.zotero_local import (
+    LocalZoteroError,
+    list_local_attachments,
+    resolve_configured_data_dir,
+    resolve_local_attachment_file,
+)
 from athenaeum.storage.models import Paper, PaperSection, PaperSentence
 
 log = structlog.get_logger()
@@ -44,9 +58,8 @@ async def run_ingest(
             raise
 
 
-def _sections_from_text(text: str) -> list:
+def _sections_from_text(text: str) -> list[Section]:
     """Split plain text into sections by double newlines."""
-    from athenaeum.ingest.grobid import Section
     blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
     if not blocks:
         return []
@@ -71,8 +84,12 @@ async def _process(
 
             dest = tmp_dir / Path(s3_key).name
             log.info("ingest.s3_download", paper_id=str(paper.id), key=s3_key)
-            await download_to_path(settings.s3_bucket, s3_key, dest, settings.aws_region)
-            await delete_object(settings.s3_bucket, s3_key, settings.aws_region)
+            await download_to_path(
+                settings.s3_bucket, s3_key, dest, settings.aws_region, settings.s3_endpoint_url
+            )
+            await delete_object(
+                settings.s3_bucket, s3_key, settings.aws_region, settings.s3_endpoint_url
+            )
 
             if dest.suffix.lower() == ".txt":
                 sections = _sections_from_text(dest.read_text(errors="replace"))
@@ -98,13 +115,24 @@ async def _process(
             log.info("ingest.grobid", paper_id=str(paper.id))
             sections = await parse_pdf(pdf_path, settings.grobid_url, http)
 
-        if not sections:
-            log.warning("ingest.no_sections", paper_id=str(paper.id))
-            paper.status = "failed"
-            await session.commit()
-            return
+    await _finalize_sections(paper, sections, session, settings)
 
-    # Build sections + sentences with char offsets
+
+async def _finalize_sections(
+    paper: Paper,
+    sections: list[Section],
+    session: AsyncSession,
+    settings: Settings,
+) -> None:
+    """Given parsed sections, insert PaperSection/PaperSentence rows with embeddings
+    and mark the paper full_text. Shared tail for every acquisition path (DOI/upload
+    PDF, plain-text upload, Zotero PDF/HTML snapshot)."""
+    if not sections:
+        log.warning("ingest.no_sections", paper_id=str(paper.id))
+        paper.status = "failed"
+        await session.commit()
+        return
+
     global_char_offset = 0
     global_sentence_ord = 0
 
@@ -163,3 +191,146 @@ async def _process(
         sections=len(sections),
         sentences=global_sentence_ord,
     )
+
+
+# ── Zotero ingestion ────────────────────────────────────────────────────────────
+
+async def run_zotero_ingest(
+    paper_id: uuid.UUID,
+    zotero_item_key: str,
+    creds: ZoteroCreds,
+    engine: AsyncEngine,
+    http: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    """Mirrors run_ingest()'s shape, but acquires the paper's content from Zotero
+    instead of DOI/Unpaywall/S2 or a staged S3 upload."""
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None:
+            log.warning("ingest.paper_not_found", paper_id=str(paper_id))
+            return
+
+        try:
+            await _process_zotero(paper, zotero_item_key, creds, session, http, settings)
+        except ZoteroAuthError:
+            # Revoked/invalid key — don't let arq burn retries on a call that will
+            # never succeed until the user reconnects.
+            log.warning("ingest.zotero_auth_failed", paper_id=str(paper_id))
+            paper.status = "failed"
+            await session.commit()
+        except Exception:
+            log.exception("ingest.zotero_failed", paper_id=str(paper_id))
+            paper.status = "failed"
+            await session.commit()
+            raise
+
+
+async def _process_zotero(
+    paper: Paper,
+    zotero_item_key: str,
+    creds: ZoteroCreds,
+    session: AsyncSession,
+    http: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    log.info("ingest.zotero_list_attachments", paper_id=str(paper.id))
+    attachments = await list_attachments(creds, zotero_item_key)
+    best = pick_best_attachment(attachments)
+
+    if best is None:
+        # No downloadable attachment (metadata-only item, or only linked_file/
+        # linked_url attachments pointing somewhere the server can't reach) —
+        # same soft-failure semantics as "no PDF acquirable" in the DOI path.
+        log.warning("ingest.zotero_no_attachment", paper_id=str(paper.id))
+        paper.status = "failed"
+        await session.commit()
+        return
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp_dir = Path(tmp_str)
+        is_pdf = best.content_type == "application/pdf"
+        dest = tmp_dir / ("attachment.pdf" if is_pdf else "attachment.html")
+
+        log.info(
+            "ingest.zotero_download",
+            paper_id=str(paper.id),
+            content_type=best.content_type,
+        )
+        await download_attachment(creds, best, http, dest, settings.zotero_api_base)
+
+        if is_pdf:
+            log.info("ingest.grobid", paper_id=str(paper.id))
+            sections = await parse_pdf(dest, settings.grobid_url, http)
+        else:
+            text = extract_main_text(dest.read_text(errors="replace"))
+            sections = _sections_from_text(text) if text else []
+
+    await _finalize_sections(paper, sections, session, settings)
+
+
+# ── Local Zotero ingestion ──────────────────────────────────────────────────────
+
+async def run_local_zotero_ingest(
+    paper_id: uuid.UUID,
+    zotero_item_key: str,
+    engine: AsyncEngine,
+    http: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    """Mirrors run_zotero_ingest()'s shape, but reads the attachment straight off
+    disk from a bind-mounted local Zotero data directory instead of the Web API."""
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        paper = await session.get(Paper, paper_id)
+        if paper is None:
+            log.warning("ingest.paper_not_found", paper_id=str(paper_id))
+            return
+
+        try:
+            await _process_local_zotero(paper, zotero_item_key, session, http, settings)
+        except LocalZoteroError as exc:
+            log.warning("ingest.local_zotero_unavailable", paper_id=str(paper_id), error=str(exc))
+            paper.status = "failed"
+            await session.commit()
+        except Exception:
+            log.exception("ingest.local_zotero_failed", paper_id=str(paper_id))
+            paper.status = "failed"
+            await session.commit()
+            raise
+
+
+async def _process_local_zotero(
+    paper: Paper,
+    zotero_item_key: str,
+    session: AsyncSession,
+    http: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    data_dir = await resolve_configured_data_dir(session, settings.zotero_local_host_mount)
+
+    log.info("ingest.local_zotero_list_attachments", paper_id=str(paper.id))
+    attachments = await list_local_attachments(data_dir, zotero_item_key)
+    best = pick_best_attachment(attachments)
+
+    if best is None:
+        log.warning("ingest.local_zotero_no_attachment", paper_id=str(paper.id))
+        paper.status = "failed"
+        await session.commit()
+        return
+
+    source_path = resolve_local_attachment_file(data_dir, best)
+    if source_path is None:
+        log.warning("ingest.local_zotero_file_missing", paper_id=str(paper.id))
+        paper.status = "failed"
+        await session.commit()
+        return
+
+    is_pdf = best.content_type == "application/pdf"
+    if is_pdf:
+        log.info("ingest.grobid", paper_id=str(paper.id))
+        sections = await parse_pdf(source_path, settings.grobid_url, http)
+    else:
+        text = extract_main_text(source_path.read_text(errors="replace"))
+        sections = _sections_from_text(text) if text else []
+
+    await _finalize_sections(paper, sections, session, settings)

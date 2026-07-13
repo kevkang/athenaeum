@@ -8,7 +8,7 @@ log = structlog.get_logger()
 
 _CONSTRAINTS = [
     "CREATE CONSTRAINT paper_id IF NOT EXISTS FOR (p:Paper) REQUIRE p.id IS UNIQUE",
-    "CREATE CONSTRAINT brick_id IF NOT EXISTS FOR (b:Brick) REQUIRE b.id IS UNIQUE",
+    "CREATE CONSTRAINT statement_id IF NOT EXISTS FOR (s:Statement) REQUIRE s.id IS UNIQUE",
     "CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE",
 ]
 

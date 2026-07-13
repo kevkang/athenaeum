@@ -94,6 +94,9 @@ class Paper(Base):
         CheckConstraint(
             "status IN ('full_text', 'ghost', 'failed')", name="papers_status_chk"
         ),
+        CheckConstraint(
+            "zotero_source IN ('sync', 'local')", name="papers_zotero_source_chk"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -108,6 +111,14 @@ class Paper(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    zotero_item_key: Mapped[str | None] = mapped_column(String(50), unique=True)
+    zotero_imported_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Distinguishes which Zotero path imported this paper — 'sync' retries
+    # need the importer's stored Web API credentials, 'local' retries just
+    # re-read the bind-mounted data directory. NULL for non-Zotero papers.
+    zotero_source: Mapped[str | None] = mapped_column(String(10))
 
 
 class PaperSection(Base):
@@ -294,12 +305,12 @@ class Dataset(Base):
     )
 
 
-class Brick(Base):
-    __tablename__ = "bricks"
+class Statement(Base):
+    __tablename__ = "statements"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft','cemented','open','resolved','wontfix')",
-            name="bricks_status_chk",
+            "status IN ('draft','locked','open','resolved','wontfix')",
+            name="statements_status_chk",
         ),
     )
 
@@ -313,7 +324,7 @@ class Brick(Base):
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     assertion: Mapped[str] = mapped_column(Text, nullable=False)
-    cemented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     drafted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -321,51 +332,63 @@ class Brick(Base):
         UUID(as_uuid=True), ForeignKey("syntheses.id", ondelete="SET NULL")
     )
 
-    rests_on: Mapped[list["BrickRestsOn"]] = relationship(back_populates="brick")
-    builds_on: Mapped[list["BrickBuildsOn"]] = relationship(
-        back_populates="brick",
-        foreign_keys="BrickBuildsOn.brick_id",
-    )
+    evidence: Mapped[list["StatementEvidence"]] = relationship(back_populates="statement")
 
 
-class BrickRestsOn(Base):
-    __tablename__ = "brick_rests_on"
+class StatementEvidence(Base):
+    __tablename__ = "statement_evidence"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('paper','passage','dataset','brick')",
-            name="brick_rests_on_target_kind_chk",
+            "target_kind IN ('paper','passage','dataset','statement')",
+            name="statement_evidence_target_kind_chk",
         ),
     )
 
-    brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="CASCADE"), primary_key=True
+    statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
     )
     target_kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="evidence")
 
-    brick: Mapped[Brick] = relationship(back_populates="rests_on")
+    statement: Mapped[Statement] = relationship(back_populates="evidence")
 
 
-class BrickBuildsOn(Base):
-    __tablename__ = "brick_builds_on"
+class StatementEdge(Base):
+    """A user-drawn relation between two statements in the graph:
+    relates_to (neutral), supports (positive), or tension (negative)."""
 
-    brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="CASCADE"), primary_key=True
+    __tablename__ = "statement_edges"
+    __table_args__ = (
+        CheckConstraint(
+            "relation IN ('relates_to','supports','tension')",
+            name="statement_edges_relation_chk",
+        ),
+        CheckConstraint(
+            "from_statement_id != to_statement_id", name="statement_edges_no_self_chk"
+        ),
     )
-    parent_brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="RESTRICT"), primary_key=True
-    )
-    ord: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    brick: Mapped[Brick] = relationship(back_populates="builds_on", foreign_keys=[brick_id])
+    from_statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
+    )
+    to_statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
+    )
+    relation: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Annotation(Base):
     __tablename__ = "annotations"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('paper','passage','brick','sentence','section')",
+            "target_kind IN ('paper','passage','statement','sentence','section')",
             name="annotations_target_kind_chk",
         ),
     )
@@ -443,20 +466,6 @@ class CitationEdge(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="openalex")
 
 
-class TensionEdge(Base):
-    __tablename__ = "tension_edges"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    from_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    from_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    to_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    to_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    label: Mapped[str] = mapped_column(String(50), nullable=False)
-    evidence_passage_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("passages.id")
-    )
-
-
 class KnowledgeLink(Base):
     __tablename__ = "knowledge_links"
     __table_args__ = (
@@ -492,5 +501,43 @@ class KnowledgeLink(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ZoteroCredentials(Base):
+    __tablename__ = "zotero_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "library_type IN ('user','group')", name="zotero_credentials_library_type_chk"
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    zotero_user_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    library_type: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ZoteroLocalConfig(Base):
+    """Singleton row (id is always 1) recording which subfolder of the
+    broadly-mounted host home directory (see ZOTERO_LOCAL_HOST_MOUNT) is the
+    operator's actual Zotero data directory. Server-wide, not per-user — see
+    the reasoning in config.py for why local Zotero isn't a per-account
+    concept the way the Web API connection is."""
+    __tablename__ = "zotero_local_config"
+    __table_args__ = (CheckConstraint("id = 1", name="zotero_local_config_singleton_chk"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

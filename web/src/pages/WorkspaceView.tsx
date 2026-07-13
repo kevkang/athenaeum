@@ -4,84 +4,89 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import cytoscape from 'cytoscape';
 import dagre from 'cytoscape-dagre';
 import { api } from '../api/client';
-import { bricksApi, type Brick, type BuildsOn, type RestsOn } from '../api/bricks';
+import {
+  statementsApi,
+  type Statement,
+  type StatementNode,
+  type StatementEdge,
+  type StatementRelation,
+  type Evidence,
+} from '../api/statements';
 import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, firstAuthor } from '../api/papers';
+import { zoteroApi, type ZoteroSearchResult } from '../api/zotero';
+import { zoteroLocalApi } from '../api/zoteroLocal';
+import { passagesApi } from '../api/passages';
+import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
+import LocalLibraryPicker from '../components/LocalLibraryPicker';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
-import styles from './WorkspaceView.module.css';
+import { useUIStore } from '../store/ui';
+import { trunc, stripHtml, safeHtml, formatDate, formatCitation, typeClass } from '../lib/format';
+import styles from './Workspace.module.css';
 
 cytoscape.use(dagre);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface BrickNode {
+interface StatementGraph { nodes: StatementNode[]; edges: StatementEdge[] }
+
+type PanelMode = null | { kind: 'statement'; id: string } | { kind: 'synthesis' } | { kind: 'new' };
+type NodeFilter = 'all' | 'statements' | 'questions';
+
+const RELATIONS: StatementRelation[] = ['relates_to', 'supports', 'tension'];
+// W/E/R hold+drag-between-nodes shortcuts, per spec (not mnemonic).
+const RELATION_KEYS: Record<string, StatementRelation> = { w: 'tension', e: 'relates_to', r: 'supports' };
+const DROPPABLE_SUFFIXES = ['.pdf', '.txt'];
+const PASSAGE_MIME = 'application/x-athenaeum-passage';
+const READER_MIN_WIDTH = 320;
+const READER_MAX_WIDTH = 900;
+const READER_DEFAULT_WIDTH = 460;
+
+function relationLabel(r: StatementRelation): string {
+  return r === 'relates_to' ? 'relates to' : r === 'supports' ? 'supports' : 'in tension with';
+}
+
+function isProcessing(p: Paper) {
+  return p.status === 'ghost' && Date.now() - new Date(p.created_at).getTime() < 10 * 60 * 1000;
+}
+
+function isDroppableFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return DROPPABLE_SUFFIXES.some((suf) => name.endsWith(suf));
+}
+
+interface UploadQueueItem {
   id: string;
-  project_id: string;
-  type: string;
-  status: string;
-  assertion: string;
-}
-
-interface BuildsOnEdge { brick_id: string; parent_brick_id: string; ord: number }
-interface RestsOnEdge  { brick_id: string; target_kind: string; target_id: string; role: string }
-interface BrickGraph   { nodes: BrickNode[]; builds_on: BuildsOnEdge[]; rests_on: RestsOnEdge[] }
-
-type PanelMode = null | { kind: 'paper'; id: string } | { kind: 'brick'; id: string } | { kind: 'synthesis' };
-type NodeFilter = 'all' | 'questions' | 'bricks';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function trunc(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
-function stripHtml(s: string) { return s.replace(/<[^>]*>/g, ''); }
-function safeHtml(s: string): { __html: string } {
-  return { __html: s.replace(/<(?!\/?(?:i|em|b|strong|sup|sub)\b)[^>]*>/gi, '') };
-}
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-function typeClass(type: string) {
-  const known = ['observation', 'methods', 'foundation', 'synthesis', 'claim', 'question', 'other'];
-  return known.includes(type) ? type : 'other';
+  name: string;
+  status: 'pending' | 'uploading' | 'done' | 'error';
+  error?: string;
 }
 
 // ── Canvas element builder ────────────────────────────────────────────────────
 
-function buildElements(
-  graph: BrickGraph,
-  papers: Paper[],
-  showAllPapers: boolean,
-  nodeFilter: NodeFilter,
-) {
-  const visibleBricks = graph.nodes.filter((n) => {
+function buildElements(graph: StatementGraph, nodeFilter: NodeFilter) {
+  const visible = graph.nodes.filter((n) => {
     if (nodeFilter === 'questions') return n.type === 'question';
-    if (nodeFilter === 'bricks')    return n.type !== 'question';
+    if (nodeFilter === 'statements') return n.type !== 'question';
     return true;
   });
-  const visibleBrickIds = new Set(visibleBricks.map((n) => n.id));
-
-  const referencedPaperIds = new Set(
-    graph.rests_on
-      .filter((e) => e.target_kind === 'paper' && visibleBrickIds.has(e.brick_id))
-      .map((e) => e.target_id),
-  );
-  const papersToShow = showAllPapers ? papers : papers.filter((p) => referencedPaperIds.has(p.id));
-  const paperNodeIds = new Set(papersToShow.map((p) => p.id));
+  const visibleIds = new Set(visible.map((n) => n.id));
 
   return [
-    ...papersToShow.map((p) => ({
-      data: { id: p.id, kind: 'paper', label: trunc(stripHtml(p.title), 52), status: p.status },
+    ...visible.map((n) => ({
+      data: {
+        id: n.id, kind: 'statement', label: trunc(n.assertion, 62), type: n.type, status: n.status,
+        evidence_count: n.evidence_count,
+      },
     })),
-    ...visibleBricks.map((n) => ({
-      data: { id: n.id, kind: 'brick', label: trunc(n.assertion, 62), type: n.type, status: n.status },
-    })),
-    ...graph.builds_on
-      .filter((e) => visibleBrickIds.has(e.brick_id) && visibleBrickIds.has(e.parent_brick_id))
+    ...graph.edges
+      .filter((e) => visibleIds.has(e.from_statement_id) && visibleIds.has(e.to_statement_id))
       .map((e) => ({
-        data: { id: `bo-${e.brick_id}-${e.parent_brick_id}`, source: e.brick_id, target: e.parent_brick_id, kind: 'builds_on' },
-      })),
-    ...graph.rests_on
-      .filter((e) => e.target_kind === 'paper' && visibleBrickIds.has(e.brick_id) && paperNodeIds.has(e.target_id))
-      .map((e) => ({
-        data: { id: `ro-${e.brick_id}-${e.target_id}`, source: e.brick_id, target: e.target_id, kind: 'rests_on', role: e.role },
+        data: {
+          id: `edge-${e.from_statement_id}-${e.to_statement_id}`,
+          source: e.from_statement_id,
+          target: e.to_statement_id,
+          kind: e.relation,
+        },
       })),
   ];
 }
@@ -96,19 +101,7 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
-    selector: 'node[kind = "paper"]',
-    style: {
-      shape: 'rectangle', width: '210px', height: '58px',
-      'background-color': '#1a1410', 'border-width': 1, 'border-color': '#5c4a30',
-      color: '#c4a97a', 'font-size': '10px', 'text-max-width': '194px',
-    },
-  },
-  {
-    selector: 'node[kind = "paper"][status = "ghost"]',
-    style: { 'border-style': 'dashed', 'border-color': '#3a3020', color: '#7a6a50' },
-  },
-  {
-    selector: 'node[kind = "brick"]',
+    selector: 'node[kind = "statement"]',
     style: {
       shape: 'roundrectangle', width: '180px', height: '52px',
       'background-color': '#1f1d18', 'border-width': 1, 'border-color': '#8a7a5c',
@@ -116,17 +109,17 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
-    selector: 'node[kind = "brick"][status = "cemented"]',
+    selector: 'node[kind = "statement"][status = "locked"]',
     style: { 'background-color': '#1a221a', 'border-color': '#8aa57c', 'border-width': 1.5 },
   },
   {
-    selector: 'node[kind = "brick"][type = "question"]',
+    selector: 'node[kind = "statement"][type = "question"]',
     style: {
       'background-color': '#1a1a26', 'border-color': '#5c6b8a', 'font-style': 'normal',
     },
   },
   {
-    selector: 'node[kind = "brick"][type = "question"][status = "resolved"]',
+    selector: 'node[kind = "statement"][type = "question"][status = "resolved"]',
     style: { 'border-color': '#5a8a6a', 'background-color': '#1a231a' },
   },
   {
@@ -134,53 +127,65 @@ const CY_STYLE: cytoscape.StylesheetStyle[] = [
     style: { 'background-color': '#2a2a1e', 'border-color': '#c9a876', 'border-width': 2.5 },
   },
   {
-    selector: 'edge[kind = "builds_on"]',
+    selector: 'node.edge-drag-source',
+    style: { 'border-color': '#c9a876', 'border-width': 3, 'border-style': 'dashed' },
+  },
+  {
+    // relates_to: neutral / white
+    selector: 'edge[kind = "relates_to"]',
     style: {
-      width: 1.5, 'line-color': '#3a3730', 'target-arrow-color': '#5f5c55',
+      width: 1.5, 'line-color': '#a8a29a', 'target-arrow-color': '#a8a29a',
       'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9,
     },
   },
   {
-    selector: 'edge[kind = "rests_on"]',
+    // supports: positive / green
+    selector: 'edge[kind = "supports"]',
     style: {
-      width: 1, 'line-style': 'dashed', 'line-color': '#3a3020',
-      'target-arrow-color': '#5c4a30', 'target-arrow-shape': 'vee',
-      'curve-style': 'bezier', 'arrow-scale': 0.8,
-      label: 'data(role)', 'font-size': '9px', color: '#7a6050',
-      'font-family': 'Inter, sans-serif', 'text-rotation': 'autorotate',
-      'text-margin-y': -7, 'text-background-color': '#0f0e0b',
-      'text-background-opacity': 1, 'text-background-padding': '2px',
+      width: 1.5, 'line-color': '#8aa57c', 'target-arrow-color': '#8aa57c',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9,
+    },
+  },
+  {
+    // tension: negative / red
+    selector: 'edge[kind = "tension"]',
+    style: {
+      width: 1.5, 'line-style': 'dashed', 'line-color': '#c67a5c', 'target-arrow-color': '#c67a5c',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9,
     },
   },
   {
     selector: 'edge:selected',
-    style: { 'line-color': '#8a7a5c', 'target-arrow-color': '#8a7a5c' },
+    style: { 'line-color': '#c9a876', 'target-arrow-color': '#c9a876' },
   },
 ];
 
-// ── Left sidebar ──────────────────────────────────────────────────────────────
+// ── Papers sidebar (far left) ───────────────────────────────────────────────────
 
-function isProcessing(p: Paper) {
-  return p.status === 'ghost' && Date.now() - new Date(p.created_at).getTime() < 10 * 60 * 1000;
-}
-
-function LeftSidebar({
-  projectId, papers, papersLoading, onSelectPaper, onBrickCreated,
+function PapersSidebar({
+  projectId, papers, papersLoading, selectedPaperId, onSelectPaper, isDragOver, uploadQueue, onClearUploadQueue,
 }: {
   projectId: string;
   papers: Paper[];
   papersLoading: boolean;
-  onSelectPaper: (id: string) => void;
-  onBrickCreated: (id: string) => void;
+  selectedPaperId: string | null;
+  onSelectPaper: (id: string | null) => void;
+  isDragOver: boolean;
+  uploadQueue: UploadQueueItem[];
+  onClearUploadQueue: () => void;
 }) {
   const queryClient = useQueryClient();
+  const openAccountModal = useUIStore((s) => s.openAccountModal);
   const [addOpen, setAddOpen] = useState(false);
-  const [addMode, setAddMode] = useState<'doi' | 'search' | 'upload'>('doi');
+  const [addMode, setAddMode] = useState<'doi' | 'search' | 'upload' | 'zotero' | 'zotero-local'>('doi');
   const [doi, setDoi] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [brickType, setBrickType] = useState('claim');
-  const [brickText, setBrickText] = useState('');
+  const [zoteroQuery, setZoteroQuery] = useState('');
+  const [debouncedZoteroQuery, setDebouncedZoteroQuery] = useState('');
+  const [zoteroLocalQuery, setZoteroLocalQuery] = useState('');
+  const [debouncedZoteroLocalQuery, setDebouncedZoteroLocalQuery] = useState('');
+  const [zoteroBrowser, setZoteroBrowser] = useState<'sync' | 'local' | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState('');
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +194,16 @@ function LeftSidebar({
     const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 350);
     return () => clearTimeout(t);
   }, [searchQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedZoteroQuery(zoteroQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [zoteroQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedZoteroLocalQuery(zoteroLocalQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [zoteroLocalQuery]);
 
   const ingestMutation = useMutation({
     mutationFn: () => papersApi.ingest(doi.trim(), projectId),
@@ -227,19 +242,103 @@ function LeftSidebar({
     staleTime: 60_000,
   });
 
-  const createBrickMutation = useMutation({
-    mutationFn: () => bricksApi.create(projectId, brickType, brickText.trim()),
-    onSuccess: (brick) => {
-      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
-      setBrickText('');
-      onBrickCreated(brick.id);
+  const { data: zoteroStatus } = useQuery({
+    queryKey: ['zotero-status'],
+    queryFn: () => zoteroApi.getStatus(),
+    enabled: addMode === 'zotero',
+  });
+
+  const { data: zoteroResults, isFetching: zoteroFetching } = useQuery({
+    queryKey: ['zotero-search', projectId, debouncedZoteroQuery],
+    queryFn: () => zoteroApi.search(debouncedZoteroQuery, projectId),
+    enabled: addMode === 'zotero' && !!zoteroStatus?.connected && debouncedZoteroQuery.length >= 3,
+    staleTime: 30_000,
+  });
+
+  const importFromZoteroMutation = useMutation({
+    mutationFn: (itemKey: string) => zoteroApi.importItem(projectId, itemKey),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  const { data: zoteroLocalStatus } = useQuery({
+    queryKey: ['zotero-local-status'],
+    queryFn: () => zoteroLocalApi.getStatus(),
+    enabled: addMode === 'zotero-local',
+  });
+
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+  const selectLibraryMutation = useMutation({
+    mutationFn: (relativePath: string) => zoteroLocalApi.selectLibrary(relativePath),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['zotero-local-status'] });
+      setShowLibraryPicker(false);
+    },
+  });
+  const clearLibraryMutation = useMutation({
+    mutationFn: () => zoteroLocalApi.clearLibrary(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['zotero-local-status'] }),
+  });
+
+  const { data: zoteroLocalResults, isFetching: zoteroLocalFetching } = useQuery({
+    queryKey: ['zotero-local-search', projectId, debouncedZoteroLocalQuery],
+    queryFn: () => zoteroLocalApi.search(debouncedZoteroLocalQuery, projectId),
+    enabled: addMode === 'zotero-local' && !!zoteroLocalStatus?.available && debouncedZoteroLocalQuery.length >= 3,
+    staleTime: 30_000,
+  });
+
+  const importFromZoteroLocalMutation = useMutation({
+    mutationFn: (itemKey: string) => zoteroLocalApi.importItem(projectId, itemKey),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
+  const deletePaperMutation = useMutation({
+    mutationFn: (paperId: string) => papersApi.delete(paperId, projectId),
+    onSuccess: (_data, paperId) => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      if (paperId === selectedPaperId) onSelectPaper(null);
     },
   });
 
   const alreadyInProject = new Set(papers.map((p) => p.doi).filter(Boolean) as string[]);
 
   return (
-    <aside className={styles.sidebar}>
+    <aside
+      className={styles.sidebar}
+      style={isDragOver ? { outline: '2px dashed var(--accent)', outlineOffset: -4 } : undefined}
+    >
+      {isDragOver && (
+        <div className={styles.emptyHint} style={{ padding: '10px 12px', marginBottom: 8 }}>
+          Drop PDFs here to add them to this project
+        </div>
+      )}
+
+      {uploadQueue.length > 0 && (
+        <div className={styles.sidebarSection}>
+          <div className={styles.sidebarSectionHeader}>
+            <span>Uploads</span>
+            <button className={styles.sidebarAddBtn} onClick={onClearUploadQueue}>
+              ×
+            </button>
+          </div>
+          <div className={styles.paperList}>
+            {uploadQueue.map((item) => (
+              <div key={item.id} className={styles.paperItem} style={{ cursor: 'default' }}>
+                <span
+                  className={`${styles.statusDot} ${
+                    item.status === 'done' ? styles.full_text
+                    : item.status === 'error' ? styles.failed
+                    : styles.processing
+                  }`}
+                />
+                <span className={styles.paperTitle} title={item.error}>{trunc(item.name, 40)}</span>
+                {item.status === 'uploading' && <span className={styles.processingLabel}>uploading</span>}
+                {item.status === 'error' && <span className={styles.processingLabel}>{item.error ?? 'error'}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className={styles.sidebarSection}>
         <div className={styles.sidebarSectionHeader}>
           <span>Papers</span>
@@ -264,6 +363,14 @@ function LeftSidebar({
                 className={`${styles.addModeTab} ${addMode === 'upload' ? styles.addModeTabActive : ''}`}
                 onClick={() => setAddMode('upload')}
               >Upload</button>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'zotero' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('zotero')}
+              >Zotero (Sync)</button>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'zotero-local' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('zotero-local')}
+              >Zotero (Local)</button>
             </div>
 
             {addMode === 'doi' && (
@@ -353,6 +460,144 @@ function LeftSidebar({
                 {uploadMutation.error && (
                   <div className={styles.formError}>{String((uploadMutation.error as Error).message)}</div>
                 )}
+                <div className={styles.searchHint}>Tip: you can also drag PDFs anywhere onto this page.</div>
+              </>
+            )}
+
+            {addMode === 'zotero' && (
+              <>
+                {!zoteroStatus?.connected ? (
+                  <div className={styles.searchHint}>
+                    Connect your Zotero library to search it here.{' '}
+                    <button className={styles.zoteroConnectLink} onClick={() => openAccountModal()}>
+                      Connect Zotero
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className={styles.doiInput}
+                      value={zoteroQuery}
+                      onChange={(e) => setZoteroQuery(e.target.value)}
+                      placeholder="Author, title, or keywords…"
+                      autoFocus
+                    />
+                    <div className={styles.searchHint}>
+                      <button className={styles.zoteroConnectLink} onClick={() => setZoteroBrowser('sync')}>
+                        Browse full library →
+                      </button>
+                    </div>
+                    {zoteroFetching && <div className={styles.searchHint}>Searching…</div>}
+                    {zoteroResults && zoteroResults.length === 0 && !zoteroFetching && debouncedZoteroQuery.length >= 3 && (
+                      <div className={styles.searchHint}>No results</div>
+                    )}
+                    {zoteroResults && zoteroResults.length > 0 && (
+                      <div className={styles.searchResults}>
+                        {zoteroResults.map((r: ZoteroSearchResult) => (
+                          <div key={r.item_key} className={styles.searchResultItem}>
+                            <div className={styles.searchResultTitle}>{r.title}</div>
+                            <div className={styles.searchResultMeta}>
+                              {[r.creators[0], r.year, r.venue].filter(Boolean).join(' · ')}
+                            </div>
+                            <button
+                              className={styles.searchResultAddBtn}
+                              disabled={r.already_in_project || importFromZoteroMutation.isPending}
+                              title={r.already_in_project ? 'Already in project' : 'Import from Zotero'}
+                              onClick={() => importFromZoteroMutation.mutate(r.item_key)}
+                            >
+                              {r.already_in_project ? '✓' : '+'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {importFromZoteroMutation.error && (
+                      <div className={styles.formError}>
+                        {String(
+                          (importFromZoteroMutation.error as { response?: { data?: { detail?: string } } })
+                            ?.response?.data?.detail ?? 'Import failed',
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {addMode === 'zotero-local' && (
+              <>
+                {!zoteroLocalStatus?.available ? (
+                  <div className={styles.zoteroLocalSetup}>
+                    <div className={styles.searchHint}>
+                      Point Athenaeum at your Zotero data directory (find it in Zotero:
+                      Preferences → Advanced → "Show Data Directory").
+                    </div>
+                    <button
+                      className={styles.ingestBtn}
+                      onClick={() => setShowLibraryPicker(true)}
+                    >
+                      Select local library…
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.searchHint}>
+                      Connected: <code>{zoteroLocalStatus.relative_path}</code>{' '}
+                      <button
+                        className={styles.zoteroConnectLink}
+                        onClick={() => clearLibraryMutation.mutate()}
+                        disabled={clearLibraryMutation.isPending}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                    <input
+                      className={styles.doiInput}
+                      value={zoteroLocalQuery}
+                      onChange={(e) => setZoteroLocalQuery(e.target.value)}
+                      placeholder="Author, title, or keywords…"
+                      autoFocus
+                    />
+                    <div className={styles.searchHint}>
+                      <button className={styles.zoteroConnectLink} onClick={() => setZoteroBrowser('local')}>
+                        Browse full library →
+                      </button>
+                    </div>
+                    {zoteroLocalFetching && <div className={styles.searchHint}>Searching…</div>}
+                    {zoteroLocalResults && zoteroLocalResults.length === 0 && !zoteroLocalFetching
+                      && debouncedZoteroLocalQuery.length >= 3 && (
+                      <div className={styles.searchHint}>No results</div>
+                    )}
+                    {zoteroLocalResults && zoteroLocalResults.length > 0 && (
+                      <div className={styles.searchResults}>
+                        {zoteroLocalResults.map((r: ZoteroSearchResult) => (
+                          <div key={r.item_key} className={styles.searchResultItem}>
+                            <div className={styles.searchResultTitle}>{r.title}</div>
+                            <div className={styles.searchResultMeta}>
+                              {[r.creators[0], r.year, r.venue].filter(Boolean).join(' · ')}
+                            </div>
+                            <button
+                              className={styles.searchResultAddBtn}
+                              disabled={r.already_in_project || importFromZoteroLocalMutation.isPending}
+                              title={r.already_in_project ? 'Already in project' : 'Import from local Zotero library'}
+                              onClick={() => importFromZoteroLocalMutation.mutate(r.item_key)}
+                            >
+                              {r.already_in_project ? '✓' : '+'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {importFromZoteroLocalMutation.error && (
+                      <div className={styles.formError}>
+                        {String(
+                          (importFromZoteroLocalMutation.error as { response?: { data?: { detail?: string } } })
+                            ?.response?.data?.detail ?? 'Import failed',
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -361,62 +606,68 @@ function LeftSidebar({
         <div className={styles.paperList}>
           {papersLoading && <div className={styles.listHint}>Loading…</div>}
           {papers.map((p) => (
-            <button key={p.id} className={styles.paperItem} onClick={() => onSelectPaper(p.id)}>
-              <span className={`${styles.statusDot} ${isProcessing(p) ? styles.processing : styles[p.status]}`} />
-              <span className={styles.paperTitle}>{trunc(stripHtml(p.title), 48)}</span>
-              {isProcessing(p) && <span className={styles.processingLabel}>processing</span>}
-            </button>
+            <div
+              key={p.id}
+              className={`${styles.paperItem} ${p.id === selectedPaperId ? styles.paperItemActive : ''}`}
+            >
+              <button className={styles.paperItemMain} onClick={() => onSelectPaper(p.id)}>
+                <span className={`${styles.statusDot} ${isProcessing(p) ? styles.processing : styles[p.status]}`} />
+                <span className={styles.paperTitle}>{trunc(stripHtml(p.title), 48)}</span>
+                {isProcessing(p) && <span className={styles.processingLabel}>processing</span>}
+              </button>
+              <button
+                className={styles.paperDeleteBtn}
+                title="Remove from this project"
+                disabled={deletePaperMutation.isPending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deletePaperMutation.mutate(p.id);
+                }}
+              >×</button>
+            </div>
           ))}
           {!papersLoading && papers.length === 0 && (
-            <div className={styles.listHint}>No papers yet — add one above.</div>
+            <div className={styles.listHint}>No papers yet — add one above, or drag PDFs anywhere onto this page.</div>
           )}
         </div>
       </div>
 
-      <div className={styles.sidebarDivider} />
-
-      <div className={styles.sidebarSection}>
-        <div className={styles.sidebarSectionHeader}>New brick</div>
-        <select
-          className={styles.typeSelect}
-          value={brickType}
-          onChange={(e) => setBrickType(e.target.value)}
-        >
-          {['claim', 'observation', 'question', 'foundation', 'methods', 'synthesis', 'other'].map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-        <textarea
-          className={styles.brickTextarea}
-          value={brickText}
-          onChange={(e) => setBrickText(e.target.value)}
-          placeholder={brickType === 'question' ? 'State your question…' : 'State the claim or finding…'}
-          rows={3}
+      {zoteroBrowser && (
+        <ZoteroBrowserModal
+          projectId={projectId}
+          onClose={() => setZoteroBrowser(null)}
+          client={zoteroBrowser === 'local' ? zoteroLocalApi : zoteroApi}
+          title={zoteroBrowser === 'local' ? 'Browse local Zotero library' : 'Browse Zotero library'}
+          sourceKey={zoteroBrowser}
         />
-        <button
-          className={styles.createBtn}
-          disabled={brickText.trim().length < 3 || createBrickMutation.isPending}
-          onClick={() => createBrickMutation.mutate()}
-        >
-          {createBrickMutation.isPending ? 'Creating…' : 'Create'}
-        </button>
-      </div>
+      )}
+
+      {showLibraryPicker && (
+        <LocalLibraryPicker
+          onClose={() => setShowLibraryPicker(false)}
+          onSelect={(relativePath) => selectLibraryMutation.mutate(relativePath)}
+          isSelecting={selectLibraryMutation.isPending}
+          selectError={
+            selectLibraryMutation.error
+              ? String(
+                  (selectLibraryMutation.error as { response?: { data?: { detail?: string } } })
+                    ?.response?.data?.detail ?? 'Could not select that folder',
+                )
+              : undefined
+          }
+        />
+      )}
     </aside>
   );
 }
 
-// ── Paper detail panel ────────────────────────────────────────────────────────
+// ── Reader pane (middle) ─────────────────────────────────────────────────────
 
-function PaperDetailPanel({
-  paperId, projectId, onBrickCreated,
-}: {
-  paperId: string;
-  projectId: string;
-  onBrickCreated: (id: string) => void;
-}) {
+function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string }) {
   const queryClient = useQueryClient();
   const [expandAbstract, setExpandAbstract] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
+  const [fullTextView, setFullTextView] = useState(false);
 
   const { data: paper } = useQuery({
     queryKey: ['paper', paperId],
@@ -432,7 +683,13 @@ function PaperDetailPanel({
   const { data: sentences } = useQuery({
     queryKey: ['sentences', paperId, openSection],
     queryFn: () => papersApi.sentences(paperId, openSection ?? undefined),
-    enabled: !!openSection,
+    enabled: !!openSection && !fullTextView,
+  });
+
+  const { data: allSentences } = useQuery({
+    queryKey: ['sentences', paperId, 'all'],
+    queryFn: () => papersApi.sentences(paperId),
+    enabled: fullTextView,
   });
 
   const passagesRef = useRef<HTMLDivElement>(null);
@@ -459,24 +716,15 @@ function PaperDetailPanel({
     },
   });
 
-  const createFromSentence = useMutation({
-    mutationFn: async ({ text, sentenceId }: { text: string; sentenceId: string }) => {
-      const brick = await bricksApi.create(projectId, 'claim', text);
-      await bricksApi.addRestsOn(brick.id, 'passage', sentenceId, 'evidence');
-      return brick;
-    },
-    onSuccess: (brick) => {
-      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
-      setSelectionTip(null);
-      onBrickCreated(brick.id);
-    },
-  });
-
+  // Bound at the document level (not on the passagesRef container directly):
+  // that div only exists once paper/sections finish loading, and since this
+  // effect only runs once on mount, attaching straight to the container would
+  // capture a still-null ref forever. Reading passagesRef.current live inside
+  // the handler instead means it doesn't matter when the container shows up.
   useEffect(() => {
-    const container = passagesRef.current;
-    if (!container) return;
-
     const handleMouseUp = (e: MouseEvent) => {
+      const container = passagesRef.current;
+      if (!container || !container.contains(e.target as Node)) return;
       if (selectionTipBtnRef.current?.contains(e.target as Node)) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) { setSelectionTip(null); return; }
@@ -502,10 +750,10 @@ function PaperDetailPanel({
       setSelectionTip(null);
     };
 
-    container.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('mousedown', handleMouseDown);
     return () => {
-      container.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('mousedown', handleMouseDown);
     };
   }, []);
@@ -525,6 +773,7 @@ function PaperDetailPanel({
         <span className={`${styles.statusDot} ${styles[paper.status]}`} />
         <span className={styles.paperStatusLabel}>{paper.status.replace('_', ' ')}</span>
         {paper.doi && <span className={styles.paperDoi}>{paper.doi}</span>}
+        {paper.zotero_item_key && <span className={styles.zoteroBadge}>Zotero</span>}
       </div>
 
       {paper.status === 'failed' && (
@@ -573,35 +822,58 @@ function PaperDetailPanel({
 
       {paper.status === 'full_text' && sections && sections.length > 0 && (
         <div className={styles.sectionsSection} ref={passagesRef}>
-          <div className={styles.panelSectionLabel}>Passages</div>
-          {sections.map((sec: Section) => (
-            <div key={sec.id} className={styles.sectionItem}>
-              <button
-                className={styles.sectionToggle}
-                onClick={() => setOpenSection(openSection === sec.id ? null : sec.id)}
-              >
-                <span>{sec.label}</span>
-                <span className={styles.sectionArrow}>{openSection === sec.id ? '▾' : '▸'}</span>
-              </button>
-              {openSection === sec.id && (
-                <div className={styles.sentenceList}>
-                  {sentences
-                    ?.filter((s: Sentence) => s.section_id === sec.id)
-                    .map((s: Sentence) => (
-                      <div key={s.id} className={styles.sentence} data-sentence-id={s.id}>
-                        <span className={styles.sentenceText}>{s.text}</span>
-                        <button
-                          className={styles.sentenceCreateBtn}
-                          disabled={createFromSentence.isPending}
-                          onClick={() => createFromSentence.mutate({ text: s.text, sentenceId: s.id })}
-                          title="Create brick from this passage"
-                        >→ brick</button>
-                      </div>
-                    ))}
+          <div className={styles.panelSectionLabel}>
+            Passages
+            <button className={styles.viewToggleBtn} onClick={() => setFullTextView((v) => !v)}>
+              {fullTextView ? 'Section view' : 'Full text view'}
+            </button>
+          </div>
+          <div className={styles.searchHint} style={{ marginBottom: 8 }}>
+            Highlight any text, then drag the button that appears onto the graph — drop it on
+            empty space for a new statement, or onto an existing one to add as evidence there.
+          </div>
+
+          {fullTextView ? (
+            <div className={styles.fullTextView}>
+              {sections.map((sec: Section) => (
+                <div key={sec.id} className={styles.fullTextSection}>
+                  <div className={styles.fullTextSectionLabel}>{sec.label}</div>
+                  <div className={styles.fullTextBody}>
+                    {allSentences
+                      ?.filter((s: Sentence) => s.section_id === sec.id)
+                      .map((s: Sentence) => (
+                        <span key={s.id} className={styles.sentenceSpan} data-sentence-id={s.id}>
+                          {s.text}{' '}
+                        </span>
+                      ))}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          ))}
+          ) : (
+            sections.map((sec: Section) => (
+              <div key={sec.id} className={styles.sectionItem}>
+                <button
+                  className={styles.sectionToggle}
+                  onClick={() => setOpenSection(openSection === sec.id ? null : sec.id)}
+                >
+                  <span>{sec.label}</span>
+                  <span className={styles.sectionArrow}>{openSection === sec.id ? '▾' : '▸'}</span>
+                </button>
+                {openSection === sec.id && (
+                  <div className={styles.sentenceList}>
+                    {sentences
+                      ?.filter((s: Sentence) => s.section_id === sec.id)
+                      .map((s: Sentence) => (
+                        <div key={s.id} className={styles.sentence} data-sentence-id={s.id}>
+                          <span className={styles.sentenceText}>{s.text}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       )}
 
@@ -626,30 +898,91 @@ function PaperDetailPanel({
           ref={selectionTipBtnRef}
           className={styles.selectionTooltip}
           style={{ left: selectionTip.x, top: selectionTip.y }}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => createFromSentence.mutate({ text: selectionTip.text, sentenceId: selectionTip.sentenceId })}
-          disabled={createFromSentence.isPending}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(
+              PASSAGE_MIME,
+              JSON.stringify({ sentenceId: selectionTip.sentenceId, text: selectionTip.text }),
+            );
+            e.dataTransfer.effectAllowed = 'copy';
+          }}
+          onDragEnd={() => setSelectionTip(null)}
         >
-          → brick
+          ⠿ Drag to workspace
         </button>
       )}
     </div>
   );
 }
 
-// ── Brick detail panel ────────────────────────────────────────────────────────
+// ── New statement quick-create ────────────────────────────────────────────────
 
-function AssertionEditor({ brick }: { brick: Brick }) {
-  const [text, setText] = useState(brick.assertion);
+function NewStatementForm({ projectId, onCreated }: { projectId: string; onCreated: (id: string) => void }) {
+  const queryClient = useQueryClient();
+  const [type, setType] = useState('claim');
+  const [text, setText] = useState('');
+
+  const createMutation = useMutation({
+    mutationFn: () => statementsApi.create(projectId, type, text.trim()),
+    onSuccess: (s) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      setText('');
+      onCreated(s.id);
+    },
+  });
+
+  return (
+    <div className={styles.sidebarSection}>
+      <div className={styles.sidebarSectionHeader}>New statement</div>
+      <select
+        className={styles.typeSelect}
+        value={type}
+        onChange={(e) => setType(e.target.value)}
+      >
+        {['claim', 'observation', 'question', 'foundation', 'methods', 'synthesis', 'other'].map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
+      </select>
+      <textarea
+        className={styles.statementTextarea}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={type === 'question' ? 'State your question…' : 'State the claim or finding…'}
+        rows={3}
+      />
+      <button
+        className={styles.createBtn}
+        disabled={text.trim().length < 3 || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        {createMutation.isPending ? 'Creating…' : 'Create'}
+      </button>
+    </div>
+  );
+}
+
+// ── Statement detail panel ─────────────────────────────────────────────────────
+
+function AssertionEditor({ statement }: { statement: Statement }) {
+  const [text, setText] = useState(statement.assertion);
   const [saving, setSaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (val: string) => bricksApi.update(brick.id, { assertion: val }),
+    mutationFn: (val: string) => statementsApi.update(statement.id, { assertion: val }),
     onSettled: () => setSaving(false),
   });
 
-  useEffect(() => { setText(brick.assertion); }, [brick.id, brick.assertion]);
+  // Reset the local draft when a different statement (or its server-side
+  // assertion) changes — done during render via state (not a ref: refs can't
+  // be read or written during render), avoiding a stale-then-corrected
+  // double render (see React's "adjusting state when a prop changes" guidance).
+  const currentKey = `${statement.id}:${statement.assertion}`;
+  const [prevStatementKey, setPrevStatementKey] = useState(currentKey);
+  if (currentKey !== prevStatementKey) {
+    setPrevStatementKey(currentKey);
+    if (text !== statement.assertion) setText(statement.assertion);
+  }
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -659,7 +992,7 @@ function AssertionEditor({ brick }: { brick: Brick }) {
     timerRef.current = setTimeout(() => mutation.mutate(val), 1000);
   }, [mutation]);
 
-  const isLocked = brick.status === 'cemented';
+  const isLocked = statement.status === 'locked';
 
   return (
     <div className={styles.assertionSection}>
@@ -668,123 +1001,137 @@ function AssertionEditor({ brick }: { brick: Brick }) {
         value={text}
         onChange={handleChange}
         disabled={isLocked}
-        placeholder={brick.type === 'question' ? 'State your question…' : 'State the claim or finding…'}
+        placeholder={statement.type === 'question' ? 'State your question…' : 'State the claim or finding…'}
         rows={4}
       />
       <div className={`${styles.saveHint} ${saving ? styles.saveHintSaving : ''}`}>
-        {saving ? 'Saving…' : isLocked ? 'Cemented — edit to reopen' : 'Auto-saved'}
+        {saving ? 'Saving…' : isLocked ? 'Locked — edit to unlock' : 'Auto-saved'}
       </div>
     </div>
   );
 }
 
-function BrickDetailPanel({
-  brickId, projectId, allBricks, papers,
+function StatementDetailPanel({
+  statementId, projectId, allStatements, papers,
 }: {
-  brickId: string;
+  statementId: string;
   projectId: string;
-  allBricks: BrickNode[];
+  allStatements: StatementNode[];
   papers: Paper[];
 }) {
   const queryClient = useQueryClient();
 
-  const { data: brick } = useQuery({
-    queryKey: ['brick', brickId],
-    queryFn: () => api.get<Brick>(`/bricks/${brickId}`).then((r) => r.data),
+  const { data: statement } = useQuery({
+    queryKey: ['statement', statementId],
+    queryFn: () => api.get<Statement>(`/statements/${statementId}`).then((r) => r.data),
   });
 
-  const { data: restsOn } = useQuery({
-    queryKey: ['rests-on', brickId],
-    queryFn: () => bricksApi.restsOn(brickId),
+  const { data: evidence } = useQuery({
+    queryKey: ['evidence', statementId],
+    queryFn: () => statementsApi.evidence(statementId),
   });
 
-  const { data: buildsOn } = useQuery({
-    queryKey: ['builds-on', brickId],
-    queryFn: () => bricksApi.buildsOn(brickId),
+  const { data: edges } = useQuery({
+    queryKey: ['edges', statementId],
+    queryFn: () => statementsApi.edges(statementId),
   });
 
-  const [targetKind, setTargetKind] = useState<'paper' | 'brick' | 'passage' | 'dataset'>('paper');
+  const [targetKind, setTargetKind] = useState<'paper' | 'statement' | 'passage' | 'dataset'>('paper');
   const [targetId, setTargetId] = useState('');
   const [role, setRole] = useState('');
-  const [parentId, setParentId] = useState('');
+  const [relationTargetId, setRelationTargetId] = useState('');
+  const [relation, setRelation] = useState<StatementRelation>('relates_to');
 
-  useEffect(() => { setTargetId(''); }, [targetKind]);
+  const [prevTargetKind, setPrevTargetKind] = useState(targetKind);
+  if (targetKind !== prevTargetKind) {
+    setPrevTargetKind(targetKind);
+    if (targetId !== '') setTargetId('');
+  }
 
-  const cementMutation = useMutation({
-    mutationFn: () => bricksApi.cement(brickId),
+  const lockMutation = useMutation({
+    mutationFn: () => statementsApi.lock(statementId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['brick', brickId] });
+      queryClient.invalidateQueries({ queryKey: ['statement', statementId] });
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+    },
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: () => statementsApi.unlock(statementId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['statement', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => bricksApi.delete(brickId),
+    mutationFn: () => statementsApi.delete(statementId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
     },
   });
 
   const statusMutation = useMutation({
-    mutationFn: (status: string) => bricksApi.update(brickId, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['brick', brickId] }),
+    mutationFn: (status: string) => statementsApi.update(statementId, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['statement', statementId] }),
   });
 
-  const addRestsOnMutation = useMutation({
-    mutationFn: () => bricksApi.addRestsOn(brickId, targetKind, targetId, role || 'evidence'),
+  const addEvidenceMutation = useMutation({
+    mutationFn: () => statementsApi.addEvidence(statementId, targetKind, targetId, role || 'evidence'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rests-on', brickId] });
+      queryClient.invalidateQueries({ queryKey: ['evidence', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
       setTargetId('');
     },
   });
 
-  const removeRestsOnMutation = useMutation({
-    mutationFn: ({ kind, id }: { kind: string; id: string }) => bricksApi.removeRestsOn(brickId, kind, id),
+  const removeEvidenceMutation = useMutation({
+    mutationFn: ({ kind, id }: { kind: string; id: string }) => statementsApi.removeEvidence(statementId, kind, id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rests-on', brickId] });
+      queryClient.invalidateQueries({ queryKey: ['evidence', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
     },
   });
 
-  const addBuildsOnMutation = useMutation({
-    mutationFn: () => bricksApi.addBuildsOn(brickId, parentId),
+  const addEdgeMutation = useMutation({
+    mutationFn: () => statementsApi.addEdge(statementId, relationTargetId, relation),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['builds-on', brickId] });
+      queryClient.invalidateQueries({ queryKey: ['edges', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
-      setParentId('');
+      setRelationTargetId('');
     },
   });
 
-  const removeBuildsOnMutation = useMutation({
-    mutationFn: (pid: string) => bricksApi.removeBuildsOn(brickId, pid),
+  const removeEdgeMutation = useMutation({
+    mutationFn: (otherId: string) => statementsApi.removeEdge(statementId, otherId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['builds-on', brickId] });
+      queryClient.invalidateQueries({ queryKey: ['edges', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
     },
   });
 
-  if (!brick) return <div className={styles.panelLoading}>Loading…</div>;
+  if (!statement) return <div className={styles.panelLoading}>Loading…</div>;
 
-  const linkedKeys = new Set((restsOn ?? []).map((e: RestsOn) => `${e.target_kind}:${e.target_id}`));
+  const linkedKeys = new Set((evidence ?? []).map((e: Evidence) => `${e.target_kind}:${e.target_id}`));
   const availablePapers = papers.filter((p) => !linkedKeys.has(`paper:${p.id}`));
-  const availableBricks = allBricks.filter((b) => b.id !== brickId && !linkedKeys.has(`brick:${b.id}`));
-  const linkedBrickIds = new Set((buildsOn ?? []).map((e: BuildsOn) => e.parent_brick_id));
-  const parentOptions = allBricks.filter((b) => b.id !== brickId && !linkedBrickIds.has(b.id));
+  const availableStatements = allStatements.filter((s) => s.id !== statementId && !linkedKeys.has(`statement:${s.id}`));
 
-  const isQuestion = brick.type === 'question';
+  const relatedIds = new Set((edges ?? []).map((e) => (e.from_statement_id === statementId ? e.to_statement_id : e.from_statement_id)));
+  const relationTargetOptions = allStatements.filter((s) => s.id !== statementId && !relatedIds.has(s.id));
+
+  const isQuestion = statement.type === 'question';
   const needsUUIDInput = targetKind === 'passage' || targetKind === 'dataset';
-  const canAddRestsOn = needsUUIDInput
+  const canAddEvidence = needsUUIDInput
     ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId)
     : targetId.trim().length > 0;
 
-  function restsOnLabel(e: RestsOn) {
+  function evidenceLabel(e: Evidence) {
     if (e.target_kind === 'paper') {
       const found = papers.find((p) => p.id === e.target_id);
       return found ? trunc(found.title, 50) : e.target_id;
     }
-    if (e.target_kind === 'brick') {
-      const found = allBricks.find((b) => b.id === e.target_id);
+    if (e.target_kind === 'statement') {
+      const found = allStatements.find((s) => s.id === e.target_id);
       return found ? trunc(found.assertion, 50) : e.target_id;
     }
     return `${e.target_kind} · ${e.target_id.slice(0, 8)}…`;
@@ -792,24 +1139,33 @@ function BrickDetailPanel({
 
   return (
     <div className={styles.panelContent}>
-      <div className={styles.brickPanelHeader}>
-        <span className={`${styles.typeBadge} ${styles[typeClass(brick.type)]}`}>{brick.type}</span>
-        <span className={`${styles.statusDot} ${styles[brick.status]}`} />
-        <span className={styles.brickStatus}>{brick.status}</span>
+      <div className={styles.statementPanelHeader}>
+        <span className={`${styles.typeBadge} ${styles[typeClass(statement.type)]}`}>{statement.type}</span>
+        <span className={`${styles.statusDot} ${styles[statement.status]}`} />
+        <span className={styles.statementStatus}>{statement.status}</span>
 
-        {!isQuestion && brick.status === 'draft' && (
+        {!isQuestion && statement.status === 'draft' && (
           <button
-            className={styles.cementBtn}
-            onClick={() => cementMutation.mutate()}
-            disabled={cementMutation.isPending || brick.assertion.trim().length < 5}
+            className={styles.lockBtn}
+            onClick={() => lockMutation.mutate()}
+            disabled={lockMutation.isPending || statement.assertion.trim().length < 5}
           >
-            Cement
+            Lock
+          </button>
+        )}
+        {!isQuestion && statement.status === 'locked' && (
+          <button
+            className={styles.lockBtn}
+            onClick={() => unlockMutation.mutate()}
+            disabled={unlockMutation.isPending}
+          >
+            Unlock
           </button>
         )}
         {isQuestion && (
           <select
             className={styles.questionStatusSelect}
-            value={brick.status}
+            value={statement.status}
             onChange={(e) => statusMutation.mutate(e.target.value)}
           >
             <option value="open">open</option>
@@ -817,7 +1173,7 @@ function BrickDetailPanel({
             <option value="wontfix">won't fix</option>
           </select>
         )}
-        {brick.status !== 'cemented' && (
+        {statement.status !== 'locked' && (
           <button
             className={styles.deleteBtn}
             onClick={() => deleteMutation.mutate()}
@@ -828,26 +1184,26 @@ function BrickDetailPanel({
         )}
       </div>
 
-      <AssertionEditor brick={brick} />
+      <AssertionEditor statement={statement} />
 
-      {/* Rests on */}
+      {/* Evidence */}
       <div className={styles.edgeSection}>
-        <div className={styles.edgeSectionLabel}>Rests on</div>
-        {(restsOn ?? []).map((e: RestsOn) => (
+        <div className={styles.edgeSectionLabel}>Evidence</div>
+        {(evidence ?? []).map((e: Evidence) => (
           <div key={`${e.target_kind}:${e.target_id}`} className={styles.edgeChip}>
             <span className={styles.edgeChipKind}>{e.target_kind}</span>
-            <span className={styles.edgeChipText}>{restsOnLabel(e)}</span>
+            <span className={styles.edgeChipText}>{evidenceLabel(e)}</span>
             <span className={styles.edgeChipRole}>{e.role}</span>
             <button
               className={styles.edgeRemoveBtn}
-              onClick={() => removeRestsOnMutation.mutate({ kind: e.target_kind, id: e.target_id })}
+              onClick={() => removeEvidenceMutation.mutate({ kind: e.target_kind, id: e.target_id })}
             >×</button>
           </div>
         ))}
         <div className={styles.edgeAddRow}>
           <select className={styles.kindSelect} value={targetKind} onChange={(e) => setTargetKind(e.target.value as typeof targetKind)}>
             <option value="paper">paper</option>
-            <option value="brick">brick</option>
+            <option value="statement">statement</option>
             <option value="passage">passage</option>
             <option value="dataset">dataset</option>
           </select>
@@ -855,66 +1211,242 @@ function BrickDetailPanel({
             <select className={styles.targetSelect} value={targetId} onChange={(e) => setTargetId(e.target.value)}>
               <option value="">— select —</option>
               {availablePapers.map((p) => (
-                <option key={p.id} value={p.id}>{trunc(stripHtml(p.title), 40)}</option>
+                <option key={p.id} value={p.id}>{trunc(p.title.replace(/<[^>]*>/g, ''), 40)}</option>
               ))}
             </select>
-          ) : targetKind === 'brick' ? (
+          ) : targetKind === 'statement' ? (
             <select className={styles.targetSelect} value={targetId} onChange={(e) => setTargetId(e.target.value)}>
               <option value="">— select —</option>
-              {availableBricks.map((b) => (
-                <option key={b.id} value={b.id}>{trunc(b.assertion, 40)}</option>
+              {availableStatements.map((s) => (
+                <option key={s.id} value={s.id}>{trunc(s.assertion, 40)}</option>
               ))}
             </select>
           ) : (
             <input className={styles.targetSelect} value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="UUID" />
           )}
-          <input className={styles.roleInput} value={role} onChange={(e) => setRole(e.target.value)} placeholder="role" list="brick-roles" />
-          <datalist id="brick-roles">
+          <input className={styles.roleInput} value={role} onChange={(e) => setRole(e.target.value)} placeholder="role" list="statement-roles" />
+          <datalist id="statement-roles">
             {['evidence', 'supports', 'contradicts', 'data', 'methodology', 'context'].map((r) => (
               <option key={r} value={r} />
             ))}
           </datalist>
           <button
             className={styles.edgeAddBtn}
-            disabled={!canAddRestsOn || addRestsOnMutation.isPending}
-            onClick={() => addRestsOnMutation.mutate()}
+            disabled={!canAddEvidence || addEvidenceMutation.isPending}
+            onClick={() => addEvidenceMutation.mutate()}
           >+</button>
         </div>
       </div>
 
-      {/* Builds on */}
+      {/* Relations */}
       <div className={styles.edgeSection}>
-        <div className={styles.edgeSectionLabel}>Builds on</div>
-        {(buildsOn ?? []).map((e: BuildsOn) => {
-          const parent = allBricks.find((b) => b.id === e.parent_brick_id);
+        <div className={styles.edgeSectionLabel}>Relations</div>
+        {(edges ?? []).map((e) => {
+          const otherId = e.from_statement_id === statementId ? e.to_statement_id : e.from_statement_id;
+          const other = allStatements.find((s) => s.id === otherId);
+          const isOutgoing = e.from_statement_id === statementId;
           return (
-            <div key={e.parent_brick_id} className={styles.edgeChip}>
-              <span className={styles.edgeChipKind}>brick</span>
-              <span className={styles.edgeChipText}>{parent ? trunc(parent.assertion, 50) : e.parent_brick_id.slice(0, 8)}</span>
-              <button className={styles.edgeRemoveBtn} onClick={() => removeBuildsOnMutation.mutate(e.parent_brick_id)}>×</button>
+            <div key={otherId} className={styles.edgeChip}>
+              <span className={styles.edgeChipKind}>{isOutgoing ? relationLabel(e.relation) : `← ${relationLabel(e.relation)}`}</span>
+              <span className={styles.edgeChipText}>{other ? trunc(other.assertion, 45) : otherId.slice(0, 8)}</span>
+              <button className={styles.edgeRemoveBtn} onClick={() => removeEdgeMutation.mutate(otherId)}>×</button>
             </div>
           );
         })}
         <div className={styles.edgeAddRow}>
-          <select className={styles.targetSelect} style={{ flex: 1 }} value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">— select parent brick —</option>
-            {parentOptions.map((b) => (
-              <option key={b.id} value={b.id}>[{b.type}] {trunc(b.assertion, 40)}</option>
+          <select className={styles.kindSelect} value={relation} onChange={(e) => setRelation(e.target.value as StatementRelation)}>
+            {RELATIONS.map((r) => (
+              <option key={r} value={r}>{relationLabel(r)}</option>
+            ))}
+          </select>
+          <select className={styles.targetSelect} style={{ flex: 1 }} value={relationTargetId} onChange={(e) => setRelationTargetId(e.target.value)}>
+            <option value="">— select statement —</option>
+            {relationTargetOptions.map((s) => (
+              <option key={s.id} value={s.id}>[{s.type}] {trunc(s.assertion, 40)}</option>
             ))}
           </select>
           <button
             className={styles.edgeAddBtn}
-            disabled={!parentId || addBuildsOnMutation.isPending}
-            onClick={() => addBuildsOnMutation.mutate()}
+            disabled={!relationTargetId || addEdgeMutation.isPending}
+            onClick={() => addEdgeMutation.mutate()}
           >+</button>
         </div>
       </div>
 
-      <div className={styles.brickMeta}>
-        Drafted {formatDate(brick.drafted_at)}
-        {brick.cemented_at && ` · Cemented ${formatDate(brick.cemented_at)}`}
-        {brick.built_from_synthesis_id && ' · From synthesis'}
+      <div className={styles.statementMeta}>
+        Drafted {formatDate(statement.drafted_at)}
+        {statement.locked_at && ` · Locked ${formatDate(statement.locked_at)}`}
+        {statement.built_from_synthesis_id && ' · From synthesis'}
       </div>
+    </div>
+  );
+}
+
+// ── Evidence-preview popover (anchored to a graph node, separate from the
+// fuller detail panel — a quick glance at quotes + citations, not for editing) ─
+
+function EvidencePreviewRow({ evidence, papers }: { evidence: Evidence; papers: Paper[] }) {
+  const isPassage = evidence.target_kind === 'passage';
+  const { data: passage } = useQuery({
+    queryKey: ['passage-evidence', evidence.target_id],
+    queryFn: () => passagesApi.get(evidence.target_id),
+    enabled: isPassage,
+    staleTime: 5 * 60_000,
+  });
+
+  if (isPassage) {
+    if (!passage) return <div className={styles.evidencePopoverRow}>Loading…</div>;
+    return (
+      <div className={styles.evidencePopoverRow}>
+        <div className={styles.evidencePopoverQuote}>&ldquo;{trunc(passage.verbatim_text, 160)}&rdquo;</div>
+        <div className={styles.evidencePopoverCite}>
+          {formatCitation(passage.paper_first_author, passage.paper_year)}
+        </div>
+      </div>
+    );
+  }
+
+  if (evidence.target_kind === 'paper') {
+    const paper = papers.find((p) => p.id === evidence.target_id);
+    return (
+      <div className={styles.evidencePopoverRow}>
+        <div className={styles.evidencePopoverQuote}>{paper ? stripHtml(paper.title) : 'Paper'}</div>
+        <div className={styles.evidencePopoverCite}>
+          {paper ? formatCitation(firstAuthor(paper.authors_json), paper.year) : evidence.target_id.slice(0, 8)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.evidencePopoverRow}>
+      <div className={styles.evidencePopoverQuote}>{evidence.target_kind} · {evidence.target_id.slice(0, 8)}…</div>
+    </div>
+  );
+}
+
+function EvidencePopover({
+  statementId, x, y, papers, onClose,
+}: {
+  statementId: string;
+  x: number;
+  y: number;
+  papers: Paper[];
+  onClose: () => void;
+}) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const { data: evidence } = useQuery({
+    queryKey: ['evidence', statementId],
+    queryFn: () => statementsApi.evidence(statementId),
+  });
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div ref={popoverRef} className={styles.evidencePopover} style={{ left: x, top: y }}>
+      <div className={styles.evidencePopoverHeader}>
+        Evidence {evidence ? `· ${evidence.length}` : ''}
+      </div>
+      {evidence && evidence.length === 0 && (
+        <div className={styles.evidencePopoverRow}>No evidence linked yet.</div>
+      )}
+      {(evidence ?? []).map((e) => (
+        <EvidencePreviewRow key={`${e.target_kind}:${e.target_id}`} evidence={e} papers={papers} />
+      ))}
+    </div>
+  );
+}
+
+// ── Double-click-to-create popup (also reached via the context menu) ───────────
+
+function QuickCreatePopup({
+  x, y, onCreate, onClose, isPending,
+}: {
+  x: number;
+  y: number;
+  onCreate: (text: string) => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  const [text, setText] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className={styles.quickCreatePopup} style={{ left: x, top: y }}>
+      <textarea
+        className={styles.quickCreateTextarea}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="State the claim or finding…"
+        rows={2}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim().length >= 3) onCreate(text);
+          if (e.key === 'Escape') onClose();
+        }}
+      />
+      <button
+        className={styles.quickCreateBtn}
+        disabled={text.trim().length < 3 || isPending}
+        onClick={() => onCreate(text)}
+      >
+        {isPending ? 'Creating…' : 'Create statement'}
+      </button>
+    </div>
+  );
+}
+
+// ── Right-click context menu (background: create; node/edge: delete) ──────────
+
+function CanvasContextMenu({
+  x, y, kind, onCreateHere, onDelete, onClose,
+}: {
+  x: number;
+  y: number;
+  kind: 'background' | 'node' | 'edge';
+  onCreateHere: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className={styles.contextMenu} style={{ left: x, top: y }}>
+      {kind === 'background' && (
+        <button className={styles.contextMenuItem} onClick={onCreateHere}>+ Create statement here</button>
+      )}
+      {kind === 'node' && (
+        <button className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`} onClick={onDelete}>
+          Delete statement
+        </button>
+      )}
+      {kind === 'edge' && (
+        <button className={`${styles.contextMenuItem} ${styles.contextMenuItemDanger}`} onClick={onDelete}>
+          Delete relation
+        </button>
+      )}
     </div>
   );
 }
@@ -969,7 +1501,7 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
   );
 }
 
-function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBrickCreated: (id: string) => void }) {
+function SynthesisPanel({ projectId, onStatementCreated }: { projectId: string; onStatementCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
   const [claim, setClaim] = useState('');
   const [corpus, setCorpus] = useState('project');
@@ -1013,13 +1545,13 @@ function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBr
 
   const createFromEvidence = useMutation({
     mutationFn: async (ev: EvidenceFull) => {
-      const brick = await bricksApi.create(projectId, 'claim', ev.verbatim_text, selectedId ?? undefined);
-      await bricksApi.addRestsOn(brick.id, 'passage', ev.passage_id, ev.role);
-      return brick;
+      const statement = await statementsApi.create(projectId, 'claim', ev.verbatim_text, selectedId ?? undefined);
+      await statementsApi.addEvidence(statement.id, 'passage', ev.passage_id, ev.role);
+      return statement;
     },
-    onSuccess: (brick) => {
+    onSuccess: (statement) => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
-      onBrickCreated(brick.id);
+      onStatementCreated(statement.id);
     },
   });
 
@@ -1118,8 +1650,8 @@ function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBr
                       className={styles.evidenceCreateBtn}
                       disabled={createFromEvidence.isPending}
                       onClick={() => createFromEvidence.mutate(ev)}
-                      title="Promote to brick"
-                    >→ brick</button>
+                      title="Promote to statement"
+                    >→ statement</button>
                   </div>
                   <div className={styles.evidenceQuote}>{ev.verbatim_text}</div>
                 </div>
@@ -1132,17 +1664,17 @@ function SynthesisPanel({ projectId, onBrickCreated }: { projectId: string; onBr
   );
 }
 
-// ── Right panel ───────────────────────────────────────────────────────────────
+// ── Right panel (overlays the graph pane) ───────────────────────────────────────
 
 function RightPanel({
-  panelMode, onClose, projectId, papers, allBricks, onBrickCreated,
+  panelMode, onClose, projectId, papers, allStatements, onStatementCreated,
 }: {
   panelMode: Exclude<PanelMode, null>;
   onClose: () => void;
   projectId: string;
   papers: Paper[];
-  allBricks: BrickNode[];
-  onBrickCreated: (id: string) => void;
+  allStatements: StatementNode[];
+  onStatementCreated: (id: string) => void;
 }) {
   return (
     <div className={styles.rightPanel}>
@@ -1150,19 +1682,19 @@ function RightPanel({
         <button className={styles.closeBtn} onClick={onClose}>✕</button>
       </div>
       <div className={styles.rightPanelScroll}>
-        {panelMode.kind === 'paper' && (
-          <PaperDetailPanel paperId={panelMode.id} projectId={projectId} onBrickCreated={onBrickCreated} />
-        )}
-        {panelMode.kind === 'brick' && (
-          <BrickDetailPanel
-            brickId={panelMode.id}
+        {panelMode.kind === 'statement' && (
+          <StatementDetailPanel
+            statementId={panelMode.id}
             projectId={projectId}
-            allBricks={allBricks}
+            allStatements={allStatements}
             papers={papers}
           />
         )}
         {panelMode.kind === 'synthesis' && (
-          <SynthesisPanel projectId={projectId} onBrickCreated={onBrickCreated} />
+          <SynthesisPanel projectId={projectId} onStatementCreated={onStatementCreated} />
+        )}
+        {panelMode.kind === 'new' && (
+          <NewStatementForm projectId={projectId} onCreated={onStatementCreated} />
         )}
       </div>
     </div>
@@ -1172,24 +1704,40 @@ function RightPanel({
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function WorkspaceView() {
-  const { projectId } = useParams({ from: '/app/projects/$projectId' });
+  const { projectId } = useParams({ from: '/app/projects/$projectId/workspace' });
+  const queryClient = useQueryClient();
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
-  const pendingSelectRef = useRef<{ kind: 'paper' | 'brick'; id: string } | null>(null);
+  const pendingSelectRef = useRef<string | null>(null);
 
+  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
-  const [showAllPapers, setShowAllPapers] = useState(false);
   const [nodeFilter, setNodeFilter] = useState<NodeFilter>('all');
+  const [readerWidth, setReaderWidth] = useState(READER_DEFAULT_WIDTH);
+  const resizingRef = useRef(false);
 
-  const { data: graph, isLoading: graphLoading } = useQuery({
-    queryKey: ['graph', projectId],
-    queryFn: () => api.get<BrickGraph>(`/projects/${projectId}/graph`).then((r) => r.data),
-  });
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+
+  // ── Graph canvas interaction state ──────────────────────────────────────────
+  const [renderTick, setRenderTick] = useState(0);
+  const [badgePositions, setBadgePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [evidencePopover, setEvidencePopover] = useState<{ statementId: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | { x: number; y: number; kind: 'background' }
+    | { x: number; y: number; kind: 'node'; nodeId: string }
+    | { x: number; y: number; kind: 'edge'; edgeFrom: string; edgeTo: string }
+    | null
+  >(null);
+  const [quickCreate, setQuickCreate] = useState<{ x: number; y: number } | null>(null);
+  const [heldRelationKey, setHeldRelationKey] = useState<StatementRelation | null>(null);
+  const heldRelationKeyRef = useRef<StatementRelation | null>(null);
+  const edgeDragSourceRef = useRef<{ id: string; relation: StatementRelation } | null>(null);
 
   const { data: papers = [], isLoading: papersLoading } = useQuery({
     queryKey: ['papers', projectId],
     queryFn: () => papersApi.listForProject(projectId),
-    // Poll while any recently-added paper is still ghost (may still be processing)
     refetchInterval: (q) => {
       const data = q.state.data as Paper[] | undefined;
       if (!data) return false;
@@ -1200,20 +1748,245 @@ export default function WorkspaceView() {
     },
   });
 
-  const handleSelectNode = useCallback((kind: 'paper' | 'brick', id: string) => {
-    setPanelMode({ kind, id });
-    const cy = cyRef.current;
-    if (cy && cy.$(`#${id}`).length) {
-      cy.elements().unselect();
-      cy.$(`#${id}`).select();
-      cy.animate({ fit: { eles: cy.$(`#${id}`), padding: 80 }, duration: 300 });
-    }
+  const { data: graph, isLoading: graphLoading } = useQuery({
+    queryKey: ['graph', projectId],
+    queryFn: () => api.get<StatementGraph>(`/projects/${projectId}/graph`).then((r) => r.data),
+  });
+
+  const handleStatementCreated = useCallback((id: string) => {
+    pendingSelectRef.current = id;
+    setPanelMode({ kind: 'statement', id });
   }, []);
 
-  const handleBrickCreated = useCallback((id: string) => {
-    pendingSelectRef.current = { kind: 'brick', id };
-    setPanelMode({ kind: 'brick', id });
+  const createFromPassageMutation = useMutation({
+    mutationFn: async ({ text, sentenceId }: { text: string; sentenceId: string }) => {
+      const statement = await statementsApi.create(projectId, 'claim', text);
+      await statementsApi.addEvidence(statement.id, 'passage', sentenceId, 'evidence');
+      return statement;
+    },
+    onSuccess: (statement) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      handleStatementCreated(statement.id);
+    },
+  });
+
+  // Dropping a dragged passage directly onto an existing statement node nests
+  // it there as evidence, instead of spawning a new statement.
+  const nestEvidenceMutation = useMutation({
+    mutationFn: ({ statementId, sentenceId }: { statementId: string; sentenceId: string }) =>
+      statementsApi.addEvidence(statementId, 'passage', sentenceId, 'evidence'),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['evidence', variables.statementId] });
+      handleStatementCreated(variables.statementId);
+    },
+  });
+
+  function findStatementNodeAtPoint(clientX: number, clientY: number): cytoscape.NodeSingular | null {
+    const cy = cyRef.current;
+    const container = containerRef.current;
+    if (!cy || !container) return null;
+    const rect = container.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    let found: cytoscape.NodeSingular | null = null;
+    cy.nodes().forEach((n) => {
+      if (found || n.data('kind') !== 'statement') return;
+      const bb = n.renderedBoundingBox();
+      if (x >= bb.x1 && x <= bb.x2 && y >= bb.y1 && y <= bb.y2) found = n;
+    });
+    return found;
+  }
+
+  // ── Canvas-driven create / delete / connect ─────────────────────────────────
+
+  const quickCreateMutation = useMutation({
+    mutationFn: (text: string) => statementsApi.create(projectId, 'claim', text.trim()),
+    onSuccess: (statement) => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      setQuickCreate(null);
+      handleStatementCreated(statement.id);
+    },
+  });
+
+  const deleteStatementFromCanvasMutation = useMutation({
+    mutationFn: (id: string) => statementsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      setPanelMode((m) => (m?.kind === 'statement' ? null : m));
+      setEvidencePopover(null);
+    },
+  });
+
+  const removeEdgeFromCanvasMutation = useMutation({
+    mutationFn: ({ from, other }: { from: string; other: string }) => statementsApi.removeEdge(from, other),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['graph', projectId] }),
+  });
+
+  const addEdgeFromCanvasMutation = useMutation({
+    mutationFn: ({ from, to, relation }: { from: string; to: string; relation: StatementRelation }) =>
+      statementsApi.addEdge(from, to, relation),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['graph', projectId] }),
+  });
+
+  function deleteSelectedElements() {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.$('node:selected').forEach((n) => {
+      if (n.data('status') !== 'locked') deleteStatementFromCanvasMutation.mutate(n.id());
+    });
+    cy.$('edge:selected').forEach((e) => {
+      removeEdgeFromCanvasMutation.mutate({ from: e.data('source'), other: e.data('target') });
+    });
+  }
+
+  // ── File drag/drop (PDFs anywhere on the page) ──────────────────────────────
+
+  async function processUploadQueue(files: File[]) {
+    const items: UploadQueueItem[] = files.map((f) => ({
+      id: `${f.name}-${f.size}-${Date.now()}-${Math.random()}`,
+      name: f.name,
+      status: 'pending',
+    }));
+    setUploadQueue((q) => [...q, ...items]);
+
+    for (let i = 0; i < files.length; i++) {
+      const item = items[i];
+      setUploadQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: 'uploading' } : x)));
+      try {
+        await papersApi.upload(files[i], projectId, {});
+        setUploadQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: 'done' } : x)));
+        queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      } catch (err) {
+        const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          ?? 'Upload failed';
+        setUploadQueue((q) => q.map((x) => (x.id === item.id ? { ...x, status: 'error', error: message } : x)));
+      }
+    }
+  }
+
+  // Safety net: the browser's default action for a dropped file (anywhere in
+  // the viewport, not just our drop zone) is to navigate to/open it. Blocking
+  // dragover/drop at the window level guarantees that never happens while
+  // this page is mounted, regardless of exactly which pane the drop lands on.
+  useEffect(() => {
+    const preventDefault = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', preventDefault);
+    window.addEventListener('drop', preventDefault);
+    return () => {
+      window.removeEventListener('dragover', preventDefault);
+      window.removeEventListener('drop', preventDefault);
+    };
   }, []);
+
+  function handlePageDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    dragDepthRef.current += 1;
+    setIsDragOver(true);
+  }
+
+  function handlePageDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+
+  function handlePageDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragOver(false);
+  }
+
+  function handlePageDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter(isDroppableFile);
+    if (files.length > 0) void processUploadQueue(files);
+  }
+
+  // ── Passage drag/drop (reader pane → graph pane) ────────────────────────────
+
+  function handleCanvasDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes(PASSAGE_MIME)) e.preventDefault();
+  }
+
+  function handleCanvasDrop(e: React.DragEvent) {
+    const raw = e.dataTransfer.getData(PASSAGE_MIME);
+    if (!raw) return; // an OS file drop, or something else — let it bubble to the page handler
+    e.preventDefault();
+    e.stopPropagation();
+    const { sentenceId, text } = JSON.parse(raw) as { sentenceId: string; text: string };
+    const targetNode = findStatementNodeAtPoint(e.clientX, e.clientY);
+    if (targetNode) {
+      nestEvidenceMutation.mutate({ statementId: targetNode.id(), sentenceId });
+    } else {
+      createFromPassageMutation.mutate({ text, sentenceId });
+    }
+  }
+
+  // ── Reader/graph resize divider ─────────────────────────────────────────────
+
+  function handleDividerMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = readerWidth;
+
+    function onMove(ev: MouseEvent) {
+      if (!resizingRef.current) return;
+      const next = startWidth + (ev.clientX - startX);
+      setReaderWidth(Math.max(READER_MIN_WIDTH, Math.min(READER_MAX_WIDTH, next)));
+    }
+    function onUp() {
+      resizingRef.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // ── Keyboard shortcuts: W/E/R hold-to-connect, Delete/Backspace to remove ───
+  // Must ignore keys while typing in a text input/textarea — this page puts a
+  // graph canvas right next to editable text (assertion textarea, reader
+  // pane), so a stray "we ran an experiment" must not trigger tension-drawing.
+  useEffect(() => {
+    function isTypingTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      const relation = RELATION_KEYS[e.key.toLowerCase()];
+      if (relation && !heldRelationKeyRef.current) {
+        heldRelationKeyRef.current = relation;
+        setHeldRelationKey(relation);
+        cyRef.current?.autoungrabify(true);
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !heldRelationKeyRef.current) {
+        deleteSelectedElements();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      const relation = RELATION_KEYS[e.key.toLowerCase()];
+      if (relation && heldRelationKeyRef.current === relation) {
+        heldRelationKeyRef.current = null;
+        setHeldRelationKey(null);
+        cyRef.current?.autoungrabify(false);
+        cyRef.current?.nodes().removeClass('edge-drag-source');
+        edgeDragSourceRef.current = null;
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Cytoscape lifecycle ──────────────────────────────────────────────────────
 
   // Create cytoscape once on mount; event handlers are stable (setPanelMode is a stable setter)
   useEffect(() => {
@@ -1228,12 +2001,57 @@ export default function WorkspaceView() {
       maxZoom: 3,
     });
     cy.on('tap', 'node', (e: cytoscape.EventObject) => {
-      const { id, kind } = e.target.data() as { id: string; kind: 'paper' | 'brick' };
-      if (kind === 'paper' || kind === 'brick') setPanelMode({ kind, id });
+      const { id, kind } = e.target.data() as { id: string; kind: string };
+      if (kind !== 'statement') return;
+      setPanelMode({ kind: 'statement', id });
+      setContextMenu(null);
+      const rp = e.target.renderedPosition();
+      setEvidencePopover({ statementId: id, x: rp.x, y: rp.y });
     });
     cy.on('tap', (e: cytoscape.EventObject) => {
-      if (e.target === cy) setPanelMode(null);
+      if (e.target === cy) {
+        setPanelMode(null);
+        setEvidencePopover(null);
+        setContextMenu(null);
+      }
     });
+    cy.on('dbltap', (e: cytoscape.EventObject) => {
+      if (e.target !== cy) return; // only empty-canvas double-clicks create
+      setContextMenu(null);
+      setQuickCreate({ x: e.renderedPosition.x, y: e.renderedPosition.y });
+    });
+    cy.on('cxttap', (e: cytoscape.EventObject) => {
+      setEvidencePopover(null);
+      setQuickCreate(null);
+      const { x, y } = e.renderedPosition;
+      if (e.target === cy) {
+        setContextMenu({ x, y, kind: 'background' });
+      } else if (e.target.isNode?.() && e.target.data('kind') === 'statement') {
+        setContextMenu({ x, y, kind: 'node', nodeId: e.target.id() });
+      } else if (e.target.isEdge?.()) {
+        setContextMenu({ x, y, kind: 'edge', edgeFrom: e.target.data('source'), edgeTo: e.target.data('target') });
+      }
+    });
+    // W/E/R hold + drag between two statement nodes draws a typed edge —
+    // autoungrabify (toggled by the keydown/keyup effect) stops the source
+    // node from just being dragged around while a relation key is held.
+    cy.on('mousedown', 'node', (e: cytoscape.EventObject) => {
+      const relation = heldRelationKeyRef.current;
+      if (!relation || e.target.data('kind') !== 'statement') return;
+      edgeDragSourceRef.current = { id: e.target.id(), relation };
+      e.target.addClass('edge-drag-source');
+    });
+    cy.on('mouseup', (e: cytoscape.EventObject) => {
+      const source = edgeDragSourceRef.current;
+      if (!source) return;
+      edgeDragSourceRef.current = null;
+      cy.nodes().removeClass('edge-drag-source');
+      const target = e.target;
+      if (target?.isNode?.() && target.data('kind') === 'statement' && target.id() !== source.id) {
+        addEdgeFromCanvasMutation.mutate({ from: source.id, to: target.id(), relation: source.relation });
+      }
+    });
+    cy.on('render', () => setRenderTick((t) => t + 1));
     cyRef.current = cy;
     return () => { cy.destroy(); cyRef.current = null; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1243,7 +2061,7 @@ export default function WorkspaceView() {
     const cy = cyRef.current;
     if (!cy || !graph) return;
 
-    const next = buildElements(graph, papers, showAllPapers, nodeFilter);
+    const next = buildElements(graph, nodeFilter);
     const nextIds = new Set(next.map((e) => e.data.id as string));
     const toRemove = cy.elements().filter((e) => !nextIds.has(e.id()));
     const toAdd = next.filter((e) => !cy.$(`#${e.data.id}`).length);
@@ -1271,9 +2089,9 @@ export default function WorkspaceView() {
       }
     }
 
-    const pending = pendingSelectRef.current;
-    if (pending) {
-      const el = cy.$(`#${pending.id}`);
+    const pendingId = pendingSelectRef.current;
+    if (pendingId) {
+      const el = cy.$(`#${pendingId}`);
       if (el.length) {
         cy.elements().unselect();
         el.select();
@@ -1281,20 +2099,42 @@ export default function WorkspaceView() {
         pendingSelectRef.current = null;
       }
     }
-  }, [graph, papers, showAllPapers, nodeFilter]);
+  }, [graph, nodeFilter]);
+
+  // Evidence-count badge positions — recomputed (via refs, inside an effect,
+  // never during render) whenever the graph data changes or cytoscape fires
+  // its own 'render' tick (pan/zoom/drag/layout).
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !graph) { setBadgePositions({}); return; }
+    const positions: Record<string, { x: number; y: number }> = {};
+    graph.nodes.filter((n) => n.evidence_count > 0).forEach((n) => {
+      const el = cy.$id(n.id);
+      if (!el.length) return;
+      const bb = el.renderedBoundingBox();
+      positions[n.id] = { x: bb.x2 - 8, y: bb.y1 - 6 };
+    });
+    setBadgePositions(positions);
+  }, [graph, renderTick]);
 
   const nodeCount = graph
-    ? { all: graph.nodes.length, questions: graph.nodes.filter((n) => n.type === 'question').length, bricks: graph.nodes.filter((n) => n.type !== 'question').length }
+    ? { all: graph.nodes.length, questions: graph.nodes.filter((n) => n.type === 'question').length, statements: graph.nodes.filter((n) => n.type !== 'question').length }
     : null;
 
-  const edgeCount = graph ? graph.builds_on.length + graph.rests_on.filter((e) => e.target_kind === 'paper').length : 0;
+  const edgeCount = graph ? graph.edges.length : 0;
 
   return (
-    <div className={styles.workspace}>
+    <div
+      className={styles.workspace}
+      onDragEnter={handlePageDragEnter}
+      onDragOver={handlePageDragOver}
+      onDragLeave={handlePageDragLeave}
+      onDrop={handlePageDrop}
+    >
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>
         <span className={styles.toolbarLabel}>Show</span>
-        {(['all', 'bricks', 'questions'] as NodeFilter[]).map((f) => (
+        {(['all', 'statements', 'questions'] as NodeFilter[]).map((f) => (
           <button
             key={f}
             className={`${styles.filterChip} ${nodeFilter === f ? styles.active : ''}`}
@@ -1303,17 +2143,6 @@ export default function WorkspaceView() {
             {f} {nodeCount ? `(${nodeCount[f]})` : ''}
           </button>
         ))}
-
-        <div className={styles.toolbarSep} />
-
-        <label className={styles.toggleLabel}>
-          <input
-            type="checkbox"
-            checked={showAllPapers}
-            onChange={(e) => setShowAllPapers(e.target.checked)}
-          />
-          All papers
-        </label>
 
         <div className={styles.toolbarSep} />
 
@@ -1326,37 +2155,151 @@ export default function WorkspaceView() {
 
         <span className={styles.countBadge}>{edgeCount} edge{edgeCount !== 1 ? 's' : ''}</span>
 
+        <div className={styles.toolbarSep} />
+
+        <span className={styles.relationLegend}>
+          {(['w', 'e', 'r'] as const).map((k) => (
+            <span
+              key={k}
+              className={`${styles.relationLegendKey} ${heldRelationKey === RELATION_KEYS[k] ? styles.relationLegendKeyActive : ''}`}
+            >
+              {k.toUpperCase()} {relationLabel(RELATION_KEYS[k])}
+            </span>
+          ))}
+          <span className={styles.relationLegendHint}>hold + drag between statements</span>
+        </span>
+
         <div style={{ marginLeft: 'auto' }} />
+        <button
+          className={`${styles.toolbarBtn} ${panelMode?.kind === 'new' ? styles.active : ''}`}
+          onClick={() => setPanelMode(panelMode?.kind === 'new' ? null : { kind: 'new' })}
+        >
+          + New statement
+        </button>
         <button
           className={`${styles.synthBtn} ${panelMode?.kind === 'synthesis' ? styles.synthBtnActive : ''}`}
           onClick={() => setPanelMode(panelMode?.kind === 'synthesis' ? null : { kind: 'synthesis' })}
         >
-          Synthesis
+          Run synthesis
         </button>
       </div>
 
-      {/* ── Body ── */}
+      {/* ── Body: papers | reader | graph ── */}
       <div className={styles.workspaceBody}>
-        <LeftSidebar
+        <PapersSidebar
           projectId={projectId}
           papers={papers}
           papersLoading={papersLoading}
-          onSelectPaper={(id) => handleSelectNode('paper', id)}
-          onBrickCreated={handleBrickCreated}
+          selectedPaperId={selectedPaperId}
+          onSelectPaper={setSelectedPaperId}
+          isDragOver={isDragOver}
+          uploadQueue={uploadQueue}
+          onClearUploadQueue={() => setUploadQueue((q) => q.filter((x) => x.status === 'uploading' || x.status === 'pending'))}
         />
 
-        <div className={styles.canvasWrapper}>
+        <div className={styles.readerPane} style={{ width: readerWidth }}>
+          {isDragOver ? (
+            <div className={styles.emptyState} style={{ outline: '2px dashed var(--accent)', outlineOffset: -8 }}>
+              <div className={styles.emptyTitle}>Drop to add</div>
+              <div className={styles.emptyDesc}>Release to upload these PDFs to this project.</div>
+            </div>
+          ) : selectedPaperId ? (
+            <ReaderPane paperId={selectedPaperId} projectId={projectId} />
+          ) : (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyTitle}>Read</div>
+              <div className={styles.emptyDesc}>
+                Select a paper from the sidebar to read it, then drag passages onto the graph — or
+                drag PDFs in anywhere on this page to add them.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div
+          className={styles.resizeDivider}
+          onMouseDown={handleDividerMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+        />
+
+        <div
+          className={styles.canvasWrapper}
+          onDragOver={handleCanvasDragOver}
+          onDrop={handleCanvasDrop}
+          onContextMenu={(e) => e.preventDefault()}
+        >
           <div ref={containerRef} className={styles.cytoscapeContainer} />
 
-          {(graphLoading || papersLoading) && (
-            <div className={styles.loadingOverlay}>Loading workspace…</div>
+          {/* Evidence-count badges — corner overlay per node, repositioned on every cytoscape render tick */}
+          <div className={styles.badgeLayer}>
+            {graph && graph.nodes
+              .filter((n) => n.evidence_count > 0 && badgePositions[n.id])
+              .map((n) => (
+                <div
+                  key={`badge-${n.id}`}
+                  className={styles.evidenceBadge}
+                  style={{ left: badgePositions[n.id].x, top: badgePositions[n.id].y }}
+                  title={`${n.evidence_count} piece${n.evidence_count !== 1 ? 's' : ''} of evidence`}
+                >
+                  {n.evidence_count}
+                </div>
+              ))}
+          </div>
+
+          {graphLoading && (
+            <div className={styles.loadingOverlay}>Loading graph…</div>
           )}
 
-          {!graphLoading && graph && graph.nodes.length === 0 && papers.length === 0 && (
+          {!graphLoading && graph && graph.nodes.length === 0 && (
             <div className={styles.emptyState}>
-              <div className={styles.emptyTitle}>Workspace is empty</div>
-              <div className={styles.emptyDesc}>Add papers and create bricks using the sidebar.</div>
+              <div className={styles.emptyTitle}>No statements yet</div>
+              <div className={styles.emptyDesc}>
+                Create one from the sidebar, double-click empty canvas, or drag a passage here from
+                the paper you're reading.
+              </div>
             </div>
+          )}
+
+          {evidencePopover && (
+            <EvidencePopover
+              statementId={evidencePopover.statementId}
+              x={evidencePopover.x}
+              y={evidencePopover.y}
+              papers={papers}
+              onClose={() => setEvidencePopover(null)}
+            />
+          )}
+
+          {quickCreate && (
+            <QuickCreatePopup
+              x={quickCreate.x}
+              y={quickCreate.y}
+              isPending={quickCreateMutation.isPending}
+              onCreate={(text) => quickCreateMutation.mutate(text)}
+              onClose={() => setQuickCreate(null)}
+            />
+          )}
+
+          {contextMenu && (
+            <CanvasContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              kind={contextMenu.kind}
+              onClose={() => setContextMenu(null)}
+              onCreateHere={() => {
+                setQuickCreate({ x: contextMenu.x, y: contextMenu.y });
+                setContextMenu(null);
+              }}
+              onDelete={() => {
+                if (contextMenu.kind === 'node') {
+                  deleteStatementFromCanvasMutation.mutate(contextMenu.nodeId);
+                } else if (contextMenu.kind === 'edge') {
+                  removeEdgeFromCanvasMutation.mutate({ from: contextMenu.edgeFrom, other: contextMenu.edgeTo });
+                }
+                setContextMenu(null);
+              }}
+            />
           )}
 
           {panelMode && (
@@ -1365,8 +2308,8 @@ export default function WorkspaceView() {
               onClose={() => setPanelMode(null)}
               projectId={projectId}
               papers={papers}
-              allBricks={graph?.nodes ?? []}
-              onBrickCreated={handleBrickCreated}
+              allStatements={graph?.nodes ?? []}
+              onStatementCreated={handleStatementCreated}
             />
           )}
         </div>
