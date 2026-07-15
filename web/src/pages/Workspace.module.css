@@ -792,6 +792,23 @@
 }
 .sentenceSpan { cursor: text; }
 
+/* Statement-evidence highlight (soft yellow) — a sentence backing a real
+   Statement via StatementEvidence. Distinct from .foundQuoteHighlight below,
+   which marks text found-but-not-yet-promoted. */
+.evidenceHighlight {
+  background: rgba(201, 168, 118, 0.25);
+  border-radius: 2px;
+}
+
+/* Found-quote highlight (soft blue) — the verbatim quote a "Find" search
+   surfaced at import time, shown only in the abstract block. */
+.foundQuoteHighlight {
+  background: rgba(137, 165, 196, 0.28);
+  border-radius: 2px;
+  color: inherit;
+  font-style: normal;
+}
+
 .selectionTooltip {
   position: fixed;
   transform: translateX(-50%);
@@ -1180,8 +1197,28 @@
   font-style: italic;
 }
 
-.evidenceCreateBtn {
+.findCardActions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.visitBtn {
+  padding: 1px 7px;
+  font-size: 9.5px;
+  font-family: 'Inter', sans-serif;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.visitBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
+
+.evidenceCreateBtn {
   padding: 1px 7px;
   font-size: 9.5px;
   font-family: 'Inter', sans-serif;

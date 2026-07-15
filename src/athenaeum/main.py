@@ -14,6 +14,7 @@ from athenaeum.api import (
     links,
     llm_credentials,
     members,
+    openalex_find,
     papers,
     passages,
     projects,
@@ -21,6 +22,7 @@ from athenaeum.api import (
     search,
     statements,
     syntheses,
+    websearch_find,
     zotero,
     zotero_find,
     zotero_local,
@@ -90,6 +92,8 @@ app.include_router(links.router)
 app.include_router(zotero.router)
 app.include_router(zotero_local.router)
 app.include_router(zotero_find.router)
+app.include_router(openalex_find.router)
+app.include_router(websearch_find.router)
 app.include_router(llm_credentials.router)
 
 

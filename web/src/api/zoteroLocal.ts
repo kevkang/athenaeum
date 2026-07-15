@@ -52,9 +52,18 @@ export const zoteroLocalApi = {
       .get<ZoteroSearchResult[]>('/zotero-local/search', { params: { q, project_id: projectId } })
       .then((r) => r.data),
 
-  importItem: (projectId: string, zoteroItemKey: string) =>
+  importItem: (
+    projectId: string,
+    zoteroItemKey: string,
+    found?: { foundQuote?: string; foundRelevanceNote?: string },
+  ) =>
     api
-      .post<Paper>('/zotero-local/import', { project_id: projectId, zotero_item_key: zoteroItemKey })
+      .post<Paper>('/zotero-local/import', {
+        project_id: projectId,
+        zotero_item_key: zoteroItemKey,
+        found_quote: found?.foundQuote,
+        found_relevance_note: found?.foundRelevanceNote,
+      })
       .then((r) => r.data),
 
   getCollections: () =>

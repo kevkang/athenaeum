@@ -27,6 +27,8 @@ export interface EvidenceFull {
   paper_doi: string | null;
   paper_year: number | null;
   paper_venue: string | null;
+  paper_first_author: string | null;
+  rationale: string | null;
 }
 
 export interface Evaluation {

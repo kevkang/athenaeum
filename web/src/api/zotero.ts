@@ -83,9 +83,18 @@ export const zoteroApi = {
       .get<ZoteroSearchResult[]>('/zotero/search', { params: { q, project_id: projectId } })
       .then((r) => r.data),
 
-  importItem: (projectId: string, zoteroItemKey: string) =>
+  importItem: (
+    projectId: string,
+    zoteroItemKey: string,
+    found?: { foundQuote?: string; foundRelevanceNote?: string },
+  ) =>
     api
-      .post<Paper>('/zotero/import', { project_id: projectId, zotero_item_key: zoteroItemKey })
+      .post<Paper>('/zotero/import', {
+        project_id: projectId,
+        zotero_item_key: zoteroItemKey,
+        found_quote: found?.foundQuote,
+        found_relevance_note: found?.foundRelevanceNote,
+      })
       .then((r) => r.data),
 
   getCollections: () =>

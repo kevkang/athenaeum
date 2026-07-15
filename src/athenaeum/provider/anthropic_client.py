@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import anthropic
+from anthropic.types import Message as AnthropicMessage
 
 from athenaeum.provider.base import Message
 
@@ -39,6 +40,33 @@ class AnthropicProvider:
                 return block.text, None
 
         return None, None
+
+    async def complete_raw(
+        self,
+        messages: list[Message],
+        system: str,
+        max_tokens: int = 4096,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AnthropicMessage:
+        """Like complete(), but returns the full raw SDK response untouched.
+
+        complete()'s collapsed (text | tool_use) return can only carry a
+        single block — callers that need every interleaved content block
+        (e.g. web search: text blocks with citations, plus the raw
+        web_search_tool_result blocks) need the real response object. Unlike
+        complete(), this never forces tool_choice — server-side tools like
+        web search should be invoked autonomously (tool_choice: auto, the
+        default), not forced on the first turn.
+        """
+        kwargs: dict[str, Any] = dict(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": m.role, "content": m.content} for m in messages],
+        )
+        if tools:
+            kwargs["tools"] = tools
+        return await self._client.messages.create(**kwargs)
 
 
 async def validate_api_key(api_key: str) -> None:

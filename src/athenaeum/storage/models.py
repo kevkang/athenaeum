@@ -97,6 +97,10 @@ class Paper(Base):
         CheckConstraint(
             "zotero_source IN ('sync', 'local')", name="papers_zotero_source_chk"
         ),
+        CheckConstraint(
+            "found_corpus IN ('zotero_sync', 'zotero_local', 'openalex')",
+            name="papers_found_corpus_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -119,6 +123,13 @@ class Paper(Base):
     # need the importer's stored Web API credentials, 'local' retries just
     # re-read the bind-mounted data directory. NULL for non-Zotero papers.
     zotero_source: Mapped[str | None] = mapped_column(String(10))
+    # Verbatim quote (and why it's relevant) surfaced by a "Find" search at
+    # import time — comes from the abstract, not the ingested body text, so
+    # it's highlighted in the abstract block, not matched against sentences.
+    # Single-slot: re-finding via a different corpus later overwrites these.
+    found_quote: Mapped[str | None] = mapped_column(Text)
+    found_relevance_note: Mapped[str | None] = mapped_column(Text)
+    found_corpus: Mapped[str | None] = mapped_column(String(20))
 
 
 class PaperSection(Base):
@@ -189,6 +200,9 @@ class Passage(Base):
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checker_model: Mapped[str | None] = mapped_column(String(100))
+    # Why the extraction step selected this passage as evidence — generated
+    # by the same LLM call that produces sentence_ids/verbatim_text.
+    rationale: Mapped[str | None] = mapped_column(Text)
 
 
 class Synthesis(Base):

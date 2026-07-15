@@ -6,6 +6,10 @@ Synthesis/evidence rows tied to already-ingested PaperSentence FKs), this is
 a single forced-tool-call LLM request over Zotero metadata/abstracts, since
 most candidates here haven't been imported/ingested and so have no full text
 to run the heavier pipeline against.
+
+The actual ranking call is corpus-agnostic (see find_ranking.py, shared with
+openalex_find.py) — this module just maps ZoteroSearchHit into that shape and
+back.
 """
 from __future__ import annotations
 
@@ -13,8 +17,9 @@ import re
 from dataclasses import dataclass
 
 from athenaeum.ingest.zotero import ZoteroSearchHit
-from athenaeum.provider.base import Message, Provider
-from athenaeum.synthesize.prompts import SELECT_RELEVANT_ITEMS_TOOL, ZOTERO_FIND_SYSTEM
+from athenaeum.provider.base import Provider
+from athenaeum.synthesize.find_ranking import FindCandidate
+from athenaeum.synthesize.find_ranking import rank_candidates as _rank_candidates
 
 _STOPWORDS = {
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -56,50 +61,23 @@ class ZoteroFindMatch:
     relevance_note: str
 
 
-def _format_candidates_for_prompt(hits: list[ZoteroSearchHit]) -> str:
-    lines: list[str] = []
-    for i, hit in enumerate(hits):
-        authors = ", ".join(hit.creators) or "unknown authors"
-        lines.append(
-            f"[{i}] {hit.title} ({hit.year or '?'}) — {authors}\nAbstract: {hit.abstract}"
-        )
-    return "\n\n".join(lines)
+def _to_candidate(hit: ZoteroSearchHit) -> FindCandidate:
+    return FindCandidate(
+        title=hit.title,
+        creators=hit.creators,
+        year=hit.year,
+        venue=hit.venue,
+        doi=hit.doi,
+        abstract=hit.abstract,
+        source=hit,
+    )
 
 
 async def rank_candidates(
     provider: Provider, query: str, hits: list[ZoteroSearchHit]
 ) -> list[ZoteroFindMatch]:
-    """Rank/select relevant candidates via one forced-tool-call LLM request.
-
-    Candidates with no abstract are excluded before the call (nothing to
-    quote). Any result whose quote isn't an actual verbatim substring of that
-    candidate's abstract is discarded — defense in depth beyond the prompt's
-    "never fabricate" instruction.
-    """
-    quotable = [h for h in hits if h.abstract]
-    if not quotable:
-        return []
-
-    candidates_text = _format_candidates_for_prompt(quotable)
-    user_msg = f"QUERY: {query}\n\nCANDIDATES:\n{candidates_text}"
-
-    _, tool_result = await provider.complete(
-        messages=[Message(role="user", content=user_msg)],
-        system=ZOTERO_FIND_SYSTEM,
-        tools=[SELECT_RELEVANT_ITEMS_TOOL],
-    )
-    if tool_result is None:
-        return []
-
-    matches: list[ZoteroFindMatch] = []
-    for result in tool_result["input"].get("results", []):
-        idx = result.get("candidate_index")
-        quote = result.get("quote", "")
-        note = result.get("relevance_note", "")
-        if not isinstance(idx, int) or idx < 0 or idx >= len(quotable):
-            continue
-        hit = quotable[idx]
-        if not quote or quote not in (hit.abstract or ""):
-            continue
-        matches.append(ZoteroFindMatch(hit=hit, quote=quote, relevance_note=note))
-    return matches
+    matches = await _rank_candidates(provider, query, [_to_candidate(h) for h in hits])
+    return [
+        ZoteroFindMatch(hit=m.candidate.source, quote=m.quote, relevance_note=m.relevance_note)
+        for m in matches
+    ]

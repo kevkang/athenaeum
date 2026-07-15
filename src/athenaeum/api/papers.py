@@ -14,7 +14,15 @@ from sqlalchemy import delete, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
-from athenaeum.domain.models import OpenAlexSearchResult, PaperIngest, PaperOut, PaperUpdate, SectionOut, SentenceOut
+from athenaeum.domain.models import (
+    OpenAlexSearchResult,
+    PaperIngest,
+    PaperOut,
+    PaperUpdate,
+    SectionOut,
+    SentenceEvidenceOut,
+    SentenceOut,
+)
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import (
     Paper,
@@ -25,6 +33,7 @@ from athenaeum.storage.models import (
     ProjectMember,
     ProjectPaper,
     ProvenanceLog,
+    Statement,
     StatementEvidence,
     ZoteroCredentials,
 )
@@ -82,7 +91,11 @@ async def ingest_paper(
                     added_by=user.id,
                 )
             )
-            await session.commit()
+        if payload.found_quote:
+            existing.found_quote = payload.found_quote
+            existing.found_relevance_note = payload.found_relevance_note
+            existing.found_corpus = "openalex"
+        await session.commit()
         return existing
 
     # Fetch metadata from OpenAlex (fast — ~100 ms)
@@ -103,6 +116,9 @@ async def ingest_paper(
         year=meta.year if meta else None,
         abstract=meta.abstract if meta else None,
         status="ghost",
+        found_quote=payload.found_quote,
+        found_relevance_note=payload.found_relevance_note,
+        found_corpus="openalex" if payload.found_quote else None,
     )
     session.add(paper)
 
@@ -542,3 +558,58 @@ async def list_sentences(
 
     rows = await session.scalars(stmt)
     return list(rows)
+
+
+@router.get("/{paper_id}/evidence-sentences", response_model=list[SentenceEvidenceOut])
+async def list_evidence_sentences(
+    paper_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> list[SentenceEvidenceOut]:
+    """Which of this paper's sentences are evidence for which statement(s) —
+    powers the Read view's statement-evidence highlight. `target_kind='passage'`
+    evidence can point at either a real Passage.id (expand to all its
+    sentence_ids) or directly at a PaperSentence.id (the reader's
+    drag-to-workspace flow) — both are resolved here, in 3 queries total."""
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    sentence_ids = set(
+        await session.scalars(select(PaperSentence.id).where(PaperSentence.paper_id == paper_id))
+    )
+    passage_rows = (
+        await session.execute(
+            select(Passage.id, Passage.sentence_ids).where(Passage.paper_id == paper_id)
+        )
+    ).all()
+    passage_sentence_map = {row.id: row.sentence_ids for row in passage_rows}
+
+    combined_ids = sentence_ids | set(passage_sentence_map)
+    if not combined_ids:
+        return []
+
+    rows = (
+        await session.execute(
+            select(
+                StatementEvidence.target_id,
+                StatementEvidence.statement_id,
+                StatementEvidence.role,
+                Statement.assertion,
+            )
+            .join(Statement, Statement.id == StatementEvidence.statement_id)
+            .where(
+                StatementEvidence.target_kind == "passage",
+                StatementEvidence.target_id.in_(combined_ids),
+            )
+        )
+    ).all()
+
+    result: list[SentenceEvidenceOut] = []
+    for target_id, statement_id, role, assertion in rows:
+        sids = passage_sentence_map.get(target_id, [target_id])
+        result.extend(
+            SentenceEvidenceOut(sentence_id=sid, statement_id=statement_id, assertion=assertion, role=role)
+            for sid in sids
+        )
+    return result

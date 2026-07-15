@@ -24,6 +24,36 @@ def test_papers_get_requires_auth() -> None:
     assert resp.status_code == 401
 
 
+def test_papers_evidence_sentences_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/papers/00000000-0000-0000-0000-000000000000/evidence-sentences")
+    assert resp.status_code == 401
+
+
+def test_openalex_find_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/openalex/find",
+            json={
+                "query": "test query for authentication check",
+                "project_id": "00000000-0000-0000-0000-000000000000",
+            },
+        )
+    assert resp.status_code == 401
+
+
+def test_websearch_find_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/websearch/find",
+            json={
+                "query": "test query for authentication check",
+                "project_id": "00000000-0000-0000-0000-000000000000",
+            },
+        )
+    assert resp.status_code == 401
+
+
 def test_papers_post_requires_auth() -> None:
     with TestClient(app) as client:
         resp = client.post(

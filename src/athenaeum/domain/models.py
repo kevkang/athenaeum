@@ -77,6 +77,8 @@ class VerificationRateStats(BaseModel):
 class PaperIngest(BaseModel):
     doi: str
     project_id: UUID
+    found_quote: str | None = None
+    found_relevance_note: str | None = None
 
 
 class PaperUpdate(BaseModel):
@@ -98,6 +100,9 @@ class PaperOut(BaseModel):
     status: str
     created_at: datetime
     zotero_item_key: str | None = None
+    found_quote: str | None = None
+    found_relevance_note: str | None = None
+    found_corpus: str | None = None
 
 
 class SectionOut(BaseModel):
@@ -242,6 +247,8 @@ class SynthesisEvidenceFullOut(BaseModel):
     paper_doi: str | None
     paper_year: int | None
     paper_venue: str | None
+    paper_first_author: str | None = None
+    rationale: str | None = None
 
 
 class SynthesisOut(BaseModel):
@@ -494,6 +501,8 @@ class ZoteroSearchResultOut(BaseModel):
 class ZoteroImportRequest(BaseModel):
     project_id: UUID
     zotero_item_key: str = Field(min_length=1, max_length=50)
+    found_quote: str | None = None
+    found_relevance_note: str | None = None
 
 
 class ZoteroCollectionOut(BaseModel):
@@ -524,6 +533,50 @@ class ZoteroFindResultOut(BaseModel):
     already_in_project: bool
     quote: str
     relevance_note: str
+
+
+# ── OpenAlex find ─────────────────────────────────────────────────────────────
+
+class OpenAlexFindRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=500)
+    project_id: UUID
+
+
+class OpenAlexFindResultOut(BaseModel):
+    openalex_id: str | None
+    doi: str | None
+    title: str
+    creators: list[str]
+    year: int | None
+    venue: str | None
+    cited_by_count: int
+    already_in_project: bool
+    quote: str
+    relevance_note: str
+
+
+# ── Web search find ───────────────────────────────────────────────────────────
+
+class WebSearchFindRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=500)
+    project_id: UUID
+
+
+class WebSearchFindResultOut(BaseModel):
+    url: str
+    title: str
+    source: str | None
+    quote: str
+    relevance_note: str
+
+
+# ── Evidence sentences (Read-view highlighting) ───────────────────────────────
+
+class SentenceEvidenceOut(BaseModel):
+    sentence_id: UUID
+    statement_id: UUID
+    assertion: str
+    role: str
 
 
 class ZoteroLocalStatus(BaseModel):

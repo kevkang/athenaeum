@@ -20,6 +20,7 @@ from athenaeum.domain.models import (
     SynthesisStepOut,
     SynthesisUpdate,
 )
+from athenaeum.domain.authors import first_author_name
 from athenaeum.provider.resolver import NoLLMKeyConfigured, resolve_api_key
 from athenaeum.security import decode_session_token
 from athenaeum.storage.db import get_sessionmaker
@@ -227,6 +228,8 @@ async def get_evidence_full(
             paper_doi=paper.doi,
             paper_year=paper.year,
             paper_venue=paper.venue,
+            paper_first_author=first_author_name(paper.authors_json),
+            rationale=passage.rationale,
         ))
     return result
 

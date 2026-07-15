@@ -10,29 +10,15 @@ dragged sentence needs. This endpoint resolves either."""
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
+from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.models import PassageEvidenceOut
 from athenaeum.storage.models import Paper, PaperSentence, Passage
 
 router = APIRouter(prefix="/passages", tags=["passages"])
-
-
-def _first_author(authors_json: Any) -> str | None:
-    if isinstance(authors_json, list) and authors_json:
-        first = authors_json[0]
-        if isinstance(first, dict):
-            return first.get("name") or first.get("display_name")
-        if isinstance(first, str):
-            return first
-    if isinstance(authors_json, dict):
-        names = authors_json.get("names")
-        if isinstance(names, list) and names:
-            return names[0]
-    return None
 
 
 @router.get("/{passage_id}", response_model=PassageEvidenceOut)
@@ -65,5 +51,5 @@ async def get_passage(
         verified=verified,
         paper_title=paper.title,
         paper_year=paper.year,
-        paper_first_author=_first_author(paper.authors_json),
+        paper_first_author=first_author_name(paper.authors_json),
     )

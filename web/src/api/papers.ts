@@ -12,6 +12,16 @@ export interface Paper {
   status: 'ghost' | 'full_text' | 'failed';
   created_at: string;
   zotero_item_key: string | null;
+  found_quote: string | null;
+  found_relevance_note: string | null;
+  found_corpus: string | null;
+}
+
+export interface SentenceEvidence {
+  sentence_id: string;
+  statement_id: string;
+  assertion: string;
+  role: string;
 }
 
 export interface Section {
@@ -90,11 +100,25 @@ export const papersApi = {
   get: (paperId: string) =>
     api.get<Paper>(`/papers/${paperId}`).then((r) => r.data),
 
-  ingest: (doi: string, projectId: string) =>
-    api.post<Paper>('/papers', { doi, project_id: projectId }).then((r) => r.data),
+  ingest: (
+    doi: string,
+    projectId: string,
+    found?: { foundQuote?: string; foundRelevanceNote?: string },
+  ) =>
+    api
+      .post<Paper>('/papers', {
+        doi,
+        project_id: projectId,
+        found_quote: found?.foundQuote,
+        found_relevance_note: found?.foundRelevanceNote,
+      })
+      .then((r) => r.data),
 
   sections: (paperId: string) =>
     api.get<Section[]>(`/papers/${paperId}/sections`).then((r) => r.data),
+
+  evidenceSentences: (paperId: string) =>
+    api.get<SentenceEvidence[]>(`/papers/${paperId}/evidence-sentences`).then((r) => r.data),
 
   sentences: (paperId: string, sectionId?: string) =>
     api

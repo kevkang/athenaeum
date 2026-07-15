@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import cytoscape from 'cytoscape';
@@ -12,9 +12,11 @@ import {
   type StatementRelation,
   type Evidence,
 } from '../api/statements';
-import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, firstAuthor } from '../api/papers';
+import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, type SentenceEvidence, firstAuthor } from '../api/papers';
 import { zoteroApi, zoteroFindApi, type ZoteroSearchResult, type ZoteroFindResult, type ZoteroFindCorpus } from '../api/zotero';
 import { zoteroLocalApi } from '../api/zoteroLocal';
+import { openAlexFindApi, type OpenAlexFindResult } from '../api/openalexFind';
+import { webSearchFindApi, type WebSearchFindResult } from '../api/websearchFind';
 import { passagesApi } from '../api/passages';
 import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
 import LocalLibraryPicker from '../components/LocalLibraryPicker';
@@ -663,6 +665,30 @@ function PapersSidebar({
 
 // ── Reader pane (middle) ─────────────────────────────────────────────────────
 
+/** Wraps a Find-imported quote within the rendered abstract in a soft-blue
+ * highlight, distinct from the yellow statement-evidence highlight — this
+ * marks text found pre-import, not yet tied to any statement. Falls back to
+ * the plain abstract (no highlight, no error) if the quote can't be located
+ * verbatim, e.g. the abstract was re-fetched/edited since import. */
+function renderAbstractWithFoundQuote(
+  abstract: string,
+  foundQuote: string | null,
+  foundRelevanceNote: string | null,
+) {
+  if (!foundQuote) return abstract;
+  const idx = abstract.indexOf(foundQuote);
+  if (idx === -1) return abstract;
+  return (
+    <>
+      {abstract.slice(0, idx)}
+      <mark className={styles.foundQuoteHighlight} title={foundRelevanceNote ?? undefined}>
+        {foundQuote}
+      </mark>
+      {abstract.slice(idx + foundQuote.length)}
+    </>
+  );
+}
+
 function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string }) {
   const queryClient = useQueryClient();
   const [expandAbstract, setExpandAbstract] = useState(false);
@@ -691,6 +717,22 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
     queryFn: () => papersApi.sentences(paperId),
     enabled: fullTextView,
   });
+
+  const { data: evidenceSentences } = useQuery({
+    queryKey: ['evidence-sentences', paperId],
+    queryFn: () => papersApi.evidenceSentences(paperId),
+    enabled: paper?.status === 'full_text',
+  });
+
+  const evidenceBySentence = useMemo(() => {
+    const map = new Map<string, SentenceEvidence[]>();
+    for (const e of evidenceSentences ?? []) {
+      const list = map.get(e.sentence_id);
+      if (list) list.push(e);
+      else map.set(e.sentence_id, [e]);
+    }
+    return map;
+  }, [evidenceSentences]);
 
   const passagesRef = useRef<HTMLDivElement>(null);
   const selectionTipBtnRef = useRef<HTMLButtonElement>(null);
@@ -810,7 +852,7 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
         <div className={styles.abstractSection}>
           <div className={styles.panelSectionLabel}>Abstract</div>
           <div className={`${styles.abstractText} ${expandAbstract ? '' : styles.abstractClamped}`}>
-            {paper.abstract}
+            {renderAbstractWithFoundQuote(paper.abstract, paper.found_quote, paper.found_relevance_note)}
           </div>
           {paper.abstract.length > 280 && (
             <button className={styles.expandBtn} onClick={() => setExpandAbstract((v) => !v)}>
@@ -841,11 +883,19 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
                   <div className={styles.fullTextBody}>
                     {allSentences
                       ?.filter((s: Sentence) => s.section_id === sec.id)
-                      .map((s: Sentence) => (
-                        <span key={s.id} className={styles.sentenceSpan} data-sentence-id={s.id}>
-                          {s.text}{' '}
-                        </span>
-                      ))}
+                      .map((s: Sentence) => {
+                        const evs = evidenceBySentence.get(s.id);
+                        return (
+                          <span
+                            key={s.id}
+                            className={`${styles.sentenceSpan} ${evs ? styles.evidenceHighlight : ''}`}
+                            data-sentence-id={s.id}
+                            title={evs?.map((e) => `Supports statement: ${e.assertion}`).join('\n')}
+                          >
+                            {s.text}{' '}
+                          </span>
+                        );
+                      })}
                   </div>
                 </div>
               ))}
@@ -864,11 +914,21 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
                   <div className={styles.sentenceList}>
                     {sentences
                       ?.filter((s: Sentence) => s.section_id === sec.id)
-                      .map((s: Sentence) => (
-                        <div key={s.id} className={styles.sentence} data-sentence-id={s.id}>
-                          <span className={styles.sentenceText}>{s.text}</span>
-                        </div>
-                      ))}
+                      .map((s: Sentence) => {
+                        const evs = evidenceBySentence.get(s.id);
+                        return (
+                          <div
+                            key={s.id}
+                            className={styles.sentence}
+                            data-sentence-id={s.id}
+                            title={evs?.map((e) => `Supports statement: ${e.assertion}`).join('\n')}
+                          >
+                            <span className={`${styles.sentenceText} ${evs ? styles.evidenceHighlight : ''}`}>
+                              {s.text}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -1081,6 +1141,7 @@ function StatementDetailPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['evidence', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'evidence-sentences' });
       setTargetId('');
     },
   });
@@ -1090,6 +1151,7 @@ function StatementDetailPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['evidence', statementId] });
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'evidence-sentences' });
     },
   });
 
@@ -1501,6 +1563,76 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
   );
 }
 
+type FindImportState = 'importable' | 'already_in_project' | 'imported' | 'no_doi';
+
+function FindResultCard({
+  title, authors, year, venue, visitUrl, quote, relevanceNote,
+  roleLabel, verified, importState, onImport, importing, onPromote, promoting,
+}: {
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string | null;
+  visitUrl: string | null;
+  quote: string;
+  relevanceNote: string | null;
+  roleLabel?: string;
+  verified?: boolean;
+  importState: FindImportState;
+  onImport?: () => void;
+  importing?: boolean;
+  onPromote?: () => void;
+  promoting?: boolean;
+}) {
+  const citation = formatCitation(authors[0] ?? null, year);
+  const fullTitleTooltip = `"${title}" (${citation}${venue ? `, ${venue}` : ''})`;
+  const importTitle =
+    importState === 'no_doi' ? 'Not an importable paper'
+    : importState === 'already_in_project' ? 'Already in project'
+    : importState === 'imported' ? 'Imported'
+    : 'Import into project';
+  const importLabel =
+    importState === 'importable' ? '+ import'
+    : importState === 'no_doi' ? '—'
+    : '✓ imported';
+
+  return (
+    <div className={`${styles.evidenceCard} ${roleLabel ? styles[roleLabel] ?? '' : ''}`}>
+      <div className={styles.evidenceHeader}>
+        <span className={styles.evidencePaper} title={fullTitleTooltip}>{trunc(title, 40)}</span>
+        {year && <span className={styles.evidenceYear}>{year}</span>}
+        {roleLabel && <span className={styles.evidenceRole}>{roleLabel}</span>}
+        {verified && <span className={styles.verifiedDot} title="verified" />}
+        <div className={styles.findCardActions}>
+          {visitUrl && (
+            <a className={styles.visitBtn} href={visitUrl} target="_blank" rel="noreferrer">
+              visit
+            </a>
+          )}
+          <button
+            className={styles.evidenceCreateBtn}
+            disabled={importState !== 'importable' || importing}
+            title={importTitle}
+            onClick={() => onImport?.()}
+          >
+            {importLabel}
+          </button>
+          {onPromote && (
+            <button
+              className={styles.evidenceCreateBtn}
+              disabled={promoting}
+              onClick={onPromote}
+              title="Promote to statement"
+            >→ statement</button>
+          )}
+        </div>
+      </div>
+      <div className={styles.evidenceQuote}>&ldquo;{quote}&rdquo;</div>
+      {relevanceNote && <div className={styles.searchHint}>{relevanceNote}</div>}
+    </div>
+  );
+}
+
 function FindPanel({ projectId, onStatementCreated }: { projectId: string; onStatementCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
@@ -1508,8 +1640,13 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoteroResults, setZoteroResults] = useState<ZoteroFindResult[] | null>(null);
   const [zoteroImportedKeys, setZoteroImportedKeys] = useState<Set<string>>(new Set());
+  const [openAlexResults, setOpenAlexResults] = useState<OpenAlexFindResult[] | null>(null);
+  const [openAlexImportedIds, setOpenAlexImportedIds] = useState<Set<string>>(new Set());
+  const [webSearchResults, setWebSearchResults] = useState<WebSearchFindResult[] | null>(null);
 
   const isZoteroCorpus = corpus === 'zotero_sync' || corpus === 'zotero_local';
+  const isOpenAlexCorpus = corpus === 'openalex';
+  const isWebSearchCorpus = corpus === 'web_search';
 
   const { data: syntheses } = useQuery({
     queryKey: ['syntheses', projectId],
@@ -1545,14 +1682,33 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
   });
 
   const zoteroImportMutation = useMutation({
-    mutationFn: (itemKey: string) =>
+    mutationFn: ({ itemKey, quote, note }: { itemKey: string; quote: string; note: string }) =>
       corpus === 'zotero_sync'
-        ? zoteroApi.importItem(projectId, itemKey)
-        : zoteroLocalApi.importItem(projectId, itemKey),
-    onSuccess: (_paper, itemKey) => {
+        ? zoteroApi.importItem(projectId, itemKey, { foundQuote: quote, foundRelevanceNote: note })
+        : zoteroLocalApi.importItem(projectId, itemKey, { foundQuote: quote, foundRelevanceNote: note }),
+    onSuccess: (_paper, { itemKey }) => {
       queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
       setZoteroImportedKeys((prev) => new Set(prev).add(itemKey));
     },
+  });
+
+  const openAlexFindMutation = useMutation({
+    mutationFn: () => openAlexFindApi.find(query.trim(), projectId),
+    onSuccess: (results) => setOpenAlexResults(results),
+  });
+
+  const openAlexImportMutation = useMutation({
+    mutationFn: ({ doi, quote, note }: { doi: string; quote: string; note: string }) =>
+      papersApi.ingest(doi, projectId, { foundQuote: quote, foundRelevanceNote: note }),
+    onSuccess: (_paper, { doi }) => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setOpenAlexImportedIds((prev) => new Set(prev).add(doi));
+    },
+  });
+
+  const webSearchFindMutation = useMutation({
+    mutationFn: () => webSearchFindApi.find(query.trim(), projectId),
+    onSuccess: (results) => setWebSearchResults(results),
   });
 
   const deleteMutation = useMutation({
@@ -1571,6 +1727,7 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
     },
     onSuccess: (statement) => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'evidence-sentences' });
       onStatementCreated(statement.id);
     },
   });
@@ -1581,16 +1738,18 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
     queryClient.invalidateQueries({ queryKey: ['evidence-full', selectedId] });
   }, [queryClient, selectedId, projectId]);
 
-  const handleRun = () => {
-    if (isZoteroCorpus) {
-      zoteroFindMutation.mutate();
-    } else {
-      createMutation.mutate();
-    }
-  };
+  const activeMutation = isZoteroCorpus
+    ? zoteroFindMutation
+    : isOpenAlexCorpus
+      ? openAlexFindMutation
+      : isWebSearchCorpus
+        ? webSearchFindMutation
+        : createMutation;
 
-  const running = isZoteroCorpus ? zoteroFindMutation.isPending : createMutation.isPending;
-  const runError = isZoteroCorpus ? zoteroFindMutation.error : createMutation.error;
+  const handleRun = () => activeMutation.mutate();
+  const running = activeMutation.isPending;
+  const runError = activeMutation.error;
+  const isSearchCorpus = isZoteroCorpus || isOpenAlexCorpus || isWebSearchCorpus;
 
   return (
     <div className={styles.panelContent}>
@@ -1605,18 +1764,29 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
           rows={3}
         />
         <div className={styles.synthFormRow}>
-          <select className={styles.corpusSelect} value={corpus} onChange={(e) => { setCorpus(e.target.value); setZoteroResults(null); }}>
-            <option value="project">Project papers</option>
-            <option value="global">Global corpus</option>
+          <select
+            className={styles.corpusSelect}
+            value={corpus}
+            onChange={(e) => {
+              setCorpus(e.target.value);
+              setZoteroResults(null);
+              setOpenAlexResults(null);
+              setWebSearchResults(null);
+            }}
+          >
+            <option value="project">Papers in this project</option>
+            <option value="global">Papers in all projects</option>
             <option value="zotero_sync">Zotero (sync)</option>
             <option value="zotero_local">Zotero (local)</option>
+            <option value="openalex">OpenAlex</option>
+            <option value="web_search">LLM knowledge search</option>
           </select>
           <button
             className={styles.runBtn}
             disabled={query.trim().length < 10 || running}
             onClick={handleRun}
           >
-            {running ? (isZoteroCorpus ? 'Searching…' : 'Starting…') : 'Run'}
+            {running ? (isSearchCorpus ? 'Searching…' : 'Starting…') : 'Run'}
           </button>
         </div>
         <div className={styles.synthFormRow}>
@@ -1645,24 +1815,79 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
             {zoteroResults.map((r) => {
               const imported = r.already_in_project || zoteroImportedKeys.has(r.item_key);
               return (
-                <div key={r.item_key} className={styles.evidenceCard}>
-                  <div className={styles.evidenceHeader}>
-                    <span className={styles.evidencePaper}>{trunc(r.title, 40)}</span>
-                    {r.year && <span className={styles.evidenceYear}>{r.year}</span>}
-                    <button
-                      className={styles.evidenceCreateBtn}
-                      disabled={imported || zoteroImportMutation.isPending}
-                      title={imported ? 'Already in project' : 'Import into project'}
-                      onClick={() => zoteroImportMutation.mutate(r.item_key)}
-                    >
-                      {imported ? '✓ imported' : '+ import'}
-                    </button>
-                  </div>
-                  <div className={styles.evidenceQuote}>{r.quote}</div>
-                  <div className={styles.searchHint}>{r.relevance_note}</div>
-                </div>
+                <FindResultCard
+                  key={r.item_key}
+                  title={r.title}
+                  authors={r.creators}
+                  year={r.year}
+                  venue={r.venue}
+                  visitUrl={r.doi ? `https://doi.org/${r.doi}` : null}
+                  quote={r.quote}
+                  relevanceNote={r.relevance_note}
+                  importState={imported ? 'already_in_project' : 'importable'}
+                  importing={zoteroImportMutation.isPending}
+                  onImport={() =>
+                    zoteroImportMutation.mutate({ itemKey: r.item_key, quote: r.quote, note: r.relevance_note })
+                  }
+                />
               );
             })}
+          </div>
+        )
+      ) : isOpenAlexCorpus ? (
+        openAlexResults && (
+          <div className={styles.evidenceList}>
+            <div className={styles.panelSectionLabel}>
+              Results · {openAlexResults.length} paper{openAlexResults.length !== 1 ? 's' : ''}
+            </div>
+            {openAlexResults.length === 0 && (
+              <div className={styles.searchHint}>No relevant papers found on OpenAlex.</div>
+            )}
+            {openAlexResults.map((r) => {
+              const imported = r.already_in_project || (!!r.doi && openAlexImportedIds.has(r.doi));
+              const importState: FindImportState = !r.doi ? 'no_doi' : imported ? 'already_in_project' : 'importable';
+              return (
+                <FindResultCard
+                  key={r.openalex_id ?? r.doi ?? r.title}
+                  title={r.title}
+                  authors={r.creators}
+                  year={r.year}
+                  venue={r.venue}
+                  visitUrl={r.doi ? `https://doi.org/${r.doi}` : null}
+                  quote={r.quote}
+                  relevanceNote={r.relevance_note}
+                  importState={importState}
+                  importing={openAlexImportMutation.isPending}
+                  onImport={() =>
+                    r.doi && openAlexImportMutation.mutate({ doi: r.doi, quote: r.quote, note: r.relevance_note })
+                  }
+                />
+              );
+            })}
+          </div>
+        )
+      ) : isWebSearchCorpus ? (
+        webSearchResults && (
+          <div className={styles.evidenceList}>
+            <div className={styles.panelSectionLabel}>
+              Results · {webSearchResults.length} source{webSearchResults.length !== 1 ? 's' : ''}
+            </div>
+            {webSearchResults.length === 0 && (
+              <div className={styles.searchHint}>No relevant sources found.</div>
+            )}
+            {webSearchResults.map((r) => (
+              <FindResultCard
+                key={r.url}
+                title={r.title}
+                authors={[]}
+                year={null}
+                venue={r.source}
+                visitUrl={r.url}
+                quote={r.quote}
+                relevanceNote={r.relevance_note}
+                importState="no_doi"
+              />
+            ))}
           </div>
         )
       ) : (
@@ -1716,21 +1941,21 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
                     Evidence · {evidence.length} passage{evidence.length !== 1 ? 's' : ''}
                   </div>
                   {evidence.map((ev: EvidenceFull) => (
-                    <div key={ev.passage_id} className={`${styles.evidenceCard} ${styles[ev.role] ?? ''}`}>
-                      <div className={styles.evidenceHeader}>
-                        <span className={styles.evidencePaper}>{trunc(ev.paper_title, 40)}</span>
-                        {ev.paper_year && <span className={styles.evidenceYear}>{ev.paper_year}</span>}
-                        <span className={styles.evidenceRole}>{ev.role}</span>
-                        {ev.verified && <span className={styles.verifiedDot} title="verified" />}
-                        <button
-                          className={styles.evidenceCreateBtn}
-                          disabled={createFromEvidence.isPending}
-                          onClick={() => createFromEvidence.mutate(ev)}
-                          title="Promote to statement"
-                        >→ statement</button>
-                      </div>
-                      <div className={styles.evidenceQuote}>{ev.verbatim_text}</div>
-                    </div>
+                    <FindResultCard
+                      key={ev.passage_id}
+                      title={ev.paper_title}
+                      authors={ev.paper_first_author ? [ev.paper_first_author] : []}
+                      year={ev.paper_year}
+                      venue={ev.paper_venue}
+                      visitUrl={ev.paper_doi ? `https://doi.org/${ev.paper_doi}` : null}
+                      quote={ev.verbatim_text}
+                      relevanceNote={ev.rationale}
+                      roleLabel={ev.role}
+                      verified={ev.verified}
+                      importState="already_in_project"
+                      onPromote={() => createFromEvidence.mutate(ev)}
+                      promoting={createFromEvidence.isPending}
+                    />
                   ))}
                 </div>
               )}
@@ -1842,6 +2067,7 @@ export default function WorkspaceView() {
     },
     onSuccess: (statement) => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'evidence-sentences' });
       handleStatementCreated(statement.id);
     },
   });
@@ -1854,6 +2080,7 @@ export default function WorkspaceView() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
       queryClient.invalidateQueries({ queryKey: ['evidence', variables.statementId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'evidence-sentences' });
       handleStatementCreated(variables.statementId);
     },
   });

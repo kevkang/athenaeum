@@ -349,6 +349,11 @@ async def import_item(
             ProjectPaper(project_id=payload.project_id, paper_id=paper.id, added_by=user.id)
         )
 
+    if payload.found_quote:
+        paper.found_quote = payload.found_quote
+        paper.found_relevance_note = payload.found_relevance_note
+        paper.found_corpus = "zotero_sync"
+
     await session.commit()
     await session.refresh(paper)
 

@@ -181,6 +181,7 @@ async def _step_extract(
             paper_id=paper_id,
             sentence_ids=sentence_uuids,
             verbatim_text=verbatim,
+            rationale=pd.get("rationale") or None,
         )
         session.add(passage)
         passages.append(passage)
