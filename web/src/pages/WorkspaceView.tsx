@@ -13,7 +13,7 @@ import {
   type Evidence,
 } from '../api/statements';
 import { papersApi, type Paper, type Section, type Sentence, type OpenAlexResult, firstAuthor } from '../api/papers';
-import { zoteroApi, type ZoteroSearchResult } from '../api/zotero';
+import { zoteroApi, zoteroFindApi, type ZoteroSearchResult, type ZoteroFindResult, type ZoteroFindCorpus } from '../api/zotero';
 import { zoteroLocalApi } from '../api/zoteroLocal';
 import { passagesApi } from '../api/passages';
 import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
@@ -29,7 +29,7 @@ cytoscape.use(dagre);
 
 interface StatementGraph { nodes: StatementNode[]; edges: StatementEdge[] }
 
-type PanelMode = null | { kind: 'statement'; id: string } | { kind: 'synthesis' } | { kind: 'new' };
+type PanelMode = null | { kind: 'statement'; id: string } | { kind: 'new' };
 type NodeFilter = 'all' | 'statements' | 'questions';
 
 const RELATIONS: StatementRelation[] = ['relates_to', 'supports', 'tension'];
@@ -1501,11 +1501,15 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
   );
 }
 
-function SynthesisPanel({ projectId, onStatementCreated }: { projectId: string; onStatementCreated: (id: string) => void }) {
+function FindPanel({ projectId, onStatementCreated }: { projectId: string; onStatementCreated: (id: string) => void }) {
   const queryClient = useQueryClient();
-  const [claim, setClaim] = useState('');
+  const [query, setQuery] = useState('');
   const [corpus, setCorpus] = useState('project');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoteroResults, setZoteroResults] = useState<ZoteroFindResult[] | null>(null);
+  const [zoteroImportedKeys, setZoteroImportedKeys] = useState<Set<string>>(new Set());
+
+  const isZoteroCorpus = corpus === 'zotero_sync' || corpus === 'zotero_local';
 
   const { data: syntheses } = useQuery({
     queryKey: ['syntheses', projectId],
@@ -1527,11 +1531,27 @@ function SynthesisPanel({ projectId, onStatementCreated }: { projectId: string; 
   });
 
   const createMutation = useMutation({
-    mutationFn: () => synthesisApi.create(claim.trim(), projectId, corpus),
+    mutationFn: () => synthesisApi.create(query.trim(), projectId, corpus),
     onSuccess: (s) => {
       queryClient.invalidateQueries({ queryKey: ['syntheses', projectId] });
-      setClaim('');
+      setQuery('');
       setSelectedId(s.id);
+    },
+  });
+
+  const zoteroFindMutation = useMutation({
+    mutationFn: () => zoteroFindApi.find(query.trim(), projectId, corpus as ZoteroFindCorpus),
+    onSuccess: (results) => setZoteroResults(results),
+  });
+
+  const zoteroImportMutation = useMutation({
+    mutationFn: (itemKey: string) =>
+      corpus === 'zotero_sync'
+        ? zoteroApi.importItem(projectId, itemKey)
+        : zoteroLocalApi.importItem(projectId, itemKey),
+    onSuccess: (_paper, itemKey) => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setZoteroImportedKeys((prev) => new Set(prev).add(itemKey));
     },
   });
 
@@ -1561,104 +1581,162 @@ function SynthesisPanel({ projectId, onStatementCreated }: { projectId: string; 
     queryClient.invalidateQueries({ queryKey: ['evidence-full', selectedId] });
   }, [queryClient, selectedId, projectId]);
 
+  const handleRun = () => {
+    if (isZoteroCorpus) {
+      zoteroFindMutation.mutate();
+    } else {
+      createMutation.mutate();
+    }
+  };
+
+  const running = isZoteroCorpus ? zoteroFindMutation.isPending : createMutation.isPending;
+  const runError = isZoteroCorpus ? zoteroFindMutation.error : createMutation.error;
+
   return (
     <div className={styles.panelContent}>
-      <div className={styles.panelKind}>synthesis</div>
+      <div className={styles.panelKind}>find</div>
 
       <div className={styles.synthForm}>
         <textarea
           className={styles.synthClaimInput}
-          value={claim}
-          onChange={(e) => setClaim(e.target.value)}
-          placeholder="What relationship or mechanism are you trying to establish?"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="What are you searching for?"
           rows={3}
         />
         <div className={styles.synthFormRow}>
-          <select className={styles.corpusSelect} value={corpus} onChange={(e) => setCorpus(e.target.value)}>
+          <select className={styles.corpusSelect} value={corpus} onChange={(e) => { setCorpus(e.target.value); setZoteroResults(null); }}>
             <option value="project">Project papers</option>
             <option value="global">Global corpus</option>
+            <option value="zotero_sync">Zotero (sync)</option>
+            <option value="zotero_local">Zotero (local)</option>
           </select>
           <button
             className={styles.runBtn}
-            disabled={claim.trim().length < 10 || createMutation.isPending}
-            onClick={() => createMutation.mutate()}
+            disabled={query.trim().length < 10 || running}
+            onClick={handleRun}
           >
-            {createMutation.isPending ? 'Starting…' : 'Run'}
+            {running ? (isZoteroCorpus ? 'Searching…' : 'Starting…') : 'Run'}
           </button>
         </div>
-        {createMutation.error && (
-          <div className={styles.formError}>{(createMutation.error as Error).message}</div>
+        <div className={styles.synthFormRow}>
+          <button
+            type="button"
+            className={styles.viewToggleBtn}
+            onClick={() => useUIStore.getState().openAccountModal()}
+          >
+            Configure LLM
+          </button>
+        </div>
+        {runError && (
+          <div className={styles.formError}>{(runError as Error).message}</div>
         )}
       </div>
 
-      {syntheses && syntheses.length > 0 && (
-        <div className={styles.synthList}>
-          <div className={styles.panelSectionLabel}>Past syntheses</div>
-          {syntheses.map((s: Synthesis) => (
-            <button
-              key={s.id}
-              className={`${styles.synthItem} ${s.id === selectedId ? styles.synthItemActive : ''}`}
-              onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
-            >
-              <span className={`${styles.statusDot} ${styles[s.status]}`} />
-              <span className={styles.synthItemClaim}>{trunc(s.claim_text, 60)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {activeSynth && (
-        <div className={styles.synthDetail}>
-          <div className={styles.synthDetailHeader}>
-            <span className={`${styles.statusDot} ${styles[activeSynth.status]}`} />
-            <span className={styles.synthStatus}>
-              {activeSynth.status === 'running' && 'Running…'}
-              {activeSynth.status === 'done' && 'Done'}
-              {activeSynth.status === 'failed' && 'Failed'}
-            </span>
-            {activeSynth.verification_rate !== null && (
-              <span className={styles.vrBadge}>
-                {(activeSynth.verification_rate * 100).toFixed(0)}% verified
-              </span>
+      {isZoteroCorpus ? (
+        zoteroResults && (
+          <div className={styles.evidenceList}>
+            <div className={styles.panelSectionLabel}>
+              Results · {zoteroResults.length} paper{zoteroResults.length !== 1 ? 's' : ''}
+            </div>
+            {zoteroResults.length === 0 && (
+              <div className={styles.searchHint}>No relevant papers found in your Zotero library.</div>
             )}
-            <button
-              className={styles.deleteBtn}
-              onClick={() => deleteMutation.mutate(activeSynth.id)}
-              disabled={deleteMutation.isPending}
-            >×</button>
-          </div>
-
-          <div className={styles.synthClaim}>{activeSynth.claim_text}</div>
-
-          {activeSynth.status === 'running' && (
-            <LiveTrace synthesisId={activeSynth.id} onDone={handleDone} />
-          )}
-
-          {evidence && evidence.length > 0 && (
-            <div className={styles.evidenceList}>
-              <div className={styles.panelSectionLabel}>
-                Evidence · {evidence.length} passage{evidence.length !== 1 ? 's' : ''}
-              </div>
-              {evidence.map((ev: EvidenceFull) => (
-                <div key={ev.passage_id} className={`${styles.evidenceCard} ${styles[ev.role] ?? ''}`}>
+            {zoteroResults.map((r) => {
+              const imported = r.already_in_project || zoteroImportedKeys.has(r.item_key);
+              return (
+                <div key={r.item_key} className={styles.evidenceCard}>
                   <div className={styles.evidenceHeader}>
-                    <span className={styles.evidencePaper}>{trunc(ev.paper_title, 40)}</span>
-                    {ev.paper_year && <span className={styles.evidenceYear}>{ev.paper_year}</span>}
-                    <span className={styles.evidenceRole}>{ev.role}</span>
-                    {ev.verified && <span className={styles.verifiedDot} title="verified" />}
+                    <span className={styles.evidencePaper}>{trunc(r.title, 40)}</span>
+                    {r.year && <span className={styles.evidenceYear}>{r.year}</span>}
                     <button
                       className={styles.evidenceCreateBtn}
-                      disabled={createFromEvidence.isPending}
-                      onClick={() => createFromEvidence.mutate(ev)}
-                      title="Promote to statement"
-                    >→ statement</button>
+                      disabled={imported || zoteroImportMutation.isPending}
+                      title={imported ? 'Already in project' : 'Import into project'}
+                      onClick={() => zoteroImportMutation.mutate(r.item_key)}
+                    >
+                      {imported ? '✓ imported' : '+ import'}
+                    </button>
                   </div>
-                  <div className={styles.evidenceQuote}>{ev.verbatim_text}</div>
+                  <div className={styles.evidenceQuote}>{r.quote}</div>
+                  <div className={styles.searchHint}>{r.relevance_note}</div>
                 </div>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        <>
+          {syntheses && syntheses.length > 0 && (
+            <div className={styles.synthList}>
+              <div className={styles.panelSectionLabel}>Past syntheses</div>
+              {syntheses.map((s: Synthesis) => (
+                <button
+                  key={s.id}
+                  className={`${styles.synthItem} ${s.id === selectedId ? styles.synthItemActive : ''}`}
+                  onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
+                >
+                  <span className={`${styles.statusDot} ${styles[s.status]}`} />
+                  <span className={styles.synthItemClaim}>{trunc(s.claim_text, 60)}</span>
+                </button>
               ))}
             </div>
           )}
-        </div>
+
+          {activeSynth && (
+            <div className={styles.synthDetail}>
+              <div className={styles.synthDetailHeader}>
+                <span className={`${styles.statusDot} ${styles[activeSynth.status]}`} />
+                <span className={styles.synthStatus}>
+                  {activeSynth.status === 'running' && 'Running…'}
+                  {activeSynth.status === 'done' && 'Done'}
+                  {activeSynth.status === 'failed' && 'Failed'}
+                </span>
+                {activeSynth.verification_rate !== null && (
+                  <span className={styles.vrBadge}>
+                    {(activeSynth.verification_rate * 100).toFixed(0)}% verified
+                  </span>
+                )}
+                <button
+                  className={styles.deleteBtn}
+                  onClick={() => deleteMutation.mutate(activeSynth.id)}
+                  disabled={deleteMutation.isPending}
+                >×</button>
+              </div>
+
+              <div className={styles.synthClaim}>{activeSynth.claim_text}</div>
+
+              {activeSynth.status === 'running' && (
+                <LiveTrace synthesisId={activeSynth.id} onDone={handleDone} />
+              )}
+
+              {evidence && evidence.length > 0 && (
+                <div className={styles.evidenceList}>
+                  <div className={styles.panelSectionLabel}>
+                    Evidence · {evidence.length} passage{evidence.length !== 1 ? 's' : ''}
+                  </div>
+                  {evidence.map((ev: EvidenceFull) => (
+                    <div key={ev.passage_id} className={`${styles.evidenceCard} ${styles[ev.role] ?? ''}`}>
+                      <div className={styles.evidenceHeader}>
+                        <span className={styles.evidencePaper}>{trunc(ev.paper_title, 40)}</span>
+                        {ev.paper_year && <span className={styles.evidenceYear}>{ev.paper_year}</span>}
+                        <span className={styles.evidenceRole}>{ev.role}</span>
+                        {ev.verified && <span className={styles.verifiedDot} title="verified" />}
+                        <button
+                          className={styles.evidenceCreateBtn}
+                          disabled={createFromEvidence.isPending}
+                          onClick={() => createFromEvidence.mutate(ev)}
+                          title="Promote to statement"
+                        >→ statement</button>
+                      </div>
+                      <div className={styles.evidenceQuote}>{ev.verbatim_text}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1690,9 +1768,6 @@ function RightPanel({
             papers={papers}
           />
         )}
-        {panelMode.kind === 'synthesis' && (
-          <SynthesisPanel projectId={projectId} onStatementCreated={onStatementCreated} />
-        )}
         {panelMode.kind === 'new' && (
           <NewStatementForm projectId={projectId} onCreated={onStatementCreated} />
         )}
@@ -1711,6 +1786,7 @@ export default function WorkspaceView() {
   const pendingSelectRef = useRef<string | null>(null);
 
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
+  const [readerMode, setReaderMode] = useState<'read' | 'find'>('read');
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [nodeFilter, setNodeFilter] = useState<NodeFilter>('all');
   const [readerWidth, setReaderWidth] = useState(READER_DEFAULT_WIDTH);
@@ -2176,12 +2252,6 @@ export default function WorkspaceView() {
         >
           + New statement
         </button>
-        <button
-          className={`${styles.synthBtn} ${panelMode?.kind === 'synthesis' ? styles.synthBtnActive : ''}`}
-          onClick={() => setPanelMode(panelMode?.kind === 'synthesis' ? null : { kind: 'synthesis' })}
-        >
-          Run synthesis
-        </button>
       </div>
 
       {/* ── Body: papers | reader | graph ── */}
@@ -2198,11 +2268,27 @@ export default function WorkspaceView() {
         />
 
         <div className={styles.readerPane} style={{ width: readerWidth }}>
+          <div className={styles.readerModeToggle}>
+            <button
+              className={`${styles.readerModeBtn} ${readerMode === 'read' ? styles.readerModeBtnActive : ''}`}
+              onClick={() => setReaderMode('read')}
+            >
+              Read
+            </button>
+            <button
+              className={`${styles.readerModeBtn} ${readerMode === 'find' ? styles.readerModeBtnActive : ''}`}
+              onClick={() => setReaderMode('find')}
+            >
+              Find
+            </button>
+          </div>
           {isDragOver ? (
             <div className={styles.emptyState} style={{ outline: '2px dashed var(--accent)', outlineOffset: -8 }}>
               <div className={styles.emptyTitle}>Drop to add</div>
               <div className={styles.emptyDesc}>Release to upload these PDFs to this project.</div>
             </div>
+          ) : readerMode === 'find' ? (
+            <FindPanel projectId={projectId} onStatementCreated={handleStatementCreated} />
           ) : selectedPaperId ? (
             <ReaderPane paperId={selectedPaperId} projectId={projectId} />
           ) : (

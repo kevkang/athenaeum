@@ -326,6 +326,37 @@
   position: relative;
 }
 
+.readerModeToggle {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+  position: sticky;
+  top: 0;
+  background: var(--bg-canvas);
+  z-index: 1;
+}
+
+.readerModeBtn {
+  flex: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.readerModeBtn:hover { color: var(--text-muted); border-color: var(--border-strong); }
+
+.readerModeBtnActive {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-sidebar);
+}
+
 /* ── Resize divider between reader and graph panes ── */
 .resizeDivider {
   width: 5px;

@@ -39,3 +39,14 @@ class AnthropicProvider:
                 return block.text, None
 
         return None, None
+
+
+async def validate_api_key(api_key: str) -> None:
+    """Check that an Anthropic API key is valid without spending inference tokens.
+
+    `models.list()` is a free metadata call that still requires a valid,
+    authenticated key — raises anthropic.AuthenticationError/PermissionDeniedError
+    on a bad key, anthropic.RateLimitError if the key is being rate-limited.
+    """
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    await client.models.list(limit=1)

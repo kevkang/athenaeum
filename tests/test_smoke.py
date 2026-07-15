@@ -72,6 +72,24 @@ def test_search_requires_auth() -> None:
     assert resp.status_code == 401
 
 
+def test_llm_credentials_get_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/llm/credentials")
+    assert resp.status_code == 401
+
+
+def test_llm_credentials_put_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.put("/llm/credentials", json={"api_key": "fake-key"})
+    assert resp.status_code == 401
+
+
+def test_llm_credentials_delete_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.delete("/llm/credentials")
+    assert resp.status_code == 401
+
+
 def test_zotero_credentials_get_requires_auth() -> None:
     with TestClient(app) as client:
         resp = client.get("/zotero/credentials")
@@ -90,6 +108,19 @@ def test_zotero_credentials_put_requires_auth() -> None:
 def test_zotero_credentials_delete_requires_auth() -> None:
     with TestClient(app) as client:
         resp = client.delete("/zotero/credentials")
+    assert resp.status_code == 401
+
+
+def test_zotero_find_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/zotero/find",
+            json={
+                "query": "test query for authentication check",
+                "project_id": "00000000-0000-0000-0000-000000000000",
+                "corpus": "zotero_sync",
+            },
+        )
     assert resp.status_code == 401
 
 

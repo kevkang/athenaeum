@@ -15,6 +15,7 @@ from athenaeum.ingest.zotero_local import (
     list_local_collections,
     resolve_local_attachment_file,
     search_local_library,
+    search_local_library_broad,
 )
 
 _SCHEMA = """
@@ -66,6 +67,8 @@ def _build_db(path: Path) -> None:
     conn.execute("INSERT INTO itemData VALUES (1, 4, 4)")
     conn.execute("INSERT INTO creators VALUES (1, 'Ada', 'Borton', 0)")
     conn.execute("INSERT INTO itemCreators VALUES (1, 1, 0)")
+    conn.execute("INSERT INTO itemDataValues VALUES (7, 'Chemosynthesis sustains vent ecosystems.')")
+    conn.execute("INSERT INTO itemData VALUES (1, 5, 7)")
 
     conn.execute(
         "INSERT INTO items VALUES (2, 2, 'ATTACH001', '2024-01-01 00:00:01')"
@@ -124,6 +127,20 @@ async def test_search_matches_creator(zotero_dir: Path) -> None:
 
 async def test_search_excludes_trashed_items(zotero_dir: Path) -> None:
     hits = await search_local_library(str(zotero_dir), "should not appear")
+    assert hits == []
+
+
+async def test_search_broad_matches_abstract(zotero_dir: Path) -> None:
+    hits = await search_local_library_broad(str(zotero_dir), "chemosynthesis")
+    assert [h.item_key for h in hits] == ["ITEM0001"]
+    assert hits[0].abstract == "Chemosynthesis sustains vent ecosystems."
+
+
+async def test_search_narrow_does_not_match_abstract(zotero_dir: Path) -> None:
+    # The existing title/creator-only search must be left unaffected by the
+    # new abstract field — this query only matches the abstract, not the
+    # title/creator, so the narrow search should find nothing.
+    hits = await search_local_library(str(zotero_dir), "chemosynthesis")
     assert hits == []
 
 

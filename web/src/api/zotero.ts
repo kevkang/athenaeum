@@ -18,6 +18,23 @@ export interface ZoteroSearchResult {
   date_added: string | null;
 }
 
+export type ZoteroFindCorpus = 'zotero_sync' | 'zotero_local';
+
+/** A "Find" result over the whole Zotero library (sync or local), not just
+ * items already imported into the project — see zoteroFindApi.find(). */
+export interface ZoteroFindResult {
+  item_key: string;
+  title: string;
+  creators: string[];
+  year: number | null;
+  venue: string | null;
+  doi: string | null;
+  item_type: string;
+  already_in_project: boolean;
+  quote: string;
+  relevance_note: string;
+}
+
 export interface ZoteroCollection {
   key: string;
   name: string;
@@ -87,5 +104,12 @@ export const zoteroApi = {
           direction: params.direction ?? 'desc',
         },
       })
+      .then((r) => r.data),
+};
+
+export const zoteroFindApi = {
+  find: (query: string, projectId: string, corpus: ZoteroFindCorpus) =>
+    api
+      .post<ZoteroFindResult[]>('/zotero/find', { query, project_id: projectId, corpus })
       .then((r) => r.data),
 };

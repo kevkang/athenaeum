@@ -12,6 +12,7 @@ from athenaeum.api import (
     auth,
     graph,
     links,
+    llm_credentials,
     members,
     papers,
     passages,
@@ -21,6 +22,7 @@ from athenaeum.api import (
     statements,
     syntheses,
     zotero,
+    zotero_find,
     zotero_local,
 )
 from athenaeum.config import get_settings
@@ -87,6 +89,8 @@ app.include_router(public.router)
 app.include_router(links.router)
 app.include_router(zotero.router)
 app.include_router(zotero_local.router)
+app.include_router(zotero_find.router)
+app.include_router(llm_credentials.router)
 
 
 @app.get("/health")

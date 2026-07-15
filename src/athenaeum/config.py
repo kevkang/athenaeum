@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     synthesis_model: str = "claude-opus-4-7"
     checker_model: str = "claude-opus-4-7"
     summarize_model: str = "claude-haiku-4-5-20251001"
+    zotero_find_model: str = "claude-haiku-4-5-20251001"
 
     s3_bucket: str | None = None
     aws_region: str = "us-east-1"

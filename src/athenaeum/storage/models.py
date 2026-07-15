@@ -527,6 +527,26 @@ class ZoteroCredentials(Base):
     )
 
 
+class LLMCredentials(Base):
+    """Per-user "bring your own" LLM API key. When present, this key takes
+    precedence over the server's global ANTHROPIC_API_KEY for that user's
+    Find/summarize requests — see provider/resolver.py."""
+    __tablename__ = "llm_credentials"
+    __table_args__ = (CheckConstraint("provider IN ('anthropic')", name="llm_credentials_provider_chk"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False, default="anthropic")
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ZoteroLocalConfig(Base):
     """Singleton row (id is always 1) recording which subfolder of the
     broadly-mounted host home directory (see ZOTERO_LOCAL_HOST_MOUNT) is the

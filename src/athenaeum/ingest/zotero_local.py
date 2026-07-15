@@ -201,6 +201,23 @@ def _matches_query(conn: sqlite3.Connection, item_id: int, query_lc: str) -> boo
     )
 
 
+def _matches_query_broad(conn: sqlite3.Connection, item_id: int, query_lc: str) -> bool:
+    """Like `_matches_query`, but also checks the abstract — used only by the
+    "Find" library-wide discovery feature. `browse_local_items`'s existing
+    title/creator-only filtering is left untouched to avoid changing today's
+    add-paper search behavior."""
+    fields = _item_data_dict(conn, item_id)
+    title = fields.get("title") or fields.get("shortTitle") or ""
+    abstract = fields.get("abstractNote") or ""
+    if query_lc in title.lower() or query_lc in abstract.lower():
+        return True
+    for creator in _item_creators(conn, item_id):
+        name = creator.get("name") or f"{creator.get('firstName', '')} {creator.get('lastName', '')}"
+        if query_lc in name.lower():
+            return True
+    return False
+
+
 def _sort_key(conn: sqlite3.Connection, row: sqlite3.Row, sort: str) -> str:
     if sort == "date_added":
         return row["dateAdded"] or ""
@@ -238,6 +255,32 @@ async def search_local_library(
         hits: list[ZoteroSearchHit] = []
         for row in candidates:
             if not _matches_query(conn, row["itemID"], query_lc):
+                continue
+            data = _row_to_data_block(conn, row["itemID"], row["key"], row["itemType"])
+            data["dateAdded"] = row["dateAdded"]
+            hit = _hit_from_item(data)
+            if hit is not None:
+                hits.append(hit)
+            if len(hits) >= limit:
+                break
+        return hits
+
+    return await loop.run_in_executor(None, _run(data_dir, _search))
+
+
+async def search_local_library_broad(
+    data_dir: str, query: str, limit: int = 40
+) -> list[ZoteroSearchHit]:
+    """Broader local-library search covering the abstract too, not just
+    title/creator — used by the "Find" library-wide discovery feature."""
+    loop = asyncio.get_running_loop()
+
+    def _search(conn: sqlite3.Connection) -> list[ZoteroSearchHit]:
+        query_lc = query.lower()
+        candidates = _candidate_items(conn, collection_key=None)
+        hits: list[ZoteroSearchHit] = []
+        for row in candidates:
+            if not _matches_query_broad(conn, row["itemID"], query_lc):
                 continue
             data = _row_to_data_block(conn, row["itemID"], row["key"], row["itemType"])
             data["dateAdded"] = row["dateAdded"]

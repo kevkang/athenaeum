@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from athenaeum.config import Settings
 from athenaeum.domain.models import SentenceHit
 from athenaeum.ingest.embed import embed_sentences
-from athenaeum.provider.anthropic_client import AnthropicProvider
 from athenaeum.provider.base import Message, Provider
+from athenaeum.provider.resolver import get_provider_for_user
 from athenaeum.retrieve.hybrid import search as hybrid_search
 from athenaeum.storage.models import (
     Passage,
@@ -217,13 +217,8 @@ async def run_synthesis(
     engine: AsyncEngine,
     redis: aioredis.Redis,
     settings: Settings,
+    requesting_user_id: uuid.UUID,
 ) -> None:
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not configured")
-
-    provider = AnthropicProvider(settings.anthropic_api_key, settings.synthesis_model)
-    checker = AnthropicProvider(settings.anthropic_api_key, settings.checker_model)
-
     async with AsyncSession(engine, expire_on_commit=False) as session:
         synthesis = await session.get(Synthesis, synthesis_id)
         if synthesis is None:
@@ -232,6 +227,17 @@ async def run_synthesis(
 
         step_ord = 0
         try:
+            # Resolved here (inside the try) rather than before the session
+            # opens, so a user disconnecting their key between job enqueue
+            # and pickup (NoLLMKeyConfigured) fails the synthesis gracefully
+            # via the except block below instead of crashing the worker.
+            provider = await get_provider_for_user(
+                session, requesting_user_id, settings.synthesis_model, settings
+            )
+            checker = await get_provider_for_user(
+                session, requesting_user_id, settings.checker_model, settings
+            )
+
             log.info("synthesis.start", synthesis_id=str(synthesis_id))
 
             # ── 1. Query interpretation ────────────────────────────────────────

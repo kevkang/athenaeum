@@ -346,8 +346,6 @@ async def summarize_paper(
     user: CurrentUserDep,
 ) -> Paper:
     settings = get_settings()
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=503, detail="LLM provider not configured")
 
     paper = await session.get(Paper, paper_id)
     if paper is None:
@@ -364,10 +362,13 @@ async def summarize_paper(
     if not text.strip():
         raise HTTPException(status_code=400, detail="No text content found for this paper")
 
-    from athenaeum.provider.anthropic_client import AnthropicProvider
     from athenaeum.provider.base import Message
+    from athenaeum.provider.resolver import NoLLMKeyConfigured, get_provider_for_user
 
-    provider = AnthropicProvider(settings.anthropic_api_key, settings.summarize_model)
+    try:
+        provider = await get_provider_for_user(session, user.id, settings.summarize_model, settings)
+    except NoLLMKeyConfigured as exc:
+        raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
     message, _ = await provider.complete(
         messages=[
             Message(

@@ -60,6 +60,7 @@ class ZoteroSearchHit:
     doi: str | None
     item_type: str
     date_added: str | None = None
+    abstract: str | None = None
 
 
 @dataclass
@@ -167,6 +168,7 @@ def _hit_from_item(data: dict) -> ZoteroSearchHit | None:
         doi=_normalize_doi(raw_doi) if raw_doi else None,
         item_type=item_type,
         date_added=data.get("dateAdded"),
+        abstract=data.get("abstractNote") or None,
     )
 
 
@@ -177,6 +179,23 @@ async def search_library(creds: ZoteroCreds, query: str, limit: int = 20) -> lis
     def _search() -> list[dict]:
         client = _client(creds)
         return client.top(q=query, qmode="titleCreatorYear", limit=limit)
+
+    items = await loop.run_in_executor(None, lambda: _run_zotero_call(_search))
+    return [hit for item in items if (hit := _hit_from_item(item.get("data", {}))) is not None]
+
+
+async def search_library_everything(
+    creds: ZoteroCreds, query: str, limit: int = 40
+) -> list[ZoteroSearchHit]:
+    """Broader quick-search covering abstracts/notes/tags/full-text, not just
+    title/creator/year — used by the "Find" library-wide discovery feature,
+    which needs abstract matches that `search_library` (used by the add-paper
+    tab) intentionally doesn't do."""
+    loop = asyncio.get_running_loop()
+
+    def _search() -> list[dict]:
+        client = _client(creds)
+        return client.top(q=query, qmode="everything", limit=limit)
 
     items = await loop.run_in_executor(None, lambda: _run_zotero_call(_search))
     return [hit for item in items if (hit := _hit_from_item(item.get("data", {}))) is not None]

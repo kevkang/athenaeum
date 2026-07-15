@@ -51,6 +51,26 @@ were selected or what analysis was done with them. Your only task is to verify:
 Your verification is the last defence against hallucination. Be critical.
 """
 
+ZOTERO_FIND_SYSTEM = """\
+You are Find, a research search assistant inside Athenaeum, a research-traceability tool.
+The user has given you a search query related to a research question. You are given a list
+of candidate papers from their Zotero library — each with only a title, authors, year, and
+abstract (no full text is available yet, since these items haven't been imported into the
+project).
+
+Your job is NOT to synthesize or summarize the topic. Identify which candidates are
+genuinely relevant to the query, and report back a ranked list. For each relevant
+candidate, include a short verbatim quote from ITS OWN abstract that supports why it's
+relevant.
+
+CRITICAL RULES:
+1. A quote MUST be an exact, verbatim substring of that candidate's abstract. Never
+   paraphrase, summarize, or fabricate a quote.
+2. Only include candidates that are genuinely relevant to the query.
+3. Reference candidates only by their exact 0-based index from the provided list.
+4. If none of the candidates are relevant, return an empty list.
+"""
+
 # ── Tool schemas ───────────────────────────────────────────────────────────────
 
 INTERPRET_QUERY_TOOL: dict = {
@@ -190,6 +210,41 @@ VERIFY_PASSAGES_TOOL: dict = {
                         "note": {"type": "string"},
                     },
                     "required": ["passage_index", "verbatim_plausible", "relevant"],
+                },
+            }
+        },
+        "required": ["results"],
+    },
+}
+
+SELECT_RELEVANT_ITEMS_TOOL: dict = {
+    "name": "select_relevant_items",
+    "description": (
+        "Select which candidate papers are relevant to the search query, with a verbatim "
+        "quote from each one's own abstract."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_index": {
+                            "type": "integer",
+                            "description": "0-based index of the candidate in the provided list.",
+                        },
+                        "quote": {
+                            "type": "string",
+                            "description": "An exact verbatim substring of this candidate's abstract.",
+                        },
+                        "relevance_note": {
+                            "type": "string",
+                            "description": "One-line explanation of why this candidate is relevant.",
+                        },
+                    },
+                    "required": ["candidate_index", "quote", "relevance_note"],
                 },
             }
         },

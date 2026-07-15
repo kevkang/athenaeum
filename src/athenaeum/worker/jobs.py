@@ -220,6 +220,7 @@ async def ingest_local_zotero_item(
 async def run_synthesis_job(
     ctx: dict,
     synthesis_id: str,
+    requesting_user_id: str,
 ) -> None:
     settings = get_settings()
     log.info("job.synthesis.start", synthesis_id=synthesis_id)
@@ -228,6 +229,7 @@ async def run_synthesis_job(
         engine=ctx["engine"],
         redis=ctx["redis"],
         settings=settings,
+        requesting_user_id=uuid.UUID(requesting_user_id),
     )
     log.info("job.synthesis.done", synthesis_id=synthesis_id)
 

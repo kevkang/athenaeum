@@ -20,6 +20,7 @@ from athenaeum.domain.models import (
     SynthesisStepOut,
     SynthesisUpdate,
 )
+from athenaeum.provider.resolver import NoLLMKeyConfigured, resolve_api_key
 from athenaeum.security import decode_session_token
 from athenaeum.storage.db import get_sessionmaker
 from athenaeum.storage.models import (
@@ -48,8 +49,10 @@ async def create_synthesis(
 ) -> Synthesis:
     settings = get_settings()
 
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=503, detail="LLM provider not configured")
+    try:
+        await resolve_api_key(session, user.id, settings)
+    except NoLLMKeyConfigured as exc:
+        raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
 
     membership = await session.scalar(
         select(ProjectMember).where(
@@ -76,7 +79,7 @@ async def create_synthesis(
         arq_pool = request.app.state.arq_pool
         if arq_pool is None:
             raise RuntimeError("arq pool not available")
-        await arq_pool.enqueue_job("run_synthesis_job", str(synthesis.id))
+        await arq_pool.enqueue_job("run_synthesis_job", str(synthesis.id), str(user.id))
         log.info("synthesis.enqueued", synthesis_id=str(synthesis.id))
     except Exception as exc:
         synthesis.status = "failed"

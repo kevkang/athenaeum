@@ -278,6 +278,17 @@ class EvaluationOut(BaseModel):
     created_at: datetime
 
 
+# ── LLM credentials ───────────────────────────────────────────────────────────
+
+class LLMCredentialsIn(BaseModel):
+    api_key: str = Field(min_length=1, max_length=300)
+
+
+class LLMCredentialsStatus(BaseModel):
+    connected: bool
+    provider: str | None = None
+
+
 # ── Statements ────────────────────────────────────────────────────────────────
 
 _QUESTION_STATUSES = {"open", "resolved", "wontfix"}
@@ -494,6 +505,25 @@ class ZoteroCollectionOut(BaseModel):
 class ZoteroBrowseResponse(BaseModel):
     items: list[ZoteroSearchResultOut]
     total: int
+
+
+class ZoteroFindRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=500)
+    project_id: UUID
+    corpus: str = Field(pattern="^(zotero_sync|zotero_local)$")
+
+
+class ZoteroFindResultOut(BaseModel):
+    item_key: str
+    title: str
+    creators: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+    item_type: str
+    already_in_project: bool
+    quote: str
+    relevance_note: str
 
 
 class ZoteroLocalStatus(BaseModel):
