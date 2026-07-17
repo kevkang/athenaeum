@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
@@ -191,6 +191,15 @@ async def delete_statement(
         statement.project_id,
         "statement_deleted",
         {"statement_id": str(statement.id), "assertion_preview": statement.assertion[:100]},
+    )
+    # Clean up polymorphic evidence rows from OTHER statements that cited this
+    # one as evidence (target_kind='statement', target_id=<this id>). These are
+    # not FK-constrained (target_id is polymorphic), so Postgres won't cascade.
+    await session.execute(
+        delete(StatementEvidence).where(
+            (StatementEvidence.target_kind == "statement")
+            & (StatementEvidence.target_id == statement_id)
+        )
     )
     await session.delete(statement)
     await session.commit()

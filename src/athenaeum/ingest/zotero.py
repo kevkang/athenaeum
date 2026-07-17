@@ -266,9 +266,8 @@ async def browse_items(
             items = client.collection_items(collection_key, **kwargs)
         else:
             items = client.top(**kwargs)
-        # client.request is only None before any call has been made — we've
-        # just made one, so this is always populated here.
-        assert client.request is not None
+        if client.request is None:
+            raise ZoteroRateLimitError("Zotero did not return a response object after browsing")
         total = int(client.request.headers.get("Total-Results", len(items)))
         return items, total
 

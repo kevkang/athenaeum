@@ -128,7 +128,7 @@ async def _sync_statement_edges(
     edges: list[StatementEdge],
 ) -> None:
     await neo_session.run(
-        "MATCH (s:Statement {id: $id})-[r:RELATES_TO|SUPPORTS|IN_TENSION]-() DELETE r",
+        "MATCH (s:Statement {id: $id})-[r:RELATES_TO|SUPPORTS|IN_TENSION]->() DELETE r",
         id=sid,
     )
     for edge in edges:
