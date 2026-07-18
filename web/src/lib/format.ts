@@ -7,7 +7,9 @@ export function stripHtml(s: string): string {
 }
 
 export function safeHtml(s: string): { __html: string } {
-  return { __html: s.replace(/<(?!\/?(?:i|em|b|strong|sup|sub)\b)[^>]*>/gi, '') };
+  const noForeignTags = s.replace(/<(?!\/?(?:i|em|b|strong|sup|sub)\b)[^>]*>/gi, '');
+  const noAttrs = noForeignTags.replace(/<(\/?(?:i|em|b|strong|sup|sub))\b[^>]*>/gi, '<$1>');
+  return { __html: noAttrs };
 }
 
 export function formatDate(iso: string): string {

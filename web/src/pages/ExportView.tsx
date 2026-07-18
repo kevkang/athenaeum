@@ -153,12 +153,13 @@ export default function ExportView() {
 
   const handleDownload = useCallback(() => {
     if (!yamlText) return;
+    if (statements === undefined) return; // don't skip the lock check while still loading
     if (unlockedStatements.length > 0) {
       setPendingDownload(true);
       return;
     }
     downloadNow(yamlText);
-  }, [yamlText, unlockedStatements.length, downloadNow]);
+  }, [yamlText, statements, unlockedStatements.length, downloadNow]);
 
   const exportedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
