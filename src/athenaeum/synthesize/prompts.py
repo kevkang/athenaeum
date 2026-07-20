@@ -51,6 +51,49 @@ were selected or what analysis was done with them. Your only task is to verify:
 Your verification is the last defence against hallucination. Be critical.
 """
 
+ZOTERO_FIND_SYSTEM = """\
+You are Find, a research search assistant inside Athenaeum, a research-traceability tool.
+The user has given you a search query related to a research question. You are given a list
+of candidate papers from their Zotero library — each with only a title, authors, year, and
+abstract (no full text is available yet, since these items haven't been imported into the
+project).
+
+Your job is NOT to synthesize or summarize the topic. Identify which candidates are
+genuinely relevant to the query, and report back a ranked list. For each relevant
+candidate, include a short verbatim quote from ITS OWN abstract that supports why it's
+relevant.
+
+CRITICAL RULES:
+1. A quote MUST be an exact, verbatim substring of that candidate's abstract. Never
+   paraphrase, summarize, or fabricate a quote.
+2. Only include candidates that are genuinely relevant to the query.
+3. Reference candidates only by their exact 0-based index from the provided list.
+4. If none of the candidates are relevant, return an empty list.
+"""
+
+BACKTRACE_IDENTIFY_SYSTEM = """\
+You are Backtrace, a citation-tracing assistant inside Athenaeum. You are given a sentence
+from a scientific paper that makes a claim and (usually) cites another work for it, plus a
+numbered list of that paper's OWN references — each with only a title, authors, and year (you
+do not have the referenced papers' content, and you do not have the citing paper's full
+bibliography, only OpenAlex's record of which works it cites).
+
+Your job is to identify which single reference the sentence is most likely citing, by matching
+author names and/or years mentioned in the sentence against the candidate list.
+
+IMPORTANT CONSTRAINTS:
+1. Numbered/bracketed in-text citation markers (e.g. "[12]", "[3,4]") do NOT correspond to the
+   numbering of the candidate list below — that numbering is arbitrary. Do not use it to infer a
+   match. Rely on author names and/or publication years mentioned in or near the sentence.
+2. If the sentence names an author and year that clearly matches exactly one candidate, that's a
+   confident match.
+3. If the sentence has no identifiable citation, or names an author/year that doesn't match any
+   candidate, or could plausibly match several candidates equally, set confident to false and
+   omit candidate_index (or leave it accurate but low-confidence — a human will review either way).
+4. Never guess just to produce an answer. An honest "no confident match" is more useful than a
+   wrong one.
+"""
+
 # ── Tool schemas ───────────────────────────────────────────────────────────────
 
 INTERPRET_QUERY_TOOL: dict = {
@@ -194,5 +237,71 @@ VERIFY_PASSAGES_TOOL: dict = {
             }
         },
         "required": ["results"],
+    },
+}
+
+SELECT_RELEVANT_ITEMS_TOOL: dict = {
+    "name": "select_relevant_items",
+    "description": (
+        "Select which candidate papers are relevant to the search query, with a verbatim "
+        "quote from each one's own abstract."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_index": {
+                            "type": "integer",
+                            "description": "0-based index of the candidate in the provided list.",
+                        },
+                        "quote": {
+                            "type": "string",
+                            "description": "An exact verbatim substring of this candidate's abstract.",
+                        },
+                        "relevance_note": {
+                            "type": "string",
+                            "description": "One-line explanation of why this candidate is relevant.",
+                        },
+                    },
+                    "required": ["candidate_index", "quote", "relevance_note"],
+                },
+            }
+        },
+        "required": ["results"],
+    },
+}
+
+IDENTIFY_CITED_WORK_TOOL: dict = {
+    "name": "identify_cited_work",
+    "description": (
+        "Identify which single reference (by index) a citing sentence most likely invokes, if any."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "candidate_index": {
+                "type": "integer",
+                "description": (
+                    "0-based index of the best-matching reference. Omit entirely if none "
+                    "confidently match."
+                ),
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Brief explanation of the match, or of why no candidate matched.",
+            },
+            "confident": {
+                "type": "boolean",
+                "description": (
+                    "True only if author/year or another clear textual signal strongly aligns "
+                    "with the chosen candidate."
+                ),
+            },
+        },
+        "required": ["reasoning", "confident"],
     },
 }

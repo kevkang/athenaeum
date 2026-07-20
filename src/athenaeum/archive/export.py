@@ -12,9 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.storage.models import (
     Annotation,
-    Brick,
-    BrickBuildsOn,
-    BrickRestsOn,
     Dataset,
     Evaluation,
     Paper,
@@ -22,6 +19,9 @@ from athenaeum.storage.models import (
     Project,
     ProjectPaper,
     ProvenanceLog,
+    Statement,
+    StatementEdge,
+    StatementEvidence,
     Synthesis,
     SynthesisEvidence,
 )
@@ -62,17 +62,21 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
         select(SynthesisEvidence).where(SynthesisEvidence.synthesis_id.in_(synthesis_ids))
     ))
 
-    bricks = list(await session.scalars(
-        select(Brick).where(Brick.project_id == project_id)
+    statements = list(await session.scalars(
+        select(Statement).where(Statement.project_id == project_id)
     ))
-    brick_ids = [b.id for b in bricks]
+    statement_ids = [s.id for s in statements]
 
-    rests_on: list[BrickRestsOn] = [] if not brick_ids else list(await session.scalars(
-        select(BrickRestsOn).where(BrickRestsOn.brick_id.in_(brick_ids))
-    ))
-    builds_on: list[BrickBuildsOn] = [] if not brick_ids else list(await session.scalars(
-        select(BrickBuildsOn).where(BrickBuildsOn.brick_id.in_(brick_ids))
-    ))
+    statement_evidence: list[StatementEvidence] = (
+        [] if not statement_ids else list(await session.scalars(
+            select(StatementEvidence).where(StatementEvidence.statement_id.in_(statement_ids))
+        ))
+    )
+    statement_edges: list[StatementEdge] = (
+        [] if not statement_ids else list(await session.scalars(
+            select(StatementEdge).where(StatementEdge.from_statement_id.in_(statement_ids))
+        ))
+    )
 
     annotations = list(await session.scalars(
         select(Annotation).where(Annotation.project_id == project_id)
@@ -94,13 +98,13 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
     for e in evidence:
         ev_by_synth.setdefault(e.synthesis_id, []).append(e)
 
-    ro_by_brick: dict[uuid.UUID, list[BrickRestsOn]] = {}
-    for r in rests_on:
-        ro_by_brick.setdefault(r.brick_id, []).append(r)
+    evidence_by_statement: dict[uuid.UUID, list[StatementEvidence]] = {}
+    for r in statement_evidence:
+        evidence_by_statement.setdefault(r.statement_id, []).append(r)
 
-    bo_by_brick: dict[uuid.UUID, list[BrickBuildsOn]] = {}
-    for b in builds_on:
-        bo_by_brick.setdefault(b.brick_id, []).append(b)
+    edges_by_statement: dict[uuid.UUID, list[StatementEdge]] = {}
+    for edge in statement_edges:
+        edges_by_statement.setdefault(edge.from_statement_id, []).append(edge)
 
     return {
         "ath_version": ATH_VERSION,
@@ -161,33 +165,33 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
             }
             for s in syntheses
         ],
-        "bricks": [
+        "statements": [
             {
-                "id": str(b.id),
-                "author_id": _s(b.author_id),
-                "type": b.type,
-                "status": b.status,
-                "assertion": b.assertion,
-                "built_from_synthesis_id": _s(b.built_from_synthesis_id),
-                "cemented_at": _iso(b.cemented_at),
-                "drafted_at": _iso(b.drafted_at),
-                "rests_on": [
+                "id": str(s.id),
+                "author_id": _s(s.author_id),
+                "type": s.type,
+                "status": s.status,
+                "assertion": s.assertion,
+                "built_from_synthesis_id": _s(s.built_from_synthesis_id),
+                "locked_at": _iso(s.locked_at),
+                "drafted_at": _iso(s.drafted_at),
+                "evidence": [
                     {
                         "target_kind": r.target_kind,
                         "target_id": str(r.target_id),
                         "role": r.role,
                     }
-                    for r in ro_by_brick.get(b.id, [])
+                    for r in evidence_by_statement.get(s.id, [])
                 ],
-                "builds_on": [
+                "edges": [
                     {
-                        "parent_brick_id": str(r.parent_brick_id),
-                        "ord": r.ord,
+                        "to_statement_id": str(e.to_statement_id),
+                        "relation": e.relation,
                     }
-                    for r in sorted(bo_by_brick.get(b.id, []), key=lambda x: x.ord)
+                    for e in edges_by_statement.get(s.id, [])
                 ],
             }
-            for b in bricks
+            for s in statements
         ],
         "annotations": [
             {

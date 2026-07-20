@@ -134,7 +134,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <p style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, color: 'var(--text-faint)', marginBottom: 16, lineHeight: 1.6 }}>
-          Imports an <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>.ath</code> archive as a new project. Papers, bricks, syntheses, and provenance log are all restored.
+          Imports an <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>.ath</code> archive as a new project. Papers, statements, syntheses, and provenance log are all restored.
         </p>
 
         {mutation.error && (
@@ -172,7 +172,7 @@ export default function ProjectListPage() {
         <div className={styles.header}>
           <h1 className={styles.title}>Your projects</h1>
           <p className={styles.subtitle}>
-            Each project is a contained research argument — papers, bricks, and syntheses.
+            Each project is a contained research argument — papers, statements, and syntheses.
           </p>
         </div>
 

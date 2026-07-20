@@ -14,6 +14,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       S3_BUCKET: ${S3_BUCKET}
       AWS_REGION: ${AWS_REGION}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
 
   neo4j:
     environment:
@@ -25,6 +26,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       S3_BUCKET: ${S3_BUCKET}
       AWS_REGION: ${AWS_REGION}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
 
   nginx:
     build:

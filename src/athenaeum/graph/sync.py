@@ -5,19 +5,26 @@ import uuid
 
 import neo4j
 import structlog
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from athenaeum.storage.models import (
-    Brick,
-    BrickBuildsOn,
-    BrickRestsOn,
     Paper,
     Project,
     ProjectPaper,
+    Statement,
+    StatementEdge,
+    StatementEvidence,
 )
 
 log = structlog.get_logger()
+
+# statement_edges.relation -> Neo4j relationship type
+_EDGE_RELATION_TYPES = {
+    "relates_to": "RELATES_TO",
+    "supports": "SUPPORTS",
+    "tension": "IN_TENSION",
+}
 
 
 async def upsert_paper(session: neo4j.AsyncSession, paper: Paper) -> None:
@@ -56,74 +63,84 @@ async def sync_paper_cites(
         )
 
 
-async def _sync_brick(neo_session: neo4j.AsyncSession, brick: Brick) -> None:
-    bid = str(brick.id)
+async def _sync_statement(neo_session: neo4j.AsyncSession, statement: Statement) -> None:
+    sid = str(statement.id)
     await neo_session.run(
         """
-        MERGE (b:Brick {id: $id})
-        SET b.project_id = $project_id,
-            b.type       = $type,
-            b.status     = $status,
-            b.assertion  = $assertion
+        MERGE (s:Statement {id: $id})
+        SET s.project_id = $project_id,
+            s.type       = $type,
+            s.status     = $status,
+            s.assertion  = $assertion
         """,
-        id=bid,
-        project_id=str(brick.project_id),
-        type=brick.type,
-        status=brick.status,
-        assertion=brick.assertion,
+        id=sid,
+        project_id=str(statement.project_id),
+        type=statement.type,
+        status=statement.status,
+        assertion=statement.assertion,
     )
 
 
-async def _sync_brick_edges(
+async def _sync_statement_evidence(
     neo_session: neo4j.AsyncSession,
-    bid: str,
-    rests_on: list[BrickRestsOn],
-    builds_on: list[BrickBuildsOn],
+    sid: str,
+    evidence: list[StatementEvidence],
 ) -> None:
     await neo_session.run(
-        "MATCH (b:Brick {id: $id})-[r:RESTS_ON|BUILDS_ON]->() DELETE r",
-        id=bid,
+        "MATCH (s:Statement {id: $id})-[r:HAS_EVIDENCE]->() DELETE r",
+        id=sid,
     )
-    for edge in rests_on:
-        tid = str(edge.target_id)
-        tk = edge.target_kind
+    for ev in evidence:
+        tid = str(ev.target_id)
+        tk = ev.target_kind
         if tk == "paper":
             await neo_session.run(
                 """
-                MATCH (b:Brick {id: $bid})
+                MATCH (s:Statement {id: $sid})
                 MERGE (t:Paper {id: $tid})
-                MERGE (b)-[:RESTS_ON {role: $role, target_kind: $kind}]->(t)
+                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
                 """,
-                bid=bid, tid=tid, role=edge.role, kind=tk,
+                sid=sid, tid=tid, role=ev.role, kind=tk,
             )
-        elif tk == "brick":
+        elif tk == "statement":
             await neo_session.run(
                 """
-                MATCH (b:Brick {id: $bid})
-                MATCH (t:Brick {id: $tid})
-                MERGE (b)-[:RESTS_ON {role: $role, target_kind: $kind}]->(t)
+                MATCH (s:Statement {id: $sid})
+                MATCH (t:Statement {id: $tid})
+                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
                 """,
-                bid=bid, tid=tid, role=edge.role, kind=tk,
+                sid=sid, tid=tid, role=ev.role, kind=tk,
             )
         else:
             await neo_session.run(
                 """
-                MATCH (b:Brick {id: $bid})
+                MATCH (s:Statement {id: $sid})
                 MERGE (t:Artifact {id: $tid, kind: $kind})
-                MERGE (b)-[:RESTS_ON {role: $role, target_kind: $kind}]->(t)
+                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
                 """,
-                bid=bid, tid=tid, role=edge.role, kind=tk,
+                sid=sid, tid=tid, role=ev.role, kind=tk,
             )
-    for edge in builds_on:
+
+
+async def _sync_statement_edges(
+    neo_session: neo4j.AsyncSession,
+    sid: str,
+    edges: list[StatementEdge],
+) -> None:
+    await neo_session.run(
+        "MATCH (s:Statement {id: $id})-[r:RELATES_TO|SUPPORTS|IN_TENSION]->() DELETE r",
+        id=sid,
+    )
+    for edge in edges:
+        rel_type = _EDGE_RELATION_TYPES.get(edge.relation, "RELATES_TO")
         await neo_session.run(
-            """
-            MATCH (b:Brick {id: $bid})
-            MATCH (p:Brick  {id: $pid})
-            MERGE (b)-[:BUILDS_ON {ord: $ord}]->(p)
+            f"""
+            MATCH (a:Statement {{id: $from_id}})
+            MATCH (b:Statement {{id: $to_id}})
+            MERGE (a)-[:{rel_type}]->(b)
             """,
-            bid=bid,
-            pid=str(edge.parent_brick_id),
-            ord=edge.ord,
+            from_id=str(edge.from_statement_id),
+            to_id=str(edge.to_statement_id),
         )
 
 
@@ -142,27 +159,32 @@ async def sync_project_graph(
             .join(ProjectPaper, Paper.id == ProjectPaper.paper_id)
             .where(ProjectPaper.project_id == project_id)
         ))
-        bricks = list(await pg.scalars(
-            select(Brick).where(Brick.project_id == project_id)
+        statements = list(await pg.scalars(
+            select(Statement).where(Statement.project_id == project_id)
         ))
 
-        brick_ids = [b.id for b in bricks]
-        rests_on_rows: list[BrickRestsOn] = []
-        builds_on_rows: list[BrickBuildsOn] = []
-        if brick_ids:
-            rests_on_rows = list(await pg.scalars(
-                select(BrickRestsOn).where(BrickRestsOn.brick_id.in_(brick_ids))
+        statement_ids = [s.id for s in statements]
+        evidence_rows: list[StatementEvidence] = []
+        edge_rows: list[StatementEdge] = []
+        if statement_ids:
+            evidence_rows = list(await pg.scalars(
+                select(StatementEvidence).where(StatementEvidence.statement_id.in_(statement_ids))
             ))
-            builds_on_rows = list(await pg.scalars(
-                select(BrickBuildsOn).where(BrickBuildsOn.brick_id.in_(brick_ids))
+            edge_rows = list(await pg.scalars(
+                select(StatementEdge).where(
+                    or_(
+                        StatementEdge.from_statement_id.in_(statement_ids),
+                        StatementEdge.to_statement_id.in_(statement_ids),
+                    )
+                )
             ))
 
-    rests_by_brick: dict[str, list[BrickRestsOn]] = {}
-    for r in rests_on_rows:
-        rests_by_brick.setdefault(str(r.brick_id), []).append(r)
-    builds_by_brick: dict[str, list[BrickBuildsOn]] = {}
-    for r in builds_on_rows:
-        builds_by_brick.setdefault(str(r.brick_id), []).append(r)
+    evidence_by_statement: dict[str, list[StatementEvidence]] = {}
+    for ev in evidence_rows:
+        evidence_by_statement.setdefault(str(ev.statement_id), []).append(ev)
+    edges_by_statement: dict[str, list[StatementEdge]] = {}
+    for edge in edge_rows:
+        edges_by_statement.setdefault(str(edge.from_statement_id), []).append(edge)
 
     async with driver.session() as neo:
         await neo.run(
@@ -179,18 +201,15 @@ async def sync_project_graph(
                 """,
                 pid=str(project_id), paper_id=str(paper.id),
             )
-        for brick in bricks:
-            bid = str(brick.id)
-            await _sync_brick(neo, brick)
-            await _sync_brick_edges(
-                neo, bid,
-                rests_by_brick.get(bid, []),
-                builds_by_brick.get(bid, []),
-            )
+        for statement in statements:
+            sid = str(statement.id)
+            await _sync_statement(neo, statement)
+            await _sync_statement_evidence(neo, sid, evidence_by_statement.get(sid, []))
+            await _sync_statement_edges(neo, sid, edges_by_statement.get(sid, []))
 
     log.info(
         "neo4j.sync_done",
         project_id=str(project_id),
         papers=len(papers),
-        bricks=len(bricks),
+        statements=len(statements),
     )
