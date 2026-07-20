@@ -10,6 +10,7 @@ from athenaeum.api import (
     annotations,
     archive,
     auth,
+    backtrace,
     graph,
     links,
     llm_credentials,
@@ -95,6 +96,7 @@ app.include_router(zotero_find.router)
 app.include_router(openalex_find.router)
 app.include_router(websearch_find.router)
 app.include_router(llm_credentials.router)
+app.include_router(backtrace.router)
 
 
 @app.get("/health")

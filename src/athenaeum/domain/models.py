@@ -533,6 +533,7 @@ class ZoteroFindResultOut(BaseModel):
     already_in_project: bool
     quote: str
     relevance_note: str
+    model: str
 
 
 # ── OpenAlex find ─────────────────────────────────────────────────────────────
@@ -553,6 +554,7 @@ class OpenAlexFindResultOut(BaseModel):
     already_in_project: bool
     quote: str
     relevance_note: str
+    model: str
 
 
 # ── Web search find ───────────────────────────────────────────────────────────
@@ -568,6 +570,7 @@ class WebSearchFindResultOut(BaseModel):
     source: str | None
     quote: str
     relevance_note: str
+    model: str
 
 
 # ── Evidence sentences (Read-view highlighting) ───────────────────────────────
@@ -577,6 +580,90 @@ class SentenceEvidenceOut(BaseModel):
     statement_id: UUID
     assertion: str
     role: str
+
+
+# ── Backtrace ─────────────────────────────────────────────────────────────────
+
+class BacktraceStartRequest(BaseModel):
+    project_id: UUID
+    paper_id: UUID
+    sentence_id: UUID | None = None
+    claim_text: str = Field(min_length=3, max_length=2000)
+
+
+class BacktracePickRequest(BaseModel):
+    openalex_id: str = Field(min_length=1, max_length=100)
+
+
+class BacktraceCandidateOut(BaseModel):
+    openalex_id: str
+    title: str
+    authors: list[str]
+    year: int | None
+    doi: str | None
+    venue: str | None
+
+
+class BacktraceHopOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    chain_id: UUID
+    hop_index: int
+    to_openalex_id: str
+    to_doi: str | None
+    to_title: str
+    to_authors_json: Any
+    to_year: int | None
+    to_venue: str | None
+    to_paper_id: UUID | None
+    quote: str | None
+    quote_source: str | None
+    relevance_note: str | None
+    match_reasoning: str | None
+    model: str | None
+    resolution_status: str
+    user_decision: str
+    created_at: datetime
+
+
+class BacktraceChainOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    origin_paper_id: UUID
+    origin_sentence_id: UUID | None
+    origin_text: str
+    created_at: datetime
+
+
+class BacktraceChainSummaryOut(BaseModel):
+    id: UUID
+    origin_paper_id: UUID
+    origin_text: str
+    hop_count: int
+    created_at: datetime
+
+
+class BacktraceChainDetailOut(BaseModel):
+    chain: BacktraceChainOut
+    hops: list[BacktraceHopOut]
+
+
+class BacktraceStepResult(BaseModel):
+    """Response for start/continue/pick: either a resolved (or in-progress)
+    hop, or — when the LLM couldn't confidently identify a reference — a list
+    of candidates for the user to manually choose from instead."""
+
+    chain: BacktraceChainOut
+    hop: BacktraceHopOut | None = None
+    candidates: list[BacktraceCandidateOut] | None = None
+    message: str | None = None
+    # Set only when `message` is itself LLM-authored (the identification
+    # step's stated reasoning) — None for static system messages ("no
+    # references to trace", etc.), so the UI knows whether to attribute it.
+    model: str | None = None
 
 
 class ZoteroLocalStatus(BaseModel):

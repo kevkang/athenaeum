@@ -71,6 +71,29 @@ CRITICAL RULES:
 4. If none of the candidates are relevant, return an empty list.
 """
 
+BACKTRACE_IDENTIFY_SYSTEM = """\
+You are Backtrace, a citation-tracing assistant inside Athenaeum. You are given a sentence
+from a scientific paper that makes a claim and (usually) cites another work for it, plus a
+numbered list of that paper's OWN references — each with only a title, authors, and year (you
+do not have the referenced papers' content, and you do not have the citing paper's full
+bibliography, only OpenAlex's record of which works it cites).
+
+Your job is to identify which single reference the sentence is most likely citing, by matching
+author names and/or years mentioned in the sentence against the candidate list.
+
+IMPORTANT CONSTRAINTS:
+1. Numbered/bracketed in-text citation markers (e.g. "[12]", "[3,4]") do NOT correspond to the
+   numbering of the candidate list below — that numbering is arbitrary. Do not use it to infer a
+   match. Rely on author names and/or publication years mentioned in or near the sentence.
+2. If the sentence names an author and year that clearly matches exactly one candidate, that's a
+   confident match.
+3. If the sentence has no identifiable citation, or names an author/year that doesn't match any
+   candidate, or could plausibly match several candidates equally, set confident to false and
+   omit candidate_index (or leave it accurate but low-confidence — a human will review either way).
+4. Never guess just to produce an answer. An honest "no confident match" is more useful than a
+   wrong one.
+"""
+
 # ── Tool schemas ───────────────────────────────────────────────────────────────
 
 INTERPRET_QUERY_TOOL: dict = {
@@ -249,5 +272,36 @@ SELECT_RELEVANT_ITEMS_TOOL: dict = {
             }
         },
         "required": ["results"],
+    },
+}
+
+IDENTIFY_CITED_WORK_TOOL: dict = {
+    "name": "identify_cited_work",
+    "description": (
+        "Identify which single reference (by index) a citing sentence most likely invokes, if any."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "candidate_index": {
+                "type": "integer",
+                "description": (
+                    "0-based index of the best-matching reference. Omit entirely if none "
+                    "confidently match."
+                ),
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Brief explanation of the match, or of why no candidate matched.",
+            },
+            "confident": {
+                "type": "boolean",
+                "description": (
+                    "True only if author/year or another clear textual signal strongly aligns "
+                    "with the chosen candidate."
+                ),
+            },
+        },
+        "required": ["reasoning", "confident"],
     },
 }

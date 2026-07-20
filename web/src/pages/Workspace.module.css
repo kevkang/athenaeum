@@ -809,10 +809,15 @@
   font-style: normal;
 }
 
-.selectionTooltip {
+.selectionTooltipGroup {
   position: fixed;
   transform: translateX(-50%);
   z-index: 300;
+  display: flex;
+  gap: 4px;
+}
+
+.selectionTooltip {
   padding: 4px 11px;
   background: var(--bg-elevated);
   border: 1px solid var(--accent-dim);
@@ -1182,7 +1187,8 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.evidencePaper { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.evidencePaper { font-size: 11.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.evidenceVenue { font-weight: 400; color: var(--text-faint); }
 .evidenceYear  { font-size: 10px; color: var(--text-faint); font-family: 'JetBrains Mono', monospace; }
 .evidenceRole  { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
 .verifiedDot {
@@ -1195,6 +1201,46 @@
   line-height: 1.6;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* AI-generated commentary (relevance notes, match reasoning, step messages)
+ * — always normal case, readable body color, quoted, and attributed to the
+ * actual model that produced it. Never plain uppercase label styling. */
+.aiNote {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0 2px;
+}
+.aiNoteText {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.aiNoteAttribution {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.backtraceConnector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 4px 0;
+}
+
+.candidateDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
 }
 
 .findCardActions {

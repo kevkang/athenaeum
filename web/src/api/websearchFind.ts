@@ -8,6 +8,7 @@ export interface WebSearchFindResult {
   source: string | null;
   quote: string;
   relevance_note: string;
+  model: string;
 }
 
 export const webSearchFindApi = {

@@ -561,6 +561,91 @@ class LLMCredentials(Base):
     )
 
 
+class BacktraceChain(Base):
+    """A user-driven citation trail: starting from a claim in a paper being
+    read, each hop (see BacktraceHop) identifies the paper's own OpenAlex
+    reference that most plausibly supports the same claim, one hop at a time,
+    until the user marks a hop as the true/primary source."""
+    __tablename__ = "backtrace_chains"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    origin_paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
+    )
+    origin_sentence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_sentences.id", ondelete="SET NULL")
+    )
+    origin_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    hops: Mapped[list["BacktraceHop"]] = relationship(
+        back_populates="chain", order_by="BacktraceHop.hop_index", passive_deletes=True
+    )
+
+
+class BacktraceHop(Base):
+    __tablename__ = "backtrace_hops"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "to_openalex_id", name="backtrace_hops_chain_target_uq"),
+        CheckConstraint(
+            "quote_source IN ('abstract', 'full_text')", name="backtrace_hops_quote_source_chk"
+        ),
+        CheckConstraint(
+            "resolution_status IN ('pending', 'ingesting', 'abstract_match', 'full_text_match', "
+            "'no_match', 'awaiting_manual_import')",
+            name="backtrace_hops_resolution_status_chk",
+        ),
+        CheckConstraint(
+            "user_decision IN ('pending', 'continued', 'stopped_here')",
+            name="backtrace_hops_user_decision_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    chain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("backtrace_chains.id", ondelete="CASCADE"), nullable=False
+    )
+    hop_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshotted target-paper metadata — the target usually isn't an ingested
+    # Paper row yet (see to_paper_id), so identity/display data lives here.
+    to_openalex_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    to_doi: Mapped[str | None] = mapped_column(String(255))
+    to_title: Mapped[str] = mapped_column(Text, nullable=False)
+    to_authors_json: Mapped[list[str] | None] = mapped_column(JSONB)
+    to_year: Mapped[int | None] = mapped_column(Integer)
+    to_venue: Mapped[str | None] = mapped_column(String(500))
+    to_paper_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="SET NULL")
+    )
+    quote: Mapped[str | None] = mapped_column(Text)
+    quote_source: Mapped[str | None] = mapped_column(String(20))
+    relevance_note: Mapped[str | None] = mapped_column(Text)
+    # The LLM's stated reasoning for picking this reference among the paper's
+    # other citations — surfaced in the UI so the user can judge the guess,
+    # since there's no ground truth linking a sentence to a specific reference.
+    match_reasoning: Mapped[str | None] = mapped_column(Text)
+    # Which model actually generated match_reasoning/quote/relevance_note —
+    # persisted (not derived from current settings) so attribution stays
+    # accurate even if the configured model changes later, mirroring
+    # Synthesis.model / Passage.checker_model.
+    model: Mapped[str | None] = mapped_column(String(100))
+    resolution_status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    user_decision: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    chain: Mapped[BacktraceChain] = relationship(back_populates="hops")
+
+
 class ZoteroLocalConfig(Base):
     """Singleton row (id is always 1) recording which subfolder of the
     broadly-mounted host home directory (see ZOTERO_LOCAL_HOST_MOUNT) is the

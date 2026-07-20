@@ -22,6 +22,18 @@ export function typeClass(type: string): string {
   return KNOWN_STATEMENT_TYPES.includes(type) ? type : 'other';
 }
 
+/** e.g. formatModelName('claude-haiku-4-5-20251001') -> "Claude Haiku 4.5" —
+ * used to attribute AI-generated quotes/summaries to the model that actually
+ * produced them, rather than a hardcoded guess. Falls back to the raw id for
+ * anything that doesn't match the expected "claude-<family>-<major>-<minor>"
+ * shape (future model names, non-Claude providers, etc). */
+export function formatModelName(modelId: string): string {
+  const m = modelId.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/);
+  if (!m) return modelId;
+  const [, family, major, minor] = m;
+  return `Claude ${family[0].toUpperCase()}${family.slice(1)} ${major}.${minor}`;
+}
+
 /** e.g. formatCitation('Ada Borton', 2026) -> "Borton et al. 2026" — takes
  * just the first author's surname the way firstAuthor() already returns it
  * (a full display name), so this only needs to grab the last word of it. */

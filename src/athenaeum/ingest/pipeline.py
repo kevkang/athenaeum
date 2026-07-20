@@ -1,6 +1,7 @@
 """Orchestrate the full ingestion pipeline for a single paper."""
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import uuid
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import httpx
 import pysbd
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from athenaeum.config import Settings
@@ -15,6 +17,7 @@ from athenaeum.ingest.acquire import acquire_pdf
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.ingest.grobid import Section, parse_pdf
 from athenaeum.ingest.htmlextract import extract_main_text
+from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.ingest.zotero import (
     ZoteroAuthError,
     ZoteroCreds,
@@ -184,6 +187,8 @@ async def _finalize_sections(
         global_char_offset = sec_end + 2  # account for "\n\n" between sections
 
     paper.status = "full_text"
+    if paper.doi and not paper.openalex_id:
+        await backfill_openalex_id(paper, session)
     await session.commit()
     log.info(
         "ingest.done",
@@ -191,6 +196,42 @@ async def _finalize_sections(
         sections=len(sections),
         sentences=global_sentence_ord,
     )
+
+
+async def backfill_openalex_id(paper: Paper, session: AsyncSession) -> bool:
+    """Resolve and assign an openalex_id from a paper's own DOI when it's
+    missing — e.g. Zotero-imported papers never get one at import time (Zotero
+    itself has no OpenAlex link), and a DOI lookup can fail transiently at
+    initial ingest. Skips assignment (rather than crashing on the unique
+    constraint) if another paper already claims that openalex_id. Returns
+    whether an id was assigned."""
+    if not paper.doi:
+        return False
+    loop = asyncio.get_event_loop()
+    try:
+        meta = await loop.run_in_executor(None, fetch_metadata, paper.doi)
+    except Exception:
+        log.warning("ingest.openalex_backfill_failed", paper_id=str(paper.id))
+        return False
+    if not meta.openalex_id:
+        return False
+
+    existing = await session.scalar(select(Paper).where(Paper.openalex_id == meta.openalex_id))
+    if existing is not None and existing.id != paper.id:
+        log.info(
+            "ingest.openalex_backfill_duplicate", paper_id=str(paper.id), existing_paper_id=str(existing.id)
+        )
+        return False
+
+    paper.openalex_id = meta.openalex_id
+    if not paper.abstract and meta.abstract:
+        paper.abstract = meta.abstract
+    if not paper.venue and meta.venue:
+        paper.venue = meta.venue
+    if not paper.year and meta.year:
+        paper.year = meta.year
+    log.info("ingest.openalex_backfilled", paper_id=str(paper.id), openalex_id=meta.openalex_id)
+    return True
 
 
 # ── Zotero ingestion ────────────────────────────────────────────────────────────

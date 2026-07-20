@@ -17,12 +17,18 @@ import { zoteroApi, zoteroFindApi, type ZoteroSearchResult, type ZoteroFindResul
 import { zoteroLocalApi } from '../api/zoteroLocal';
 import { openAlexFindApi, type OpenAlexFindResult } from '../api/openalexFind';
 import { webSearchFindApi, type WebSearchFindResult } from '../api/websearchFind';
+import {
+  backtraceApi,
+  type BacktraceCandidate,
+  type BacktraceHop,
+  type BacktraceStepResult,
+} from '../api/backtrace';
 import { passagesApi } from '../api/passages';
 import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
 import LocalLibraryPicker from '../components/LocalLibraryPicker';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
 import { useUIStore } from '../store/ui';
-import { trunc, stripHtml, safeHtml, formatDate, formatCitation, typeClass } from '../lib/format';
+import { trunc, stripHtml, safeHtml, formatDate, formatCitation, formatModelName, typeClass } from '../lib/format';
 import styles from './Workspace.module.css';
 
 cytoscape.use(dagre);
@@ -689,7 +695,15 @@ function renderAbstractWithFoundQuote(
   );
 }
 
-function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string }) {
+function ReaderPane({
+  paperId, projectId, onBacktrace, backtracePending, backtraceError,
+}: {
+  paperId: string;
+  projectId: string;
+  onBacktrace: (sentenceId: string, text: string) => void;
+  backtracePending: boolean;
+  backtraceError: string | null;
+}) {
   const queryClient = useQueryClient();
   const [expandAbstract, setExpandAbstract] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -735,7 +749,7 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
   }, [evidenceSentences]);
 
   const passagesRef = useRef<HTMLDivElement>(null);
-  const selectionTipBtnRef = useRef<HTMLButtonElement>(null);
+  const selectionTipBtnRef = useRef<HTMLDivElement>(null);
   const [selectionTip, setSelectionTip] = useState<{
     text: string;
     sentenceId: string;
@@ -804,6 +818,13 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
 
   const author = firstAuthor(paper.authors_json);
   const meta = [author && `${author} et al.`, paper.year, paper.venue].filter(Boolean).join(' · ');
+  // A missing openalex_id alone doesn't disable Backtrace — the backend
+  // retries resolving one from the paper's own DOI when the chain starts
+  // (common for Zotero imports, which never get OpenAlex-matched at import
+  // time). Only block up front when there's truly nothing to resolve from.
+  const backtraceDisabledReason = !paper.openalex_id && !paper.doi
+    ? 'This paper has no DOI, so it can’t be matched to an OpenAlex record.'
+    : null;
 
   return (
     <div className={styles.panelContent}>
@@ -954,23 +975,41 @@ function ReaderPane({ paperId, projectId }: { paperId: string; projectId: string
       )}
 
       {selectionTip && (
-        <button
+        <div
           ref={selectionTipBtnRef}
-          className={styles.selectionTooltip}
+          className={styles.selectionTooltipGroup}
           style={{ left: selectionTip.x, top: selectionTip.y }}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData(
-              PASSAGE_MIME,
-              JSON.stringify({ sentenceId: selectionTip.sentenceId, text: selectionTip.text }),
-            );
-            e.dataTransfer.effectAllowed = 'copy';
-          }}
-          onDragEnd={() => setSelectionTip(null)}
         >
-          ⠿ Drag to workspace
-        </button>
+          <button
+            className={styles.selectionTooltip}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                PASSAGE_MIME,
+                JSON.stringify({ sentenceId: selectionTip.sentenceId, text: selectionTip.text }),
+              );
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            onDragEnd={() => setSelectionTip(null)}
+          >
+            ⠿ Drag to workspace
+          </button>
+          <button
+            className={styles.selectionTooltip}
+            style={{ cursor: backtraceDisabledReason ? 'not-allowed' : 'pointer', opacity: backtraceDisabledReason ? 0.5 : 1 }}
+            disabled={!!backtraceDisabledReason || backtracePending}
+            title={backtraceDisabledReason ?? undefined}
+            onClick={() => {
+              onBacktrace(selectionTip.sentenceId, selectionTip.text);
+              setSelectionTip(null);
+            }}
+          >
+            {backtracePending ? '🔍 Starting…' : '🔍 Backtrace'}
+          </button>
+        </div>
       )}
+
+      {backtraceError && <div className={styles.formError}>{backtraceError}</div>}
     </div>
   );
 }
@@ -1565,8 +1604,21 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
 
 type FindImportState = 'importable' | 'already_in_project' | 'imported' | 'no_doi';
 
+/** Renders LLM-generated commentary (a relevance note, match reasoning, etc.)
+ * distinctly from verbatim paper text: quoted, normal-cased, readable body
+ * color, with an attribution to the actual model that produced it — never
+ * plain uppercase label styling, which is for short static UI headers only. */
+function AiNote({ text, model }: { text: string; model: string }) {
+  return (
+    <div className={styles.aiNote}>
+      <span className={styles.aiNoteText}>&ldquo;{text}&rdquo;</span>
+      <span className={styles.aiNoteAttribution}>{formatModelName(model)}</span>
+    </div>
+  );
+}
+
 function FindResultCard({
-  title, authors, year, venue, visitUrl, quote, relevanceNote,
+  title, authors, year, venue, visitUrl, quote, relevanceNote, model,
   roleLabel, verified, importState, onImport, importing, onPromote, promoting,
 }: {
   title: string;
@@ -1576,6 +1628,7 @@ function FindResultCard({
   visitUrl: string | null;
   quote: string;
   relevanceNote: string | null;
+  model: string | null;
   roleLabel?: string;
   verified?: boolean;
   importState: FindImportState;
@@ -1585,7 +1638,6 @@ function FindResultCard({
   promoting?: boolean;
 }) {
   const citation = formatCitation(authors[0] ?? null, year);
-  const fullTitleTooltip = `"${title}" (${citation}${venue ? `, ${venue}` : ''})`;
   const importTitle =
     importState === 'no_doi' ? 'Not an importable paper'
     : importState === 'already_in_project' ? 'Already in project'
@@ -1599,8 +1651,10 @@ function FindResultCard({
   return (
     <div className={`${styles.evidenceCard} ${roleLabel ? styles[roleLabel] ?? '' : ''}`}>
       <div className={styles.evidenceHeader}>
-        <span className={styles.evidencePaper} title={fullTitleTooltip}>{trunc(title, 40)}</span>
-        {year && <span className={styles.evidenceYear}>{year}</span>}
+        <span className={styles.evidencePaper}>
+          {title}{citation ? `, ${citation}` : ''}
+          {venue && <span className={styles.evidenceVenue}> · {venue}</span>}
+        </span>
         {roleLabel && <span className={styles.evidenceRole}>{roleLabel}</span>}
         {verified && <span className={styles.verifiedDot} title="verified" />}
         <div className={styles.findCardActions}>
@@ -1628,7 +1682,9 @@ function FindResultCard({
         </div>
       </div>
       <div className={styles.evidenceQuote}>&ldquo;{quote}&rdquo;</div>
-      {relevanceNote && <div className={styles.searchHint}>{relevanceNote}</div>}
+      {relevanceNote && (
+        model ? <AiNote text={relevanceNote} model={model} /> : <div className={styles.searchHint}>{relevanceNote}</div>
+      )}
     </div>
   );
 }
@@ -1824,6 +1880,7 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
                   visitUrl={r.doi ? `https://doi.org/${r.doi}` : null}
                   quote={r.quote}
                   relevanceNote={r.relevance_note}
+                  model={r.model}
                   importState={imported ? 'already_in_project' : 'importable'}
                   importing={zoteroImportMutation.isPending}
                   onImport={() =>
@@ -1856,6 +1913,7 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
                   visitUrl={r.doi ? `https://doi.org/${r.doi}` : null}
                   quote={r.quote}
                   relevanceNote={r.relevance_note}
+                  model={r.model}
                   importState={importState}
                   importing={openAlexImportMutation.isPending}
                   onImport={() =>
@@ -1885,6 +1943,7 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
                 visitUrl={r.url}
                 quote={r.quote}
                 relevanceNote={r.relevance_note}
+                model={r.model}
                 importState="no_doi"
               />
             ))}
@@ -1950,6 +2009,7 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
                       visitUrl={ev.paper_doi ? `https://doi.org/${ev.paper_doi}` : null}
                       quote={ev.verbatim_text}
                       relevanceNote={ev.rationale}
+                      model={activeSynth.model}
                       roleLabel={ev.role}
                       verified={ev.verified}
                       importState="already_in_project"
@@ -1962,6 +2022,307 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function BacktracePanel({
+  chainId, initialResult, projectId,
+}: {
+  chainId: string;
+  initialResult: BacktraceStepResult;
+  projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [manualCandidates, setManualCandidates] = useState<BacktraceCandidate[] | null>(initialResult.candidates);
+  const [stepMessage, setStepMessage] = useState<string | null>(initialResult.message);
+  const [stepMessageModel, setStepMessageModel] = useState<string | null>(initialResult.model);
+  const [expandedCandidate, setExpandedCandidate] = useState<string | null>(null);
+  const [importedHopIds, setImportedHopIds] = useState<Set<string>>(new Set());
+  const [importedCandidateIds, setImportedCandidateIds] = useState<Set<string>>(new Set());
+  const reuploadInputRef = useRef<HTMLInputElement>(null);
+  const reuploadTargetRef = useRef<string | null>(null);
+
+  const { data: detail } = useQuery({
+    queryKey: ['backtrace-chain', chainId],
+    queryFn: () => backtraceApi.get(chainId),
+    initialData: { chain: initialResult.chain, hops: initialResult.hop ? [initialResult.hop] : [] },
+    refetchInterval: (q) =>
+      q.state.data?.hops.some((h) => h.resolution_status === 'ingesting') ? 3000 : false,
+  });
+
+  const { data: originPaper } = useQuery({
+    queryKey: ['paper', detail.chain.origin_paper_id],
+    queryFn: () => papersApi.get(detail.chain.origin_paper_id),
+  });
+
+  const invalidateChain = () => queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
+
+  const continueMutation = useMutation({
+    mutationFn: () => backtraceApi.continueChain(chainId),
+    onSuccess: (result) => {
+      setManualCandidates(result.candidates);
+      setStepMessage(result.message);
+      setStepMessageModel(result.model);
+      invalidateChain();
+    },
+  });
+
+  const pickMutation = useMutation({
+    mutationFn: (openalexId: string) => backtraceApi.pick(chainId, openalexId),
+    onSuccess: (result) => {
+      setManualCandidates(result.candidates);
+      setStepMessage(result.message);
+      setStepMessageModel(result.model);
+      setExpandedCandidate(null);
+      invalidateChain();
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: () => backtraceApi.stop(chainId),
+    onSuccess: () => invalidateChain(),
+  });
+
+  const recheckMutation = useMutation({
+    mutationFn: (hopId: string) => backtraceApi.recheckHop(chainId, hopId),
+    onSuccess: (result) => {
+      setStepMessage(result.message);
+      setStepMessageModel(result.model);
+      invalidateChain();
+    },
+  });
+
+  const reuploadMutation = useMutation({
+    mutationFn: ({ paperId, file }: { paperId: string; file: File }) => papersApi.reupload(paperId, file),
+    onSuccess: () => invalidateChain(),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: (hop: BacktraceHop) =>
+      papersApi.ingest(hop.to_doi!, projectId, {
+        foundQuote: hop.quote ?? undefined,
+        foundRelevanceNote: hop.relevance_note ?? undefined,
+      }),
+    onSuccess: (_paper, hop) => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setImportedHopIds((prev) => new Set(prev).add(hop.id));
+    },
+  });
+
+  const candidateImportMutation = useMutation({
+    mutationFn: (c: BacktraceCandidate) => papersApi.ingest(c.doi!, projectId),
+    onSuccess: (_paper, c) => {
+      queryClient.invalidateQueries({ queryKey: ['papers', projectId] });
+      setImportedCandidateIds((prev) => new Set(prev).add(c.openalex_id));
+    },
+  });
+
+  const hops = detail.hops;
+  const last = hops[hops.length - 1] as BacktraceHop | undefined;
+  const canDecide =
+    !!last && last.user_decision === 'pending' &&
+    (last.resolution_status === 'abstract_match' || last.resolution_status === 'full_text_match');
+  const canStopOnly = !!last && last.user_decision === 'pending' && last.resolution_status === 'no_match';
+  const stopped = last?.user_decision === 'stopped_here';
+
+  const hopImportState = (hop: BacktraceHop): FindImportState => {
+    const imported = !!hop.to_paper_id || importedHopIds.has(hop.id);
+    return imported ? 'already_in_project' : hop.to_doi ? 'importable' : 'no_doi';
+  };
+  const importableHops = hops.filter((h) => hopImportState(h) === 'importable');
+
+  const importAllMutation = useMutation({
+    mutationFn: async () => {
+      for (const h of importableHops) {
+        await importMutation.mutateAsync(h);
+      }
+    },
+  });
+
+  return (
+    <div className={styles.panelContent}>
+      <div className={styles.panelKind}>backtrace</div>
+      <div className={styles.synthClaim}>{detail.chain.origin_text}</div>
+      {originPaper && (
+        <div className={styles.panelMeta}>from &ldquo;{trunc(originPaper.title, 60)}&rdquo;</div>
+      )}
+      {importableHops.length > 0 && (
+        <div className={styles.paperActionsRow}>
+          <button
+            className={styles.retryBtn}
+            onClick={() => importAllMutation.mutate()}
+            disabled={importAllMutation.isPending}
+          >
+            {importAllMutation.isPending ? 'Importing…' : `Import all (${importableHops.length})`}
+          </button>
+        </div>
+      )}
+
+      <div className={styles.evidenceList}>
+        {hops.map((hop, index) => {
+          const isLast = hop.id === last?.id;
+          const placeholderQuote =
+            hop.resolution_status === 'ingesting' ? 'Fetching full text…'
+            : hop.resolution_status === 'awaiting_manual_import' ? 'No open-access version found automatically.'
+            : hop.resolution_status === 'no_match' ? 'No supporting text found in this paper.'
+            : 'Resolving…';
+
+          return (
+            <div key={hop.id}>
+              {index > 0 && <div className={styles.backtraceConnector}>↓ cites</div>}
+              <FindResultCard
+                title={hop.to_title}
+                authors={hop.to_authors_json ?? []}
+                year={hop.to_year}
+                venue={hop.to_venue}
+                visitUrl={hop.to_doi ? `https://doi.org/${hop.to_doi}` : null}
+                quote={hop.quote ?? placeholderQuote}
+                relevanceNote={hop.relevance_note}
+                model={hop.model}
+                importState={hopImportState(hop)}
+                onImport={() => importMutation.mutate(hop)}
+                importing={importMutation.isPending}
+              />
+              {hop.match_reasoning && (
+                hop.model
+                  ? <AiNote text={hop.match_reasoning} model={hop.model} />
+                  : <div className={styles.searchHint}>{hop.match_reasoning}</div>
+              )}
+
+              {isLast && hop.resolution_status === 'awaiting_manual_import' && (
+                <div className={styles.ghostNote}>
+                  <div>Add this paper&rsquo;s full text manually to continue tracing — upload a PDF, or add it to Zotero and sync, then check again.</div>
+                  <div className={styles.paperActionsRow}>
+                    <button
+                      className={styles.retryBtn}
+                      onClick={() => {
+                        reuploadTargetRef.current = hop.to_paper_id;
+                        reuploadInputRef.current?.click();
+                      }}
+                      disabled={reuploadMutation.isPending}
+                    >
+                      {reuploadMutation.isPending ? 'Uploading…' : 'Upload PDF'}
+                    </button>
+                    <button
+                      className={styles.retryBtn}
+                      onClick={() => recheckMutation.mutate(hop.id)}
+                      disabled={recheckMutation.isPending}
+                    >
+                      {recheckMutation.isPending ? 'Checking…' : 'Check again'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isLast && canDecide && (
+                <div className={styles.paperActionsRow}>
+                  <button
+                    className={styles.retryBtn}
+                    onClick={() => continueMutation.mutate()}
+                    disabled={continueMutation.isPending}
+                  >
+                    {continueMutation.isPending ? 'Tracing…' : 'Trace further →'}
+                  </button>
+                  <button className={styles.retryBtn} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+                    Stop here ✓
+                  </button>
+                </div>
+              )}
+
+              {isLast && canStopOnly && (
+                <div className={styles.paperActionsRow}>
+                  <button className={styles.retryBtn} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+                    Stop here
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <input
+        ref={reuploadInputRef}
+        type="file"
+        accept=".pdf,.txt,application/pdf,text/plain"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          const paperId = reuploadTargetRef.current;
+          if (f && paperId) reuploadMutation.mutate({ paperId, file: f });
+          e.target.value = '';
+        }}
+      />
+
+      {stopped && (
+        <div className={styles.searchHint}>✓ Chain stopped — this is marked as the source.</div>
+      )}
+
+      {manualCandidates && (
+        <div className={styles.evidenceList}>
+          <div className={styles.panelSectionLabel}>Pick a reference</div>
+          {stepMessage && (
+            stepMessageModel
+              ? <AiNote text={stepMessage} model={stepMessageModel} />
+              : <div className={styles.searchHint}>{stepMessage}</div>
+          )}
+          {manualCandidates.length === 0 ? (
+            <div className={styles.searchHint}>No unvisited references left to choose from.</div>
+          ) : (
+            manualCandidates.map((c) => {
+              const expanded = expandedCandidate === c.openalex_id;
+              const candidateImported = importedCandidateIds.has(c.openalex_id);
+              const citation = formatCitation(c.authors[0] ?? null, c.year);
+              return (
+                <div key={c.openalex_id} className={styles.evidenceCard}>
+                  <button
+                    className={styles.synthItem}
+                    onClick={() => setExpandedCandidate(expanded ? null : c.openalex_id)}
+                  >
+                    <span className={styles.synthItemClaim}>
+                      {c.title}{citation ? `, ${citation}` : ''}
+                    </span>
+                  </button>
+                  {expanded && (
+                    <div className={styles.candidateDetail}>
+                      <div className={styles.panelMeta}>
+                        {c.authors.join(', ') || 'Unknown authors'}{c.venue ? ` · ${c.venue}` : ''}
+                      </div>
+                      {c.doi && <div className={styles.paperDoi}>{c.doi}</div>}
+                      <div className={styles.paperActionsRow}>
+                        {c.doi && (
+                          <a className={styles.visitBtn} href={`https://doi.org/${c.doi}`} target="_blank" rel="noreferrer">
+                            visit
+                          </a>
+                        )}
+                        <button
+                          className={styles.retryBtn}
+                          onClick={() => candidateImportMutation.mutate(c)}
+                          disabled={!c.doi || candidateImported || candidateImportMutation.isPending}
+                        >
+                          {candidateImported ? '✓ imported' : '+ import'}
+                        </button>
+                        <button
+                          className={styles.retryBtn}
+                          onClick={() => pickMutation.mutate(c.openalex_id)}
+                          disabled={pickMutation.isPending}
+                        >
+                          {pickMutation.isPending ? 'Tracing…' : 'Continue backtrace →'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {!manualCandidates && stepMessage && hops.length === 0 && (
+        <div className={styles.searchHint}>{stepMessage}</div>
       )}
     </div>
   );
@@ -2011,7 +2372,17 @@ export default function WorkspaceView() {
   const pendingSelectRef = useRef<string | null>(null);
 
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
-  const [readerMode, setReaderMode] = useState<'read' | 'find'>('read');
+  const [readerMode, setReaderMode] = useState<'read' | 'find' | 'backtrace'>('read');
+  const [activeBacktrace, setActiveBacktrace] = useState<{ chainId: string; initial: BacktraceStepResult } | null>(null);
+
+  const startBacktraceMutation = useMutation({
+    mutationFn: ({ sentenceId, text }: { sentenceId: string; text: string }) =>
+      backtraceApi.start(projectId, selectedPaperId!, sentenceId, text),
+    onSuccess: (result) => {
+      setActiveBacktrace({ chainId: result.chain.id, initial: result });
+      setReaderMode('backtrace');
+    },
+  });
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [nodeFilter, setNodeFilter] = useState<NodeFilter>('all');
   const [readerWidth, setReaderWidth] = useState(READER_DEFAULT_WIDTH);
@@ -2508,6 +2879,14 @@ export default function WorkspaceView() {
             >
               Find
             </button>
+            {activeBacktrace && (
+              <button
+                className={`${styles.readerModeBtn} ${readerMode === 'backtrace' ? styles.readerModeBtnActive : ''}`}
+                onClick={() => setReaderMode('backtrace')}
+              >
+                Backtrace
+              </button>
+            )}
           </div>
           {isDragOver ? (
             <div className={styles.emptyState} style={{ outline: '2px dashed var(--accent)', outlineOffset: -8 }}>
@@ -2516,8 +2895,21 @@ export default function WorkspaceView() {
             </div>
           ) : readerMode === 'find' ? (
             <FindPanel projectId={projectId} onStatementCreated={handleStatementCreated} />
+          ) : readerMode === 'backtrace' && activeBacktrace ? (
+            <BacktracePanel key={activeBacktrace.chainId} chainId={activeBacktrace.chainId} initialResult={activeBacktrace.initial} projectId={projectId} />
           ) : selectedPaperId ? (
-            <ReaderPane paperId={selectedPaperId} projectId={projectId} />
+            <ReaderPane
+              paperId={selectedPaperId}
+              projectId={projectId}
+              onBacktrace={(sentenceId, text) => startBacktraceMutation.mutate({ sentenceId, text })}
+              backtracePending={startBacktraceMutation.isPending}
+              backtraceError={
+                startBacktraceMutation.isError
+                  ? ((startBacktraceMutation.error as { response?: { data?: { detail?: string } } })?.response?.data
+                      ?.detail ?? 'Could not start backtrace')
+                  : null
+              }
+            />
           ) : (
             <div className={styles.emptyState}>
               <div className={styles.emptyTitle}>Read</div>

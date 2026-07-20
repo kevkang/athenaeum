@@ -62,6 +62,7 @@ async def find_via_web(
             source=urlparse(m.url).netloc or None,
             quote=m.quote,
             relevance_note=m.relevance_note,
+            model=settings.zotero_find_model,
         )
         for m in matches
     ]

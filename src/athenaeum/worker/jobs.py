@@ -17,7 +17,9 @@ from athenaeum.crypto import decrypt_secret
 from athenaeum.ingest.openalex import fetch_referenced_work_ids
 from athenaeum.ingest.pipeline import run_ingest, run_local_zotero_ingest, run_zotero_ingest
 from athenaeum.ingest.zotero import ZoteroCreds
-from athenaeum.storage.models import CitationEdge, Paper, ZoteroCredentials
+from athenaeum.provider.resolver import NoLLMKeyConfigured, get_provider_for_user
+from athenaeum.storage.models import BacktraceChain, BacktraceHop, CitationEdge, Paper, ZoteroCredentials
+from athenaeum.synthesize.backtrace import search_full_text_for_claim
 from athenaeum.synthesize.orchestrator import run_synthesis
 
 log = structlog.get_logger()
@@ -66,6 +68,7 @@ async def ingest_paper(
     paper_id: str,
     oa_pdf_url: str | None = None,
     s3_key: str | None = None,
+    backtrace_hop_id: str | None = None,
 ) -> None:
     settings = get_settings()
     pid = uuid.UUID(paper_id)
@@ -83,7 +86,54 @@ async def ingest_paper(
     # Populate citation_edges from OpenAlex referenced_works.
     await _sync_citations(ctx, pid, settings)
 
+    if backtrace_hop_id is not None:
+        await _resolve_backtrace_hop_after_ingest(ctx, uuid.UUID(backtrace_hop_id), settings)
+
     log.info("job.ingest_paper.done", paper_id=paper_id)
+
+
+async def _resolve_backtrace_hop_after_ingest(ctx: dict, hop_id: uuid.UUID, settings) -> None:
+    """Tail of ingest_paper when it was triggered by Backtrace escalating from
+    an abstract-only search to full text (see api/backtrace.py::_resolve_hop).
+    Runs the paper-scoped evidence search now that ingestion has finished (or
+    marks the hop as needing a manual PDF/Zotero import if it failed)."""
+    engine: AsyncEngine = ctx["engine"]
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        hop = await session.get(BacktraceHop, hop_id)
+        if hop is None or hop.to_paper_id is None:
+            return
+        paper = await session.get(Paper, hop.to_paper_id)
+        chain = await session.get(BacktraceChain, hop.chain_id)
+        if paper is None or chain is None:
+            return
+
+        if paper.status != "full_text":
+            hop.resolution_status = "awaiting_manual_import"
+            await session.commit()
+            log.info("backtrace.hop_awaiting_manual_import", hop_id=str(hop_id))
+            return
+
+        try:
+            provider = await get_provider_for_user(
+                session, chain.created_by, settings.zotero_find_model, settings
+            )
+        except NoLLMKeyConfigured:
+            hop.resolution_status = "awaiting_manual_import"
+            await session.commit()
+            log.warning("backtrace.hop_resolve_no_llm_key", hop_id=str(hop_id))
+            return
+
+        passage = await search_full_text_for_claim(
+            provider, session, chain.project_id, paper.id, chain.origin_text, settings.embed_model
+        )
+        if passage is not None:
+            hop.quote, hop.relevance_note = passage.verbatim_text, passage.rationale
+            hop.quote_source = "full_text"
+            hop.resolution_status = "full_text_match"
+        else:
+            hop.resolution_status = "no_match"
+        await session.commit()
+        log.info("backtrace.hop_resolved_full_text", hop_id=str(hop_id), status=hop.resolution_status)
 
 
 async def _sync_citations(ctx: dict, paper_id: uuid.UUID, settings) -> None:

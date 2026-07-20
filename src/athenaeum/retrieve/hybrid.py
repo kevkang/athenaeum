@@ -33,8 +33,13 @@ async def _vector_search(
     project_id: uuid.UUID,
     embedding: list[float],
     k: int,
+    paper_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     vec = _vec_str(embedding)
+    paper_clause = "AND ps.paper_id = :paper_id" if paper_id is not None else ""
+    params: dict[str, Any] = {"pid": str(project_id), "k": k}
+    if paper_id is not None:
+        params["paper_id"] = str(paper_id)
     rows = await session.execute(
         text(f"""
             SELECT
@@ -49,10 +54,11 @@ async def _vector_search(
             JOIN project_papers pp ON pp.paper_id = ps.paper_id
             WHERE pp.project_id = :pid
               AND ps.embedding IS NOT NULL
+              {paper_clause}
             ORDER BY ps.embedding <=> '{vec}'::vector
             LIMIT :k
         """),
-        {"pid": str(project_id), "k": k},
+        params,
     )
     return [dict(r._mapping) for r in rows]
 
@@ -62,9 +68,14 @@ async def _text_search(
     project_id: uuid.UUID,
     query_text: str,
     k: int,
+    paper_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
+    paper_clause = "AND ps.paper_id = :paper_id" if paper_id is not None else ""
+    params: dict[str, Any] = {"q": query_text, "pid": str(project_id), "k": k}
+    if paper_id is not None:
+        params["paper_id"] = str(paper_id)
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 ps.id,
                 ps.paper_id,
@@ -77,10 +88,11 @@ async def _text_search(
             JOIN project_papers pp ON pp.paper_id = ps.paper_id
             WHERE pp.project_id = :pid
               AND ps.text_search @@ plainto_tsquery('english', :q)
+              {paper_clause}
             ORDER BY score DESC
             LIMIT :k
         """),
-        {"q": query_text, "pid": str(project_id), "k": k},
+        params,
     )
     return [dict(r._mapping) for r in rows]
 
@@ -147,17 +159,21 @@ async def search(
     query_embedding: list[float] | None,
     top_k: int = 20,
     mode: str = "hybrid",
+    paper_id: uuid.UUID | None = None,
 ) -> list[SentenceHit]:
+    """`paper_id` narrows the search to a single paper (still scoped to
+    `project_id` via the same project_papers join) — used by Backtrace to
+    search within one specific referenced paper rather than a whole project."""
     inner_k = min(top_k * 4, 200)
 
     vec_hits: list[dict[str, Any]] = []
     txt_hits: list[dict[str, Any]] = []
 
     if mode in ("vector", "hybrid") and query_embedding is not None:
-        vec_hits = await _vector_search(session, project_id, query_embedding, inner_k)
+        vec_hits = await _vector_search(session, project_id, query_embedding, inner_k, paper_id)
 
     if mode in ("text", "hybrid"):
-        txt_hits = await _text_search(session, project_id, query_text, inner_k)
+        txt_hits = await _text_search(session, project_id, query_text, inner_k, paper_id)
 
     if mode == "hybrid":
         merged = _rrf_merge(

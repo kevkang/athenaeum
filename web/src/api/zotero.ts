@@ -33,6 +33,7 @@ export interface ZoteroFindResult {
   already_in_project: boolean;
   quote: string;
   relevance_note: string;
+  model: string;
 }
 
 export interface ZoteroCollection {

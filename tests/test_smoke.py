@@ -238,3 +238,60 @@ def test_statements_lock_all_requires_auth() -> None:
             "/statements/by-project/00000000-0000-0000-0000-000000000000/lock-all"
         )
     assert resp.status_code == 401
+
+
+def test_backtrace_start_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/backtrace/chains",
+            json={
+                "project_id": "00000000-0000-0000-0000-000000000000",
+                "paper_id": "00000000-0000-0000-0000-000000000000",
+                "claim_text": "test claim for authentication check",
+            },
+        )
+    assert resp.status_code == 401
+
+
+def test_backtrace_continue_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post("/backtrace/chains/00000000-0000-0000-0000-000000000000/continue")
+    assert resp.status_code == 401
+
+
+def test_backtrace_pick_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/backtrace/chains/00000000-0000-0000-0000-000000000000/pick",
+            json={"openalex_id": "W1"},
+        )
+    assert resp.status_code == 401
+
+
+def test_backtrace_stop_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post("/backtrace/chains/00000000-0000-0000-0000-000000000000/stop")
+    assert resp.status_code == 401
+
+
+def test_backtrace_recheck_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.post(
+            "/backtrace/chains/00000000-0000-0000-0000-000000000000/hops/"
+            "00000000-0000-0000-0000-000000000000/recheck"
+        )
+    assert resp.status_code == 401
+
+
+def test_backtrace_get_chain_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get("/backtrace/chains/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 401
+
+
+def test_backtrace_list_chains_requires_auth() -> None:
+    with TestClient(app) as client:
+        resp = client.get(
+            "/backtrace/chains", params={"project_id": "00000000-0000-0000-0000-000000000000"}
+        )
+    assert resp.status_code == 401

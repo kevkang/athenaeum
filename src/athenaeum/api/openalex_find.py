@@ -93,6 +93,7 @@ async def find_in_openalex(
             already_in_project=bool(m.hit.doi and m.hit.doi in existing_dois),
             quote=m.quote,
             relevance_note=m.relevance_note,
+            model=settings.zotero_find_model,
         )
         for m in matches
     ]
