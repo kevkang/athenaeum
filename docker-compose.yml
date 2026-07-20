@@ -88,7 +88,7 @@ services:
       ORCID_API_BASE: https://sandbox.orcid.org
       GROBID_URL: http://grobid:8070
       UNPAYWALL_EMAIL: contact@athenaeum.app
-      SECRET_ENCRYPTION_KEY: s5CfwQ2M9uFZEZ912pomPM9IfFn_dsuPIMW3JFj5-rg=  # dev-only, do not use in production
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}  # dev-only; set in your local .env, never commit real keys
       S3_BUCKET: athenaeum-papers
       S3_ENDPOINT_URL: http://minio:9000
       AWS_REGION: us-east-1
