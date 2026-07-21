@@ -25,6 +25,7 @@ import {
 } from '../api/backtrace';
 import { passagesApi } from '../api/passages';
 import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
+import ZoteroBrowserImportModal from '../components/ZoteroBrowserImportModal';
 import LocalLibraryPicker from '../components/LocalLibraryPicker';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
 import { useUIStore } from '../store/ui';
@@ -275,6 +276,7 @@ function PapersSidebar({
   });
 
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+  const [showBrowserImport, setShowBrowserImport] = useState(false);
   const selectLibraryMutation = useMutation({
     mutationFn: (relativePath: string) => zoteroLocalApi.selectLibrary(relativePath),
     onSuccess: () => {
@@ -534,11 +536,18 @@ function PapersSidebar({
 
             {addMode === 'zotero-local' && (
               <>
+                <div className={styles.searchHint} style={{ marginBottom: 8 }}>
+                  <button className={styles.ingestBtn} onClick={() => setShowBrowserImport(true)}>
+                    Import from Zotero folder…
+                  </button>
+                </div>
                 {!zoteroLocalStatus?.available ? (
                   <div className={styles.zoteroLocalSetup}>
                     <div className={styles.searchHint}>
-                      Point Athenaeum at your Zotero data directory (find it in Zotero:
-                      Preferences → Advanced → "Show Data Directory").
+                      That reads your Zotero folder right here in the browser — nothing to
+                      configure server-side. (If Athenaeum happens to be running on the same
+                      machine as Zotero, you can alternatively point the server at your Zotero
+                      data directory directly: Preferences → Advanced → "Show Data Directory".)
                     </div>
                     <button
                       className={styles.ingestBtn}
@@ -663,6 +672,13 @@ function PapersSidebar({
                 )
               : undefined
           }
+        />
+      )}
+
+      {showBrowserImport && (
+        <ZoteroBrowserImportModal
+          projectId={projectId}
+          onClose={() => setShowBrowserImport(false)}
         />
       )}
     </aside>

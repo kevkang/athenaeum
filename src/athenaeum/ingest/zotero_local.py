@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
@@ -47,6 +48,26 @@ _LINK_MODE_NAMES = {
 
 class LocalZoteroError(RuntimeError):
     """The local Zotero data directory is missing, unreadable, or malformed."""
+
+
+@dataclass
+class ZoteroBrowserImportItem:
+    """A ZoteroSearchHit plus the fields the browser-side import flow needs:
+    which collections an item belongs to (for filtering) and where its
+    primary attachment lives *relative to the Zotero data directory* — the
+    browser resolves that path against the folder the user picked locally,
+    since this parse only ever sees the uploaded zotero.sqlite, never the
+    actual storage/ folder (see parse_full_library)."""
+
+    item_key: str
+    title: str
+    creators: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+    item_type: str
+    collection_keys: list[str]
+    attachment_relative_path: str | None
 
 
 def _db_path(data_dir: str) -> Path:
@@ -313,6 +334,82 @@ async def list_local_collections(data_dir: str) -> list[ZoteroCollection]:
         ]
 
     return await loop.run_in_executor(None, _run(data_dir, _list))
+
+
+async def parse_full_library(data_dir: str) -> list[ZoteroBrowserImportItem]:
+    """Parses *every* item in the library in one pass — used by the
+    browser-side import flow (api/zotero_local.py's browser-import/parse
+    endpoint), which uploads a bare zotero.sqlite (no storage/ folder) and
+    needs the whole library at once for a client-side review table, not a
+    paginated browse. Collections and attachment paths are resolved with two
+    bulk queries up front instead of the N+1 per-item lookups
+    list_local_attachments()/browse_local_items() use, since this reads
+    every item rather than a page of ~50."""
+    loop = asyncio.get_running_loop()
+
+    def _parse(conn: sqlite3.Connection) -> list[ZoteroBrowserImportItem]:
+        candidates = _candidate_items(conn, collection_key=None)
+
+        collection_rows = conn.execute(
+            """
+            SELECT ci.itemID AS itemID, col.key AS collKey
+            FROM collectionItems ci
+            JOIN collections col ON col.collectionID = ci.collectionID
+            """
+        ).fetchall()
+        collections_by_item: dict[int, list[str]] = {}
+        for row in collection_rows:
+            collections_by_item.setdefault(row["itemID"], []).append(row["collKey"])
+
+        attach_rows = conn.execute(
+            """
+            SELECT ia.parentItemID AS parentItemID, i.key AS key, ia.path AS path
+            FROM itemAttachments ia
+            JOIN items i ON i.itemID = ia.itemID
+            WHERE ia.linkMode IN (0, 1)
+              AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
+            """
+        ).fetchall()
+        attachment_by_parent: dict[int, tuple[str, str | None]] = {}
+        for row in attach_rows:
+            # An item can have multiple attachments; the first imported file
+            # found wins, matching the "one primary PDF" assumption the
+            # review table's PDF column makes.
+            attachment_by_parent.setdefault(row["parentItemID"], (row["key"], row["path"]))
+
+        items: list[ZoteroBrowserImportItem] = []
+        for row in candidates:
+            data = _row_to_data_block(conn, row["itemID"], row["key"], row["itemType"])
+            data["dateAdded"] = row["dateAdded"]
+            hit = _hit_from_item(data)
+            if hit is None:
+                continue
+
+            rel_path = None
+            attachment = attachment_by_parent.get(row["itemID"])
+            if attachment is not None:
+                attachment_key, path_field = attachment
+                if path_field:
+                    has_prefix = path_field.startswith("storage:")
+                    filename = path_field[len("storage:"):] if has_prefix else path_field
+                    rel_path = f"storage/{attachment_key}/{filename}"
+
+            items.append(
+                ZoteroBrowserImportItem(
+                    item_key=hit.item_key,
+                    title=hit.title,
+                    creators=hit.creators,
+                    year=hit.year,
+                    venue=hit.venue,
+                    doi=hit.doi,
+                    item_type=hit.item_type,
+                    collection_keys=collections_by_item.get(row["itemID"], []),
+                    attachment_relative_path=rel_path,
+                )
+            )
+        return items
+
+    return await loop.run_in_executor(None, _run(data_dir, _parse))
 
 
 async def browse_local_items(

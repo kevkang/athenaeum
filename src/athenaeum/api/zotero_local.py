@@ -13,11 +13,12 @@ native folder picker across that boundary), so the UI takes a path relative
 to the mounted home directory instead."""
 from __future__ import annotations
 
+import tempfile
 import uuid
 from pathlib import Path, PurePosixPath
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
@@ -25,6 +26,9 @@ from athenaeum.config import get_settings
 from athenaeum.domain.models import (
     PaperOut,
     ZoteroBrowseResponse,
+    ZoteroBrowserImportCollectionOut,
+    ZoteroBrowserImportItemOut,
+    ZoteroBrowserImportParseResponse,
     ZoteroCollectionOut,
     ZoteroImportRequest,
     ZoteroLocalBrowseDirsResponse,
@@ -39,6 +43,7 @@ from athenaeum.ingest.zotero_local import (
     browse_local_items,
     get_local_item,
     list_local_collections,
+    parse_full_library,
     search_local_library,
 )
 from athenaeum.storage.models import Paper, Project, ProjectMember, ProjectPaper, ZoteroLocalConfig
@@ -264,6 +269,70 @@ async def browse_items_endpoint(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     existing_dois = await _existing_dois(session, project_id)
     return ZoteroBrowseResponse(items=[_to_result_out(h, existing_dois) for h in hits], total=total)
+
+
+# zotero.sqlite is metadata-only; even large libraries stay well under this.
+_SQLITE_MAX_BYTES = 500 * 1024 * 1024
+
+
+@router.post("/browser-import/parse", response_model=ZoteroBrowserImportParseResponse)
+async def parse_browser_import(
+    session: SessionDep,
+    user: CurrentUserDep,
+    project_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+) -> ZoteroBrowserImportParseResponse:
+    """Parses a zotero.sqlite the browser uploaded directly from a user-picked
+    folder (see web/src/lib/zoteroFolderAccess.ts) — the client-side
+    counterpart to the host-mount flow above, for deployments where the
+    server has no access to the operator's filesystem (i.e. anywhere but a
+    single-operator local install). Nothing here is persisted: the file is
+    parsed in a scratch temp dir and discarded once the response is built.
+    Attachment PDFs are never uploaded at this step — only the sqlite file,
+    which is metadata-only — the browser resolves attachment_relative_path
+    against its own folder handle and uploads matching PDFs separately
+    through the existing /papers/upload endpoint.
+    """
+    await _require_member(session, project_id, user.id)
+
+    if not (file.filename or "").endswith(".sqlite"):
+        raise HTTPException(status_code=400, detail="Expected a zotero.sqlite file")
+
+    content = await file.read()
+    if len(content) > _SQLITE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large to be a zotero.sqlite")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "zotero.sqlite").write_bytes(content)
+        try:
+            items = await parse_full_library(tmp)
+            collections = await list_local_collections(tmp)
+        except LocalZoteroError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing_dois = await _existing_dois(session, project_id)
+
+    return ZoteroBrowserImportParseResponse(
+        items=[
+            ZoteroBrowserImportItemOut(
+                item_key=it.item_key,
+                title=it.title,
+                creators=it.creators,
+                year=it.year,
+                venue=it.venue,
+                doi=it.doi,
+                item_type=it.item_type,
+                collection_keys=it.collection_keys,
+                attachment_relative_path=it.attachment_relative_path,
+                already_in_project=bool(it.doi and it.doi in existing_dois),
+            )
+            for it in items
+        ],
+        collections=[
+            ZoteroBrowserImportCollectionOut(key=c.key, name=c.name, parent_key=c.parent_key)
+            for c in collections
+        ],
+    )
 
 
 @router.post("/import", response_model=PaperOut, status_code=201)

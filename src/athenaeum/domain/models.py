@@ -686,3 +686,30 @@ class ZoteroLocalBrowseDirsResponse(BaseModel):
     path: str
     parent: str | None
     entries: list[ZoteroLocalDirEntry]
+
+
+class ZoteroBrowserImportItemOut(BaseModel):
+    item_key: str
+    title: str
+    creators: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+    item_type: str
+    collection_keys: list[str]
+    # Relative to the Zotero data directory the browser picked, e.g.
+    # "storage/ABCD1234/paper.pdf" — the browser resolves this against its
+    # own directory handle; the server never sees the actual file.
+    attachment_relative_path: str | None
+    already_in_project: bool
+
+
+class ZoteroBrowserImportCollectionOut(BaseModel):
+    key: str
+    name: str
+    parent_key: str | None
+
+
+class ZoteroBrowserImportParseResponse(BaseModel):
+    items: list[ZoteroBrowserImportItemOut]
+    collections: list[ZoteroBrowserImportCollectionOut]
