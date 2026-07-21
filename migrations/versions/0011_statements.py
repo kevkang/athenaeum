@@ -6,16 +6,16 @@ Revises: 0010
 Create Date: 2026-07-11
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision: str = "0011"
-down_revision: Union[str, None] = "0010"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0010"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -31,8 +31,10 @@ def upgrade() -> None:
     # ── brick_rests_on -> statement_evidence ───────────────────────────────
     op.rename_table("brick_rests_on", "statement_evidence")
     op.alter_column("statement_evidence", "brick_id", new_column_name="statement_id")
-    op.execute("UPDATE statement_evidence SET target_kind = 'statement' WHERE target_kind = 'brick'")
     op.drop_constraint("brick_rests_on_target_kind_chk", "statement_evidence", type_="check")
+    op.execute(
+        "UPDATE statement_evidence SET target_kind = 'statement' WHERE target_kind = 'brick'"
+    )
     op.create_check_constraint(
         "statement_evidence_target_kind_chk",
         "statement_evidence",
@@ -69,8 +71,8 @@ def upgrade() -> None:
     )
 
     # ── annotations: 'brick' target kind -> 'statement' ────────────────────
-    op.execute("UPDATE annotations SET target_kind = 'statement' WHERE target_kind = 'brick'")
     op.drop_constraint("annotations_target_kind_chk", "annotations", type_="check")
+    op.execute("UPDATE annotations SET target_kind = 'statement' WHERE target_kind = 'brick'")
     op.create_check_constraint(
         "annotations_target_kind_chk",
         "annotations",
@@ -80,12 +82,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("annotations_target_kind_chk", "annotations", type_="check")
+    op.execute("UPDATE annotations SET target_kind = 'brick' WHERE target_kind = 'statement'")
     op.create_check_constraint(
         "annotations_target_kind_chk",
         "annotations",
         "target_kind IN ('paper','passage','brick','sentence','section')",
     )
-    op.execute("UPDATE annotations SET target_kind = 'brick' WHERE target_kind = 'statement'")
 
     op.drop_table("statement_edges")
 
@@ -112,8 +114,10 @@ def downgrade() -> None:
         sa.Column("ord", sa.Integer, nullable=False, server_default="0"),
     )
 
-    op.execute("UPDATE statement_evidence SET target_kind = 'brick' WHERE target_kind = 'statement'")
     op.drop_constraint("statement_evidence_target_kind_chk", "statement_evidence", type_="check")
+    op.execute(
+        "UPDATE statement_evidence SET target_kind = 'brick' WHERE target_kind = 'statement'"
+    )
     op.create_check_constraint(
         "brick_rests_on_target_kind_chk",
         "statement_evidence",
