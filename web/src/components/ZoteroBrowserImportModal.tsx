@@ -49,8 +49,19 @@ async function runWithConcurrency<T>(
 }
 
 function extractErrorMessage(err: unknown, fallback: string): string {
-  const maybeAxios = err as { response?: { data?: { detail?: string } } };
+  const maybeAxios = err as { response?: { data?: { detail?: string } }; code?: string };
   if (maybeAxios?.response?.data?.detail) return maybeAxios.response.data.detail;
+  // A request that got no response at all (blocked, reset, or rejected by a
+  // proxy before it reached the app — which also means it never picked up
+  // CORS headers) shows up as axios's generic "Network Error", which for a
+  // multi-hundred-MB zotero.sqlite upload usually just means the file hit a
+  // size limit somewhere between the browser and the app.
+  if (maybeAxios?.code === 'ERR_NETWORK') {
+    return 'Could not reach the server — if your Zotero library is large, its ' +
+      'zotero.sqlite (which includes the full-text search index) may be too ' +
+      'large to upload. Try again, or ask whoever runs this deployment to ' +
+      'check the upload size limit.';
+  }
   if (err instanceof Error) return err.message;
   return fallback;
 }
