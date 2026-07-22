@@ -7,8 +7,8 @@ from athenaeum.archive.export import ATH_VERSION, dumps, loads
 
 _PROJECT_ID = str(uuid.uuid4())
 _PAPER_ID = str(uuid.uuid4())
-_BRICK_ID = str(uuid.uuid4())
-_BRICK2_ID = str(uuid.uuid4())
+_STATEMENT_ID = str(uuid.uuid4())
+_STATEMENT2_ID = str(uuid.uuid4())
 _PASSAGE_ID = str(uuid.uuid4())
 _SYNTHESIS_ID = str(uuid.uuid4())
 
@@ -63,39 +63,41 @@ SAMPLE: dict = {
             ],
         }
     ],
-    "bricks": [
+    "statements": [
         {
-            "id": _BRICK_ID,
+            "id": _STATEMENT_ID,
             "type": "foundation",
-            "status": "cemented",
+            "status": "locked",
             "assertion": "Systematic testing prevents regressions.",
             "built_from_synthesis_id": _SYNTHESIS_ID,
-            "cemented_at": "2026-05-17T02:00:00+00:00",
+            "locked_at": "2026-05-17T02:00:00+00:00",
             "drafted_at": "2026-05-17T01:30:00+00:00",
-            "rests_on": [
+            "evidence": [
                 {"target_kind": "paper", "target_id": _PAPER_ID, "role": "theory"}
             ],
-            "builds_on": [],
+            "edges": [],
         },
         {
-            "id": _BRICK2_ID,
+            "id": _STATEMENT2_ID,
             "type": "synthesis",
             "status": "draft",
             "assertion": "Round-trips are essential for data integrity.",
             "built_from_synthesis_id": None,
-            "cemented_at": None,
+            "locked_at": None,
             "drafted_at": "2026-05-17T02:00:00+00:00",
-            "rests_on": [],
-            "builds_on": [{"parent_brick_id": _BRICK_ID, "ord": 0}],
+            "evidence": [],
+            "edges": [
+                {"to_statement_id": _STATEMENT_ID, "relation": "supports"}
+            ],
         },
     ],
     "annotations": [
         {
             "id": str(uuid.uuid4()),
             "author_id": str(uuid.uuid4()),
-            "target_kind": "brick",
-            "target_id": _BRICK_ID,
-            "body": "Strong foundation brick.",
+            "target_kind": "statement",
+            "target_id": _STATEMENT_ID,
+            "body": "Strong foundation statement.",
             "created_at": "2026-05-17T03:00:00+00:00",
         }
     ],
@@ -114,8 +116,8 @@ SAMPLE: dict = {
     "provenance": [
         {
             "id": str(uuid.uuid4()),
-            "kind": "brick.cemented",
-            "payload_json": {"brick_id": _BRICK_ID},
+            "kind": "statement.locked",
+            "payload_json": {"statement_id": _STATEMENT_ID},
             "created_at": "2026-05-17T02:00:00+00:00",
         }
     ],
@@ -144,15 +146,16 @@ def test_yaml_roundtrip() -> None:
     assert s["synthesis_text"] == "The evidence strongly supports the claim."
     assert s["evidence"][0]["role"] == "theory"
 
-    assert len(restored["bricks"]) == 2
-    b0 = next(b for b in restored["bricks"] if b["id"] == _BRICK_ID)
-    assert b0["status"] == "cemented"
-    assert b0["rests_on"][0]["target_kind"] == "paper"
-    assert b0["builds_on"] == []
+    assert len(restored["statements"]) == 2
+    s0 = next(s for s in restored["statements"] if s["id"] == _STATEMENT_ID)
+    assert s0["status"] == "locked"
+    assert s0["evidence"][0]["target_kind"] == "paper"
+    assert s0["edges"] == []
 
-    b1 = next(b for b in restored["bricks"] if b["id"] == _BRICK2_ID)
-    assert b1["built_from_synthesis_id"] is None
-    assert b1["builds_on"][0]["parent_brick_id"] == _BRICK_ID
+    s1 = next(s for s in restored["statements"] if s["id"] == _STATEMENT2_ID)
+    assert s1["built_from_synthesis_id"] is None
+    assert s1["edges"][0]["to_statement_id"] == _STATEMENT_ID
+    assert s1["edges"][0]["relation"] == "supports"
 
 
 def test_required_top_level_keys() -> None:
@@ -160,7 +163,7 @@ def test_required_top_level_keys() -> None:
     restored = loads(yaml_str)
     required = {
         "ath_version", "exported_at", "project", "papers",
-        "passages", "syntheses", "bricks", "annotations",
+        "passages", "syntheses", "statements", "annotations",
         "evaluations", "datasets", "provenance",
     }
     assert required.issubset(set(restored.keys()))
@@ -169,9 +172,9 @@ def test_required_top_level_keys() -> None:
 def test_null_fields_survive_roundtrip() -> None:
     yaml_str = dumps(SAMPLE)
     restored = loads(yaml_str)
-    b1 = next(b for b in restored["bricks"] if b["id"] == _BRICK2_ID)
-    assert b1["built_from_synthesis_id"] is None
-    assert b1["cemented_at"] is None
+    s1 = next(s for s in restored["statements"] if s["id"] == _STATEMENT2_ID)
+    assert s1["built_from_synthesis_id"] is None
+    assert s1["locked_at"] is None
 
 
 def test_nested_json_survives_roundtrip() -> None:
@@ -180,7 +183,7 @@ def test_nested_json_survives_roundtrip() -> None:
     synth = restored["syntheses"][0]
     assert synth["query_expansion_json"]["synonyms"] == ["testing", "validation"]
     prov = restored["provenance"][0]
-    assert prov["payload_json"]["brick_id"] == _BRICK_ID
+    assert prov["payload_json"]["statement_id"] == _STATEMENT_ID
 
 
 def test_yaml_is_human_readable() -> None:
@@ -188,5 +191,5 @@ def test_yaml_is_human_readable() -> None:
     # Should contain readable field names, not binary/base64
     assert "ath_version:" in yaml_str
     assert "Round-trip Test Project" in yaml_str
-    assert "cemented" in yaml_str
+    assert "locked" in yaml_str
     assert "10.1234/roundtrip" in yaml_str

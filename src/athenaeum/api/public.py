@@ -10,11 +10,11 @@ from sqlalchemy import UUID, func, select
 
 from athenaeum.api.deps import SessionDep
 from athenaeum.domain.models import (
-    BrickOut,
     PublicProjectOut,
+    StatementOut,
     VerificationRateStats,
 )
-from athenaeum.storage.models import Brick, Project, Synthesis
+from athenaeum.storage.models import Project, Statement, Synthesis
 
 log = structlog.get_logger()
 router = APIRouter(prefix="/public", tags=["public"])
@@ -28,13 +28,13 @@ async def _require_public_project(session, project_id: uuid.UUID) -> Project:
 
 
 async def _project_stats(session, project_id: uuid.UUID) -> dict[str, Any]:
-    brick_total = await session.scalar(
-        select(func.count()).select_from(Brick).where(Brick.project_id == project_id)
+    statement_total = await session.scalar(
+        select(func.count()).select_from(Statement).where(Statement.project_id == project_id)
     )
-    brick_cemented = await session.scalar(
+    statement_locked = await session.scalar(
         select(func.count())
-        .select_from(Brick)
-        .where(Brick.project_id == project_id, Brick.status == "cemented")
+        .select_from(Statement)
+        .where(Statement.project_id == project_id, Statement.status == "locked")
     )
     synth_count = await session.scalar(
         select(func.count())
@@ -50,8 +50,8 @@ async def _project_stats(session, project_id: uuid.UUID) -> dict[str, Any]:
         )
     )
     return {
-        "brick_count": brick_total or 0,
-        "cemented_count": brick_cemented or 0,
+        "statement_count": statement_total or 0,
+        "locked_count": statement_locked or 0,
         "synthesis_count": synth_count or 0,
         "avg_verification_rate": float(avg_vr) if avg_vr is not None else None,
     }
@@ -104,16 +104,16 @@ async def get_public_project(
     )
 
 
-@router.get("/projects/{project_id}/bricks", response_model=list[BrickOut])
-async def list_public_project_bricks(
+@router.get("/projects/{project_id}/statements", response_model=list[StatementOut])
+async def list_public_project_statements(
     project_id: uuid.UUID,
     session: SessionDep,
-) -> list[Brick]:
+) -> list[Statement]:
     await _require_public_project(session, project_id)
     rows = await session.scalars(
-        select(Brick)
-        .where(Brick.project_id == project_id, Brick.status == "cemented")
-        .order_by(Brick.cemented_at.desc())
+        select(Statement)
+        .where(Statement.project_id == project_id, Statement.status == "locked")
+        .order_by(Statement.locked_at.desc())
     )
     return list(rows)
 

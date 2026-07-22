@@ -79,6 +79,56 @@
   font-size: 14px;
 }
 
+.lockHint {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.lockPrompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(198, 122, 92, 0.08);
+  border: 1px solid rgba(198, 122, 92, 0.3);
+  border-radius: 6px;
+}
+
+.lockPromptText {
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.lockPromptActions {
+  display: flex;
+  gap: 8px;
+}
+
+.lockPromptActions .downloadBtn {
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.cancelBtn {
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.cancelBtn:hover {
+  color: var(--text-muted);
+}
+
 .metaRow {
   font-family: 'Inter', sans-serif;
   font-size: 11px;

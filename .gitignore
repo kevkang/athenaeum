@@ -21,3 +21,4 @@ build/
 web/node_modules/
 web/dist/
 web/.env
+.DS_Store

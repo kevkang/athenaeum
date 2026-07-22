@@ -94,6 +94,13 @@ class Paper(Base):
         CheckConstraint(
             "status IN ('full_text', 'ghost', 'failed')", name="papers_status_chk"
         ),
+        CheckConstraint(
+            "zotero_source IN ('sync', 'local')", name="papers_zotero_source_chk"
+        ),
+        CheckConstraint(
+            "found_corpus IN ('zotero_sync', 'zotero_local', 'openalex')",
+            name="papers_found_corpus_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -108,6 +115,21 @@ class Paper(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    zotero_item_key: Mapped[str | None] = mapped_column(String(50), unique=True)
+    zotero_imported_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Distinguishes which Zotero path imported this paper — 'sync' retries
+    # need the importer's stored Web API credentials, 'local' retries just
+    # re-read the bind-mounted data directory. NULL for non-Zotero papers.
+    zotero_source: Mapped[str | None] = mapped_column(String(10))
+    # Verbatim quote (and why it's relevant) surfaced by a "Find" search at
+    # import time — comes from the abstract, not the ingested body text, so
+    # it's highlighted in the abstract block, not matched against sentences.
+    # Single-slot: re-finding via a different corpus later overwrites these.
+    found_quote: Mapped[str | None] = mapped_column(Text)
+    found_relevance_note: Mapped[str | None] = mapped_column(Text)
+    found_corpus: Mapped[str | None] = mapped_column(String(20))
 
 
 class PaperSection(Base):
@@ -178,6 +200,9 @@ class Passage(Base):
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checker_model: Mapped[str | None] = mapped_column(String(100))
+    # Why the extraction step selected this passage as evidence — generated
+    # by the same LLM call that produces sentence_ids/verbatim_text.
+    rationale: Mapped[str | None] = mapped_column(Text)
 
 
 class Synthesis(Base):
@@ -294,12 +319,12 @@ class Dataset(Base):
     )
 
 
-class Brick(Base):
-    __tablename__ = "bricks"
+class Statement(Base):
+    __tablename__ = "statements"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft','cemented','open','resolved','wontfix')",
-            name="bricks_status_chk",
+            "status IN ('draft','locked','open','resolved','wontfix')",
+            name="statements_status_chk",
         ),
     )
 
@@ -313,7 +338,7 @@ class Brick(Base):
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     assertion: Mapped[str] = mapped_column(Text, nullable=False)
-    cemented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     drafted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -321,51 +346,63 @@ class Brick(Base):
         UUID(as_uuid=True), ForeignKey("syntheses.id", ondelete="SET NULL")
     )
 
-    rests_on: Mapped[list["BrickRestsOn"]] = relationship(back_populates="brick")
-    builds_on: Mapped[list["BrickBuildsOn"]] = relationship(
-        back_populates="brick",
-        foreign_keys="BrickBuildsOn.brick_id",
-    )
+    evidence: Mapped[list["StatementEvidence"]] = relationship(back_populates="statement")
 
 
-class BrickRestsOn(Base):
-    __tablename__ = "brick_rests_on"
+class StatementEvidence(Base):
+    __tablename__ = "statement_evidence"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('paper','passage','dataset','brick')",
-            name="brick_rests_on_target_kind_chk",
+            "target_kind IN ('paper','passage','dataset','statement')",
+            name="statement_evidence_target_kind_chk",
         ),
     )
 
-    brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="CASCADE"), primary_key=True
+    statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
     )
     target_kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="evidence")
 
-    brick: Mapped[Brick] = relationship(back_populates="rests_on")
+    statement: Mapped[Statement] = relationship(back_populates="evidence")
 
 
-class BrickBuildsOn(Base):
-    __tablename__ = "brick_builds_on"
+class StatementEdge(Base):
+    """A user-drawn relation between two statements in the graph:
+    relates_to (neutral), supports (positive), or tension (negative)."""
 
-    brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="CASCADE"), primary_key=True
+    __tablename__ = "statement_edges"
+    __table_args__ = (
+        CheckConstraint(
+            "relation IN ('relates_to','supports','tension')",
+            name="statement_edges_relation_chk",
+        ),
+        CheckConstraint(
+            "from_statement_id != to_statement_id", name="statement_edges_no_self_chk"
+        ),
     )
-    parent_brick_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bricks.id", ondelete="RESTRICT"), primary_key=True
-    )
-    ord: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    brick: Mapped[Brick] = relationship(back_populates="builds_on", foreign_keys=[brick_id])
+    from_statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
+    )
+    to_statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), primary_key=True
+    )
+    relation: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Annotation(Base):
     __tablename__ = "annotations"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('paper','passage','brick','sentence','section')",
+            "target_kind IN ('paper','passage','statement','sentence','section')",
             name="annotations_target_kind_chk",
         ),
     )
@@ -465,20 +502,6 @@ class CitationEdge(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="openalex")
 
 
-class TensionEdge(Base):
-    __tablename__ = "tension_edges"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    from_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    from_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    to_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    to_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    label: Mapped[str] = mapped_column(String(50), nullable=False)
-    evidence_passage_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("passages.id")
-    )
-
-
 class KnowledgeLink(Base):
     __tablename__ = "knowledge_links"
     __table_args__ = (
@@ -514,5 +537,148 @@ class KnowledgeLink(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ZoteroCredentials(Base):
+    __tablename__ = "zotero_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "library_type IN ('user','group')", name="zotero_credentials_library_type_chk"
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    zotero_user_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    library_type: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class LLMCredentials(Base):
+    """Per-user "bring your own" LLM API key. When present, this key takes
+    precedence over the server's global ANTHROPIC_API_KEY for that user's
+    Find/summarize requests — see provider/resolver.py."""
+    __tablename__ = "llm_credentials"
+    __table_args__ = (CheckConstraint("provider IN ('anthropic')", name="llm_credentials_provider_chk"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False, default="anthropic")
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BacktraceChain(Base):
+    """A user-driven citation trail: starting from a claim in a paper being
+    read, each hop (see BacktraceHop) identifies the paper's own OpenAlex
+    reference that most plausibly supports the same claim, one hop at a time,
+    until the user marks a hop as the true/primary source."""
+    __tablename__ = "backtrace_chains"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    origin_paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
+    )
+    origin_sentence_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_sentences.id", ondelete="SET NULL")
+    )
+    origin_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    hops: Mapped[list["BacktraceHop"]] = relationship(
+        back_populates="chain", order_by="BacktraceHop.hop_index", passive_deletes=True
+    )
+
+
+class BacktraceHop(Base):
+    __tablename__ = "backtrace_hops"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "to_openalex_id", name="backtrace_hops_chain_target_uq"),
+        CheckConstraint(
+            "quote_source IN ('abstract', 'full_text')", name="backtrace_hops_quote_source_chk"
+        ),
+        CheckConstraint(
+            "resolution_status IN ('pending', 'ingesting', 'abstract_match', 'full_text_match', "
+            "'no_match', 'awaiting_manual_import')",
+            name="backtrace_hops_resolution_status_chk",
+        ),
+        CheckConstraint(
+            "user_decision IN ('pending', 'continued', 'stopped_here')",
+            name="backtrace_hops_user_decision_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    chain_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("backtrace_chains.id", ondelete="CASCADE"), nullable=False
+    )
+    hop_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshotted target-paper metadata — the target usually isn't an ingested
+    # Paper row yet (see to_paper_id), so identity/display data lives here.
+    to_openalex_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    to_doi: Mapped[str | None] = mapped_column(String(255))
+    to_title: Mapped[str] = mapped_column(Text, nullable=False)
+    to_authors_json: Mapped[list[str] | None] = mapped_column(JSONB)
+    to_year: Mapped[int | None] = mapped_column(Integer)
+    to_venue: Mapped[str | None] = mapped_column(String(500))
+    to_paper_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="SET NULL")
+    )
+    quote: Mapped[str | None] = mapped_column(Text)
+    quote_source: Mapped[str | None] = mapped_column(String(20))
+    relevance_note: Mapped[str | None] = mapped_column(Text)
+    # The LLM's stated reasoning for picking this reference among the paper's
+    # other citations — surfaced in the UI so the user can judge the guess,
+    # since there's no ground truth linking a sentence to a specific reference.
+    match_reasoning: Mapped[str | None] = mapped_column(Text)
+    # Which model actually generated match_reasoning/quote/relevance_note —
+    # persisted (not derived from current settings) so attribution stays
+    # accurate even if the configured model changes later, mirroring
+    # Synthesis.model / Passage.checker_model.
+    model: Mapped[str | None] = mapped_column(String(100))
+    resolution_status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    user_decision: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    chain: Mapped[BacktraceChain] = relationship(back_populates="hops")
+
+
+class ZoteroLocalConfig(Base):
+    """Singleton row (id is always 1) recording which subfolder of the
+    broadly-mounted host home directory (see ZOTERO_LOCAL_HOST_MOUNT) is the
+    operator's actual Zotero data directory. Server-wide, not per-user — see
+    the reasoning in config.py for why local Zotero isn't a per-account
+    concept the way the Web API connection is."""
+    __tablename__ = "zotero_local_config"
+    __table_args__ = (CheckConstraint("id = 1", name="zotero_local_config_singleton_chk"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

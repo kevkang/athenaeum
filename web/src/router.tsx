@@ -43,9 +43,18 @@ const projectsRoute = createRoute({
   component: ProjectListPage,
 });
 
-const workspaceRoute = createRoute({
+// Bare /projects/$projectId has no view of its own — land on Workspace by default.
+const projectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId',
+  beforeLoad({ params }) {
+    throw redirect({ to: '/projects/$projectId/workspace', params });
+  },
+});
+
+const workspaceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/workspace',
   component: WorkspaceView,
 });
 
@@ -70,6 +79,7 @@ const routeTree = rootRoute.addChildren([
   authCallbackRoute,
   appRoute.addChildren([
     projectsRoute,
+    projectRoute,
     workspaceRoute,
     exportRoute,
   ]),

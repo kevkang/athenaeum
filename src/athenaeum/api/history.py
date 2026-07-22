@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.models import EventOut, HistoryPage
 from athenaeum.events import apply_event
-from athenaeum.storage.models import Brick, Event, ProjectMember, User
+from athenaeum.storage.models import Event, ProjectMember, Statement, User
 
 router = APIRouter(prefix="/projects", tags=["history"])
 
@@ -102,7 +102,7 @@ async def undo_event(
     )
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    if event.kind != "brick.edited":
+    if event.kind != "statement.edited":
         raise HTTPException(
             status_code=400,
             detail=f"Undo not supported for events of kind {event.kind!r}",
@@ -110,53 +110,53 @@ async def undo_event(
     if event.prev_json is None or event.entity_id is None:
         raise HTTPException(status_code=400, detail="Event has no pre-image")
 
-    brick = await session.get(Brick, event.entity_id)
-    if brick is None:
+    statement = await session.get(Statement, event.entity_id)
+    if statement is None:
         raise HTTPException(
             status_code=409,
-            detail="Target brick no longer exists",
+            detail="Target statement no longer exists",
         )
 
     # Stale check: refuse if anything in the entity has changed since this event.
     payload = event.payload_json
     if (
-        brick.assertion != payload.get("assertion")
-        or brick.type != payload.get("type")
-        or brick.status != payload.get("status")
+        statement.assertion != payload.get("assertion")
+        or statement.type != payload.get("type")
+        or statement.status != payload.get("status")
     ):
         raise HTTPException(
             status_code=409,
-            detail="Brick has been modified since this event; undo is no longer safe",
+            detail="Statement has been modified since this event; undo is no longer safe",
         )
 
     # Capture current state as the new pre-image, then restore.
     current = {
-        "assertion": brick.assertion,
-        "type": brick.type,
-        "status": brick.status,
-        "cemented_at": brick.cemented_at.isoformat() if brick.cemented_at else None,
+        "assertion": statement.assertion,
+        "type": statement.type,
+        "status": statement.status,
+        "locked_at": statement.locked_at.isoformat() if statement.locked_at else None,
     }
     prev = event.prev_json
-    brick.assertion = prev["assertion"]
-    brick.type = prev["type"]
-    brick.status = prev["status"]
-    cemented_at = prev.get("cemented_at")
-    brick.cemented_at = (
-        datetime.fromisoformat(cemented_at) if cemented_at else None
+    statement.assertion = prev["assertion"]
+    statement.type = prev["type"]
+    statement.status = prev["status"]
+    locked_at = prev.get("locked_at")
+    statement.locked_at = (
+        datetime.fromisoformat(locked_at) if locked_at else None
     )
 
     new_event = await apply_event(
         session,
         project_id=project_id,
         actor_id=user.id,
-        kind="brick.edited",
-        entity_kind="brick",
-        entity_id=brick.id,
+        kind="statement.edited",
+        entity_kind="statement",
+        entity_id=statement.id,
         prev=current,
         payload={
-            "assertion": brick.assertion,
-            "type": brick.type,
-            "status": brick.status,
+            "assertion": statement.assertion,
+            "type": statement.type,
+            "status": statement.status,
             "undoes_seq": seq,
         },
     )

@@ -10,9 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.storage.models import (
     Annotation,
-    Brick,
-    BrickBuildsOn,
-    BrickRestsOn,
     Dataset,
     Evaluation,
     Paper,
@@ -22,6 +19,9 @@ from athenaeum.storage.models import (
     ProjectPaper,
     Event,
     ProjectEventSeq,
+    Statement,
+    StatementEdge,
+    StatementEvidence,
     Synthesis,
     SynthesisEvidence,
 )
@@ -123,52 +123,68 @@ async def import_project(
                 ord=e["ord"],
             ))
 
-    # Bricks (insert first, then edges that reference other bricks)
-    for b in data.get("bricks", []):
-        session.add(Brick(
-            id=uuid.UUID(b["id"]),
+    # Statements (insert first, then edges that reference other statements).
+    # "bricks"/"rests_on"/"builds_on" are accepted as a fallback for archives
+    # exported before the bricks -> statements rename; "cemented"/"cemented_at"
+    # similarly for archives exported before the cement -> lock rename.
+    raw_statements = data.get("statements", data.get("bricks", []))
+    for s in raw_statements:
+        status = "locked" if s["status"] == "cemented" else s["status"]
+        session.add(Statement(
+            id=uuid.UUID(s["id"]),
             project_id=project_id,
-            author_id=_u(b.get("author_id")),
-            type=b["type"],
-            status=b["status"],
-            assertion=b["assertion"],
-            built_from_synthesis_id=_u(b.get("built_from_synthesis_id")),
-            cemented_at=_dt(b.get("cemented_at")),
+            author_id=_u(s.get("author_id")),
+            type=s["type"],
+            status=status,
+            assertion=s["assertion"],
+            built_from_synthesis_id=_u(s.get("built_from_synthesis_id")),
+            locked_at=_dt(s.get("locked_at", s.get("cemented_at"))),
         ))
 
     await session.flush()
 
-    for b in data.get("bricks", []):
-        brick_id = uuid.UUID(b["id"])
-        for r in b.get("rests_on", []):
-            session.add(BrickRestsOn(
-                brick_id=brick_id,
-                target_kind=r["target_kind"],
+    for s in raw_statements:
+        statement_id = uuid.UUID(s["id"])
+        for r in s.get("evidence", s.get("rests_on", [])):
+            target_kind = "statement" if r["target_kind"] == "brick" else r["target_kind"]
+            session.add(StatementEvidence(
+                statement_id=statement_id,
+                target_kind=target_kind,
                 target_id=uuid.UUID(r["target_id"]),
                 role=r["role"],
             ))
-        for bo in b.get("builds_on", []):
-            session.add(BrickBuildsOn(
-                brick_id=brick_id,
-                parent_brick_id=uuid.UUID(bo["parent_brick_id"]),
-                ord=bo["ord"],
+        for e in s.get("edges", []):
+            session.add(StatementEdge(
+                from_statement_id=statement_id,
+                to_statement_id=uuid.UUID(e["to_statement_id"]),
+                relation=e["relation"],
+            ))
+        # Old-format builds_on has no equivalent typed relation — best-effort
+        # map it to a neutral "relates_to" edge (the DAG-ordering concept
+        # itself, `ord`, no longer exists in the new edge model).
+        for bo in s.get("builds_on", []):
+            session.add(StatementEdge(
+                from_statement_id=statement_id,
+                to_statement_id=uuid.UUID(bo["parent_brick_id"]),
+                relation="relates_to",
             ))
 
     # Annotations
     for a in data.get("annotations", []):
+        target_kind = "statement" if a["target_kind"] == "brick" else a["target_kind"]
         session.add(Annotation(
             id=uuid.UUID(a["id"]),
             project_id=project_id,
             author_id=uuid.UUID(a["author_id"]),
-            target_kind=a["target_kind"],
+            target_kind=target_kind,
             target_id=uuid.UUID(a["target_id"]),
             body=a["body"],
         ))
 
     # Backward-compat: v1 archives exported questions as a separate list.
-    # Import them as bricks with type='question'.
+    # Import them as statements with type='question'.
     for q in data.get("questions", []):
-        session.add(Brick(
+        session.add(Statement(
             id=uuid.UUID(q["id"]),
             project_id=project_id,
             author_id=_u(q.get("author_id")),
