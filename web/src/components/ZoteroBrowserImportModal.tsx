@@ -215,8 +215,12 @@ export default function ZoteroBrowserImportModal({
             {error && <div className={styles.pickerError}>{error}</div>}
             {!isDirectoryPickerSupported() && (
               <div className={styles.pickerNote}>
-                Your browser doesn&rsquo;t support persistent folder access — you&rsquo;ll need to
-                re-select the folder each time you import (nothing is saved between visits).
+                Your browser doesn&rsquo;t support persistent folder access, so it&rsquo;ll ask you
+                to select every file in the folder — for a large library that can be thousands of
+                files, and the browser may phrase this as an &ldquo;upload.&rdquo; Nothing is
+                actually sent anywhere at that step: Athenaeum only reads {'"'}zotero.sqlite{'"'}{' '}
+                out of the selection, and re-selecting is only needed because this browser
+                can&rsquo;t save the folder access for next time.
               </div>
             )}
           </div>
@@ -225,6 +229,10 @@ export default function ZoteroBrowserImportModal({
         {phase === 'parsing' && (
           <div className={styles.progressStep}>
             <div className={styles.progressLabel}>Reading zotero.sqlite…</div>
+            <div className={styles.pickerNote}>
+              This can take a minute or so for a library with thousands of items — it&rsquo;s
+              working through them one by one, not stuck.
+            </div>
           </div>
         )}
 

@@ -122,6 +122,28 @@
   color: var(--text-muted);
 }
 
+.themeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.themeToggle:hover {
+  border-color: var(--border-strong);
+  color: var(--accent);
+}
+
 .orcidChip {
   display: flex;
   align-items: center;

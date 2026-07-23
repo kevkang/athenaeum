@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, getToken } from './client';
 
 export type BacktraceResolutionStatus =
   | 'pending'
@@ -71,30 +71,45 @@ export interface BacktraceStepResult {
 }
 
 export const backtraceApi = {
-  start: (projectId: string, paperId: string, sentenceId: string | null, claimText: string) =>
+  start: (
+    projectId: string,
+    paperId: string,
+    sentenceId: string | null,
+    claimText: string,
+    streamId?: string,
+  ) =>
     api
-      .post<BacktraceStepResult>('/backtrace/chains', {
-        project_id: projectId,
-        paper_id: paperId,
-        sentence_id: sentenceId,
-        claim_text: claimText,
+      .post<BacktraceStepResult>(
+        '/backtrace/chains',
+        { project_id: projectId, paper_id: paperId, sentence_id: sentenceId, claim_text: claimText },
+        { params: { stream_id: streamId } },
+      )
+      .then((r) => r.data),
+
+  continueChain: (chainId: string, streamId?: string) =>
+    api
+      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/continue`, null, {
+        params: { stream_id: streamId },
       })
       .then((r) => r.data),
 
-  continueChain: (chainId: string) =>
-    api.post<BacktraceStepResult>(`/backtrace/chains/${chainId}/continue`).then((r) => r.data),
-
-  pick: (chainId: string, openalexId: string) =>
+  pick: (chainId: string, openalexId: string, streamId?: string) =>
     api
-      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/pick`, { openalex_id: openalexId })
+      .post<BacktraceStepResult>(
+        `/backtrace/chains/${chainId}/pick`,
+        { openalex_id: openalexId },
+        { params: { stream_id: streamId } },
+      )
       .then((r) => r.data),
 
   stop: (chainId: string) =>
     api.post<BacktraceChainDetail>(`/backtrace/chains/${chainId}/stop`).then((r) => r.data),
 
-  recheckHop: (chainId: string, hopId: string) =>
+  recheckHop: (chainId: string, hopId: string, streamId?: string) =>
     api
-      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/hops/${hopId}/recheck`)
+      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/hops/${hopId}/recheck`, null, {
+        params: { stream_id: streamId },
+      })
       .then((r) => r.data),
 
   get: (chainId: string) =>
@@ -106,4 +121,12 @@ export const backtraceApi = {
         params: { project_id: projectId, paper_id: paperId },
       })
       .then((r) => r.data),
+
+  /** WS URL for live step-status pings during one mutating call — see
+   * api/backtrace.py's module docstring for the stream_id protocol. */
+  stepStreamUrl(streamId: string): string {
+    const base = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/^http/, 'ws');
+    const token = getToken() ?? '';
+    return `${base}/backtrace/stream/${streamId}?token=${encodeURIComponent(token)}`;
+  },
 };

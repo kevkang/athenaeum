@@ -3,14 +3,26 @@ in a paper the user is reading. Each hop identifies which of that paper's own
 OpenAlex references most plausibly supports the same claim, finds a verbatim
 quote for it (abstract first, escalating to full-text ingestion when the
 abstract doesn't have one), and lets the user decide to trace further or stop.
-See synthesize/backtrace.py for the LLM/retrieval logic this composes."""
+See synthesize/backtrace.py for the LLM/retrieval logic this composes.
+
+Each hop resolution runs synchronously inside the request handler (unlike
+synthesis, which is an arq job), so there's no persisted step log — instead
+each mutating endpoint accepts an optional client-generated `stream_id` and
+publishes ephemeral progress events to `backtrace:stream:{stream_id}` as it
+goes, purely so the UI can show what's happening right now. The actual
+result always comes from the endpoint's own response; a client that never
+opens the stream, or whose stream drops a message, loses nothing but the
+live status text. See the `/stream/{stream_id}` websocket below."""
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
+import redis.asyncio as aioredis
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import func, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
@@ -20,14 +32,15 @@ from athenaeum.domain.models import (
     BacktraceChainDetailOut,
     BacktraceChainOut,
     BacktraceChainSummaryOut,
-    BacktracePickRequest,
     BacktraceHopOut,
+    BacktracePickRequest,
     BacktraceStartRequest,
     BacktraceStepResult,
 )
 from athenaeum.ingest.openalex import OpenAlexMeta, fetch_metadata_by_id
 from athenaeum.ingest.pipeline import backfill_openalex_id
 from athenaeum.provider.resolver import NoLLMKeyConfigured, get_provider_for_user
+from athenaeum.security import decode_session_token
 from athenaeum.storage.models import (
     BacktraceChain,
     BacktraceHop,
@@ -49,6 +62,17 @@ log = structlog.get_logger()
 router = APIRouter(prefix="/backtrace", tags=["backtrace"])
 
 _RESOLVED_STATES = {"abstract_match", "full_text_match"}
+
+
+async def _publish_step(arq_pool: AsyncRedis | None, stream_id: str | None, kind: str) -> None:
+    """Best-effort progress ping — see module docstring. Never raises: a
+    dropped status update is cosmetic, never worth failing the request."""
+    if arq_pool is None or stream_id is None:
+        return
+    try:
+        await arq_pool.publish(f"backtrace:stream:{stream_id}", json.dumps({"kind": kind}))
+    except Exception:
+        log.warning("backtrace.publish_step_failed", stream_id=stream_id, kind=kind)
 
 
 async def _require_member(session: SessionDep, project_id: uuid.UUID, user_id: uuid.UUID) -> None:
@@ -131,8 +155,10 @@ async def _resolve_hop(
     citing_text: str,
     user_id: uuid.UUID,
     manual_openalex_id: str | None,
+    stream_id: str | None = None,
 ) -> tuple[BacktraceHop | None, list[ReferenceCandidate] | None, str | None]:
     loop = asyncio.get_running_loop()
+    await _publish_step(arq_pool, stream_id, "fetching_references")
     candidates = await resolve_reference_candidates(from_openalex_id)
     if not candidates:
         return None, None, "This paper has no OpenAlex references to trace."
@@ -159,12 +185,14 @@ async def _resolve_hop(
             )
         reasoning = "Manually selected by user."
     else:
+        await _publish_step(arq_pool, stream_id, "identifying_reference")
         identify = await identify_cited_work(provider, citing_text, available)
         if identify.candidate is None or not identify.confident:
             return None, available, identify.reasoning or "No confident citation match found."
         chosen = identify.candidate
         reasoning = identify.reasoning
 
+    await _publish_step(arq_pool, stream_id, "fetching_reference_details")
     meta = await loop.run_in_executor(None, fetch_metadata_by_id, chosen.openalex_id)
     if meta is None:
         return None, None, "Could not fetch details for the identified reference."
@@ -187,6 +215,7 @@ async def _resolve_hop(
     session.add(hop)
     await session.flush()
 
+    await _publish_step(arq_pool, stream_id, "searching_abstract")
     abstract_result = await extract_abstract_quote(provider, chain.origin_text, meta)
     if abstract_result is not None:
         hop.quote, hop.relevance_note = abstract_result
@@ -200,6 +229,7 @@ async def _resolve_hop(
     hop.to_paper_id = paper.id
 
     if paper.status == "full_text":
+        await _publish_step(arq_pool, stream_id, "searching_full_text")
         passage = await search_full_text_for_claim(
             provider, session, chain.project_id, paper.id, chain.origin_text, settings.embed_model
         )
@@ -264,7 +294,11 @@ def _candidates_out(candidates: list[ReferenceCandidate] | None) -> list[Backtra
 
 @router.post("/chains", response_model=BacktraceStepResult, status_code=201)
 async def start_chain(
-    payload: BacktraceStartRequest, session: SessionDep, user: CurrentUserDep, request: Request
+    payload: BacktraceStartRequest,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+    stream_id: str | None = Query(default=None),
 ) -> BacktraceStepResult:
     await _require_member(session, payload.project_id, user.id)
 
@@ -320,15 +354,22 @@ async def start_chain(
         citing_text=chain.origin_text,
         user_id=user.id,
         manual_openalex_id=None,
+        stream_id=stream_id,
     )
     await session.commit()
     await session.refresh(chain)
+    await _publish_step(arq_pool, stream_id, "done")
 
     return _step_result(chain, hop, candidates, message, settings)
 
 
 async def _continue_or_pick(
-    session: SessionDep, user: CurrentUserDep, request: Request, chain_id: uuid.UUID, manual_openalex_id: str | None
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+    chain_id: uuid.UUID,
+    manual_openalex_id: str | None,
+    stream_id: str | None,
 ) -> BacktraceStepResult:
     chain, hops = await _load_chain_and_hops(session, chain_id, user.id)
 
@@ -368,17 +409,25 @@ async def _continue_or_pick(
         citing_text=citing_text,
         user_id=user.id,
         manual_openalex_id=manual_openalex_id,
+        stream_id=stream_id,
     )
     await session.commit()
+    await _publish_step(arq_pool, stream_id, "done")
 
     return _step_result(chain, hop, candidates, message, settings)
 
 
 @router.post("/chains/{chain_id}/continue", response_model=BacktraceStepResult)
 async def continue_chain(
-    chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep, request: Request
+    chain_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+    stream_id: str | None = Query(default=None),
 ) -> BacktraceStepResult:
-    return await _continue_or_pick(session, user, request, chain_id, manual_openalex_id=None)
+    return await _continue_or_pick(
+        session, user, request, chain_id, manual_openalex_id=None, stream_id=stream_id
+    )
 
 
 @router.post("/chains/{chain_id}/pick", response_model=BacktraceStepResult)
@@ -388,8 +437,11 @@ async def pick_hop(
     session: SessionDep,
     user: CurrentUserDep,
     request: Request,
+    stream_id: str | None = Query(default=None),
 ) -> BacktraceStepResult:
-    return await _continue_or_pick(session, user, request, chain_id, manual_openalex_id=payload.openalex_id)
+    return await _continue_or_pick(
+        session, user, request, chain_id, manual_openalex_id=payload.openalex_id, stream_id=stream_id
+    )
 
 
 @router.post("/chains/{chain_id}/stop", response_model=BacktraceChainDetailOut)
@@ -406,7 +458,12 @@ async def stop_chain(chain_id: uuid.UUID, session: SessionDep, user: CurrentUser
 
 @router.post("/chains/{chain_id}/hops/{hop_id}/recheck", response_model=BacktraceStepResult)
 async def recheck_hop(
-    chain_id: uuid.UUID, hop_id: uuid.UUID, session: SessionDep, user: CurrentUserDep
+    chain_id: uuid.UUID,
+    hop_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+    stream_id: str | None = Query(default=None),
 ) -> BacktraceStepResult:
     """Resume a hop stuck in 'awaiting_manual_import' after the user has
     supplied full text themselves (PDF upload or Zotero add-and-sync, both
@@ -415,6 +472,8 @@ async def recheck_hop(
     hop = next((h for h in hops if h.id == hop_id), None)
     if hop is None:
         raise HTTPException(status_code=404, detail="Hop not found")
+
+    arq_pool = getattr(request.app.state, "arq_pool", None)
 
     if hop.resolution_status not in ("awaiting_manual_import", "ingesting"):
         return BacktraceStepResult(chain=BacktraceChainOut.model_validate(chain), hop=_hop_out(hop))
@@ -436,6 +495,7 @@ async def recheck_hop(
     except NoLLMKeyConfigured as exc:
         raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
 
+    await _publish_step(arq_pool, stream_id, "searching_full_text")
     passage = await search_full_text_for_claim(
         provider, session, chain.project_id, paper.id, chain.origin_text, settings.embed_model
     )
@@ -447,6 +507,7 @@ async def recheck_hop(
         hop.resolution_status = "no_match"
     await session.commit()
     await session.refresh(hop)
+    await _publish_step(arq_pool, stream_id, "done")
     return BacktraceStepResult(chain=BacktraceChainOut.model_validate(chain), hop=_hop_out(hop))
 
 
@@ -493,3 +554,55 @@ async def list_chains(
         )
         for c in chains
     ]
+
+
+# ── WebSocket — live step stream ─────────────────────────────────────────────
+#
+# Scoped to a client-generated `stream_id` rather than a chain_id: the very
+# first hop is resolved inside the same request that creates the chain, so
+# there's no chain_id a client could subscribe against beforehand. The client
+# mints a UUID, opens this socket, waits for it to connect, and only then
+# fires the mutating request with that id as `?stream_id=`. No DB-backed
+# replay log exists (see module docstring) — a client that connects late
+# simply sees fewer status pings, never stale or wrong ones.
+
+@router.websocket("/stream/{stream_id}")
+async def stream_backtrace_steps(
+    websocket: WebSocket,
+    stream_id: str,
+    token: str = Query(..., description="JWT session token"),
+) -> None:
+    try:
+        decode_session_token(token)
+    except Exception:
+        await websocket.close(code=4001, reason="invalid token")
+        return
+
+    settings = get_settings()
+    await websocket.accept()
+
+    redis_client = aioredis.from_url(settings.redis_url)
+    pubsub = redis_client.pubsub()
+    channel = f"backtrace:stream:{stream_id}"
+
+    try:
+        await pubsub.subscribe(channel)
+        async for message in pubsub.listen():
+            if message["type"] != "message":
+                continue
+            data = message["data"]
+            if isinstance(data, bytes):
+                data = data.decode()
+            await websocket.send_text(data)
+            if json.loads(data).get("kind") == "done":
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        log.exception("ws.backtrace_stream_error", stream_id=stream_id)
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+        except Exception:
+            pass
+        await redis_client.aclose()

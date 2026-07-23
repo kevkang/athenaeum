@@ -42,3 +42,49 @@
   --chrome-height: 46px;
   --sidebar-width: 300px;
 }
+
+/* Light mode — same structure as the dark palette above, with the
+ * gold/yellow accent family swapped for a blue one. Status colors
+ * (verified/tension/contradicting/question) are deepened from their dark-
+ * mode values since those were tuned for contrast against a near-black
+ * background; used at the same hex on off-white they'd wash out. */
+:root[data-theme='light'] {
+  /* Surfaces */
+  --bg: #faf9f5;
+  --bg-sidebar: #f2f1ec;
+  --bg-canvas: #eeede6;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f5f4ef;
+  --bg-card: #ffffff;
+  --bg-hover: #eae7dd;
+  --bg-code: #f1efe7;
+
+  /* Borders */
+  --border: #e0dccf;
+  --border-subtle: #eae7de;
+  --border-strong: #c9c4b3;
+
+  /* Text */
+  --text: #262319;
+  --text-muted: #736e60;
+  --text-faint: #a39d8c;
+  --text-header: #1a1712;
+
+  /* Semantic */
+  --accent: #2f7bbf;
+  --accent-dim: #7fa8cc;
+  --verified: #4f7a3f;
+  --tension: #a8532f;
+  --contradicting: #96442a;
+  --link: #3d6f96;
+  --question: #7c5a91;
+  --annotation: #2f7bbf;
+  --orcid: #6f8f22;
+
+  /* YAML syntax */
+  --yaml-key: #2f7bbf;
+  --yaml-string: #4f7a3f;
+  --yaml-comment: #a39d8c;
+  --yaml-anchor: #3d6f96;
+  --yaml-meta: #7c5a91;
+}

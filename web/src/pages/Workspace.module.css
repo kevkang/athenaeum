@@ -1199,23 +1199,31 @@
 .evidenceQuote {
   font-size: 11.5px;
   line-height: 1.6;
-  color: var(--text-muted);
-  font-style: italic;
+  color: var(--text);
 }
 
 /* AI-generated commentary (relevance notes, match reasoning, step messages)
- * — always normal case, readable body color, quoted, and attributed to the
- * actual model that produced it. Never plain uppercase label styling. */
+ * — always normal case, gray-blue italic (visually distinct from the white
+ * verbatim quote above), and attributed to the actual model that produced
+ * it. Never plain uppercase label styling. */
 .aiNote {
   display: flex;
   flex-direction: column;
   gap: 3px;
   padding: 6px 0 2px;
 }
+.aiNoteLabel {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
 .aiNoteText {
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--text);
+  color: var(--link);
+  font-style: italic;
 }
 .aiNoteAttribution {
   font-size: 9.5px;
@@ -1230,6 +1238,16 @@
   font-size: 10px;
   color: var(--text-faint);
   padding: 4px 0;
+}
+
+.backtraceLoadingStep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 2px 0;
+  width: 100%;
 }
 
 .candidateDetail {

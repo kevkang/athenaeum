@@ -1618,17 +1618,89 @@ function LiveTrace({ synthesisId, onDone }: { synthesisId: string; onDone: () =>
   );
 }
 
+// ── Backtrace live status ───────────────────────────────────────────────────
+// Backtrace hop resolution runs synchronously inside its request handler
+// (unlike synthesis's arq job), so there's no persisted step log to poll —
+// instead each mutating call streams ephemeral progress pings over a
+// short-lived websocket keyed by a client-minted stream_id. See
+// api/backtrace.py's module docstring for the protocol.
+
+const BACKTRACE_STEP_LABELS: Record<string, string> = {
+  fetching_references: "fetching this paper's references",
+  identifying_reference: 'identifying the cited reference',
+  fetching_reference_details: 'fetching reference details',
+  searching_abstract: 'searching the abstract for a quote',
+  searching_full_text: 'searching full text for evidence',
+};
+
+function backtraceStepLabel(step: string | null): string {
+  if (!step) return 'starting';
+  return BACKTRACE_STEP_LABELS[step] ?? step;
+}
+
+function BacktraceLoadingStep({ step }: { step: string | null }) {
+  return (
+    <div className={styles.backtraceLoadingStep}>
+      <span className={`${styles.statusDot} ${styles.processing}`} />
+      {backtraceStepLabel(step)}&hellip;
+    </div>
+  );
+}
+
+/** Opens the step-status websocket and waits for it to connect *before* the
+ * caller fires its mutation, so the very first event can't be published
+ * before anyone is subscribed to hear it. Falls back to firing the request
+ * anyway after a short timeout if the socket is slow or unavailable — the
+ * live text is a nicety, never a dependency for the request itself. */
+function useBacktraceStepStream() {
+  const [step, setStep] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const beginStream = useCallback((): Promise<string> => {
+    const streamId = crypto.randomUUID();
+    setStep(null);
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = () => {
+        if (!settled) { settled = true; resolve(streamId); }
+      };
+      const ws = new WebSocket(backtraceApi.stepStreamUrl(streamId));
+      wsRef.current = ws;
+      ws.onopen = settle;
+      ws.onerror = settle;
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.kind === 'done') { ws.close(); return; }
+        setStep(msg.kind);
+      };
+      setTimeout(settle, 800);
+    });
+  }, []);
+
+  const endStream = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setStep(null);
+  }, []);
+
+  useEffect(() => () => wsRef.current?.close(), []);
+
+  return { step, beginStream, endStream };
+}
+
 type FindImportState = 'importable' | 'already_in_project' | 'imported' | 'no_doi';
 
 /** Renders LLM-generated commentary (a relevance note, match reasoning, etc.)
- * distinctly from verbatim paper text: quoted, normal-cased, readable body
- * color, with an attribution to the actual model that produced it — never
- * plain uppercase label styling, which is for short static UI headers only. */
-function AiNote({ text, model }: { text: string; model: string }) {
+ * distinctly from verbatim paper text: labeled by kind so the reader knows
+ * which question it's answering, quoted, normal-cased, gray-blue italic,
+ * with an attribution to the actual model that produced it — never plain
+ * uppercase label styling, which is for short static UI headers only. */
+function AiNote({ text, model, label }: { text: string; model: string; label: string }) {
   return (
     <div className={styles.aiNote}>
+      <span className={styles.aiNoteLabel}>{label}:</span>
       <span className={styles.aiNoteText}>&ldquo;{text}&rdquo;</span>
-      <span className={styles.aiNoteAttribution}>{formatModelName(model)}</span>
+      <span className={styles.aiNoteAttribution}>&mdash; {formatModelName(model)}</span>
     </div>
   );
 }
@@ -1699,7 +1771,9 @@ function FindResultCard({
       </div>
       <div className={styles.evidenceQuote}>&ldquo;{quote}&rdquo;</div>
       {relevanceNote && (
-        model ? <AiNote text={relevanceNote} model={model} /> : <div className={styles.searchHint}>{relevanceNote}</div>
+        model
+          ? <AiNote text={relevanceNote} model={model} label="Relevance" />
+          : <div className={styles.searchHint}><strong>Relevance:</strong> {relevanceNote}</div>
       )}
     </div>
   );
@@ -2075,8 +2149,11 @@ function BacktracePanel({
 
   const invalidateChain = () => queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
 
+  const { step: liveStep, beginStream, endStream } = useBacktraceStepStream();
+
   const continueMutation = useMutation({
-    mutationFn: () => backtraceApi.continueChain(chainId),
+    mutationFn: async () => backtraceApi.continueChain(chainId, await beginStream()),
+    onSettled: endStream,
     onSuccess: (result) => {
       setManualCandidates(result.candidates);
       setStepMessage(result.message);
@@ -2086,7 +2163,8 @@ function BacktracePanel({
   });
 
   const pickMutation = useMutation({
-    mutationFn: (openalexId: string) => backtraceApi.pick(chainId, openalexId),
+    mutationFn: async (openalexId: string) => backtraceApi.pick(chainId, openalexId, await beginStream()),
+    onSettled: endStream,
     onSuccess: (result) => {
       setManualCandidates(result.candidates);
       setStepMessage(result.message);
@@ -2102,7 +2180,8 @@ function BacktracePanel({
   });
 
   const recheckMutation = useMutation({
-    mutationFn: (hopId: string) => backtraceApi.recheckHop(chainId, hopId),
+    mutationFn: async (hopId: string) => backtraceApi.recheckHop(chainId, hopId, await beginStream()),
+    onSettled: endStream,
     onSuccess: (result) => {
       setStepMessage(result.message);
       setStepMessageModel(result.model);
@@ -2203,8 +2282,8 @@ function BacktracePanel({
               />
               {hop.match_reasoning && (
                 hop.model
-                  ? <AiNote text={hop.match_reasoning} model={hop.model} />
-                  : <div className={styles.searchHint}>{hop.match_reasoning}</div>
+                  ? <AiNote text={hop.match_reasoning} model={hop.model} label="Match reasoning" />
+                  : <div className={styles.searchHint}><strong>Match reasoning:</strong> {hop.match_reasoning}</div>
               )}
 
               {isLast && hop.resolution_status === 'awaiting_manual_import' && (
@@ -2229,6 +2308,7 @@ function BacktracePanel({
                       {recheckMutation.isPending ? 'Checking…' : 'Check again'}
                     </button>
                   </div>
+                  {recheckMutation.isPending && <BacktraceLoadingStep step={liveStep} />}
                 </div>
               )}
 
@@ -2244,6 +2324,7 @@ function BacktracePanel({
                   <button className={styles.retryBtn} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
                     Stop here ✓
                   </button>
+                  {continueMutation.isPending && <BacktraceLoadingStep step={liveStep} />}
                 </div>
               )}
 
@@ -2281,8 +2362,8 @@ function BacktracePanel({
           <div className={styles.panelSectionLabel}>Pick a reference</div>
           {stepMessage && (
             stepMessageModel
-              ? <AiNote text={stepMessage} model={stepMessageModel} />
-              : <div className={styles.searchHint}>{stepMessage}</div>
+              ? <AiNote text={stepMessage} model={stepMessageModel} label="Reasoning" />
+              : <div className={styles.searchHint}><strong>Reasoning:</strong> {stepMessage}</div>
           )}
           {manualCandidates.length === 0 ? (
             <div className={styles.searchHint}>No unvisited references left to choose from.</div>
@@ -2328,6 +2409,7 @@ function BacktracePanel({
                           {pickMutation.isPending ? 'Tracing…' : 'Continue backtrace →'}
                         </button>
                       </div>
+                      {pickMutation.isPending && expanded && <BacktraceLoadingStep step={liveStep} />}
                     </div>
                   )}
                 </div>

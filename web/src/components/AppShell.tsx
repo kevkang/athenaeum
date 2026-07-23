@@ -13,6 +13,8 @@ export default function AppShell() {
   const accountModalOpen = useUIStore((s) => s.accountModalOpen);
   const openAccountModal = useUIStore((s) => s.openAccountModal);
   const closeAccountModal = useUIStore((s) => s.closeAccountModal);
+  const theme = useUIStore((s) => s.theme);
+  const toggleTheme = useUIStore((s) => s.toggleTheme);
 
   const projectMatch = location.pathname.match(/\/projects\/([^/]+)/);
   const projectId = projectMatch?.[1];
@@ -49,6 +51,13 @@ export default function AppShell() {
         </div>
 
         <div className={styles.chromeRight}>
+          <button
+            className={styles.themeToggle}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           {projectId && (
             <button
               className={styles.settingsBtn}
