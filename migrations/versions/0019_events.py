@@ -1,7 +1,7 @@
 """Rename provenance_log → events; add per-project seq, actor, entity ref, pre-image.
 
-Revision ID: 0010
-Revises: 0009
+Revision ID: 0019
+Revises: 0018
 Create Date: 2026-06-05
 
 """
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision: str = "0010"
-down_revision: Union[str, None] = "0009"
+revision: str = "0019"
+down_revision: Union[str, None] = "0018"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
