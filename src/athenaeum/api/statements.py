@@ -19,9 +19,9 @@ from athenaeum.domain.models import (
     StatementOut,
     StatementUpdate,
 )
+from athenaeum.events import apply_event
 from athenaeum.storage.models import (
     ProjectMember,
-    ProvenanceLog,
     Statement,
     StatementEdge,
     StatementEvidence,
@@ -66,21 +66,25 @@ async def _get_statement_or_404(session: AsyncSession, statement_id: uuid.UUID) 
     return statement
 
 
-def _log_provenance(
+async def _record_event(
     session: AsyncSession,
     project_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
     kind: str,
-    payload: dict,
+    entity_id: uuid.UUID | None = None,
+    prev: dict | None = None,
+    payload: dict | None = None,
 ) -> None:
-    session.add(
-        ProvenanceLog(
-            id=uuid.uuid4(),
-            project_id=project_id,
-            kind=kind,
-            payload_json=payload,
-        )
+    await apply_event(
+        session,
+        project_id=project_id,
+        actor_id=actor_id,
+        kind=kind,
+        entity_kind="statement",
+        entity_id=entity_id,
+        prev=prev,
+        payload=payload or {},
     )
-
 
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
@@ -103,11 +107,13 @@ async def create_statement(
         status="open" if payload.type == "question" else "draft",
     )
     session.add(statement)
-    _log_provenance(
+    await _record_event(
         session,
         payload.project_id,
-        "statement_created",
-        {"statement_id": str(statement.id), "type": payload.type},
+        user.id,
+        "statement.created",
+        entity_id=statement.id,
+        payload={"statement_id": str(statement.id), "type": payload.type, "assertion": statement.assertion},
     )
     await session.commit()
     await session.refresh(statement)
@@ -138,6 +144,12 @@ async def update_statement(
     await _assert_member(session, statement.project_id, user.id)
 
     was_locked = statement.status == "locked"
+    prev = {
+        "assertion": statement.assertion,
+        "type": statement.type,
+        "status": statement.status,
+        "locked_at": statement.locked_at.isoformat() if statement.locked_at else None,
+    }
     changed: dict = {}
 
     if payload.assertion is not None and payload.assertion != statement.assertion:
@@ -161,11 +173,20 @@ async def update_statement(
     if changed and was_locked:
         statement.status = "draft"
         statement.locked_at = None
-        _log_provenance(
+    if changed:
+        await _record_event(
             session,
             statement.project_id,
-            "statement_unlocked",
-            {"statement_id": str(statement.id), "reason": "edited", "changed": list(changed)},
+            user.id,
+            "statement.edited",
+            entity_id=statement.id,
+            prev=prev,
+            payload={
+                "assertion": statement.assertion,
+                "type": statement.type,
+                "status": statement.status,
+                "unlocked": was_locked,
+            },
         )
 
     await session.commit()
@@ -186,11 +207,23 @@ async def delete_statement(
     if statement.status == "locked":
         raise HTTPException(status_code=409, detail="Cannot delete a locked statement")
     project_id = statement.project_id
-    _log_provenance(
+    await _record_event(
         session,
         statement.project_id,
-        "statement_deleted",
-        {"statement_id": str(statement.id), "assertion_preview": statement.assertion[:100]},
+        user.id,
+        "statement.deleted",
+        entity_id=statement.id,
+        prev={
+            "type": statement.type,
+            "status": statement.status,
+            "assertion": statement.assertion,
+            "author_id": str(statement.author_id) if statement.author_id else None,
+            "built_from_synthesis_id": (
+                str(statement.built_from_synthesis_id)
+                if statement.built_from_synthesis_id else None
+            ),
+        },
+        payload={"assertion_preview": statement.assertion[:100]},
     )
     # Clean up polymorphic evidence rows from OTHER statements that cited this
     # one as evidence (target_kind='statement', target_id=<this id>). These are
@@ -223,11 +256,13 @@ async def lock_statement(
 
     statement.status = "locked"
     statement.locked_at = datetime.now(timezone.utc)
-    _log_provenance(
+    await _record_event(
         session,
         statement.project_id,
-        "statement_locked",
-        {"statement_id": str(statement.id), "assertion_preview": statement.assertion[:200]},
+        user.id,
+        "statement.locked",
+        entity_id=statement.id,
+        payload={"statement_id": str(statement.id), "assertion_preview": statement.assertion[:200]},
     )
     await session.commit()
     await session.refresh(statement)
@@ -251,11 +286,13 @@ async def unlock_statement(
 
     statement.status = "draft"
     statement.locked_at = None
-    _log_provenance(
+    await _record_event(
         session,
         statement.project_id,
-        "statement_unlocked",
-        {"statement_id": str(statement.id), "reason": "manual"},
+        user.id,
+        "statement.unlocked",
+        entity_id=statement.id,
+        payload={"statement_id": str(statement.id), "reason": "manual"},
     )
     await session.commit()
     await session.refresh(statement)
@@ -443,11 +480,13 @@ async def lock_all_statements(
     for statement in statements:
         statement.status = "locked"
         statement.locked_at = now
-        _log_provenance(
+        await _record_event(
             session,
             project_id,
-            "statement_locked",
-            {"statement_id": str(statement.id), "reason": "lock_all"},
+            user.id,
+            "statement.locked",
+            entity_id=statement.id,
+            payload={"statement_id": str(statement.id), "reason": "lock_all"},
         )
     await session.commit()
     for statement in statements:

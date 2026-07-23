@@ -12,6 +12,7 @@ from athenaeum.api import (
     auth,
     backtrace,
     graph,
+    history,
     links,
     llm_credentials,
     members,
@@ -90,6 +91,7 @@ app.include_router(archive.router)
 app.include_router(members.router)
 app.include_router(public.router)
 app.include_router(links.router)
+app.include_router(history.router)
 app.include_router(zotero.router)
 app.include_router(zotero_local.router)
 app.include_router(zotero_find.router)
