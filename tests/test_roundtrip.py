@@ -116,7 +116,7 @@ SAMPLE: dict = {
     "provenance": [
         {
             "id": str(uuid.uuid4()),
-            "kind": "statement_locked",
+            "kind": "statement.locked",
             "payload_json": {"statement_id": _STATEMENT_ID},
             "created_at": "2026-05-17T02:00:00+00:00",
         }

@@ -475,6 +475,25 @@ class DatasetOut(BaseModel):
     created_at: datetime
 
 
+# ── Events / history ─────────────────────────────────────────────────────────
+
+class EventOut(BaseModel):
+    id: UUID
+    project_seq: int
+    actor_id: UUID | None
+    actor_display_name: str | None
+    kind: str
+    entity_kind: str
+    entity_id: UUID | None
+    prev_json: dict[str, Any] | None
+    payload_json: dict[str, Any]
+    created_at: datetime
+
+
+class HistoryPage(BaseModel):
+    events: list[EventOut]
+    next_before_seq: int | None
+
 # ── Zotero ────────────────────────────────────────────────────────────────────
 
 class ZoteroCredentialsIn(BaseModel):

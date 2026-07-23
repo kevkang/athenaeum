@@ -28,6 +28,7 @@ import ZoteroBrowserModal from '../components/ZoteroBrowserModal';
 import ZoteroBrowserImportModal from '../components/ZoteroBrowserImportModal';
 import LocalLibraryPicker from '../components/LocalLibraryPicker';
 import { synthesisApi, type Synthesis, type EvidenceFull } from '../api/syntheses';
+import { historyApi, type EventOut } from '../api/history';
 import { useUIStore } from '../store/ui';
 import { trunc, stripHtml, safeHtml, formatDate, formatCitation, formatModelName, typeClass } from '../lib/format';
 import styles from './Workspace.module.css';
@@ -38,7 +39,7 @@ cytoscape.use(dagre);
 
 interface StatementGraph { nodes: StatementNode[]; edges: StatementEdge[] }
 
-type PanelMode = null | { kind: 'statement'; id: string } | { kind: 'new' };
+type PanelMode = null | { kind: 'statement'; id: string } | { kind: 'new' } | { kind: 'history' };
 type NodeFilter = 'all' | 'statements' | 'questions';
 
 const RELATIONS: StatementRelation[] = ['relates_to', 'supports', 'tension'];
@@ -2043,6 +2044,133 @@ function FindPanel({ projectId, onStatementCreated }: { projectId: string; onSta
   );
 }
 
+// ── History panel ─────────────────────────────────────────────────────────────
+
+function formatRelative(iso: string) {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function eventSummary(ev: EventOut): string {
+  const p = ev.payload_json as Record<string, unknown>;
+  switch (ev.kind) {
+    case 'statement.created':
+      return `created ${typeof p.type === 'string' ? p.type : 'statement'}: ${trunc(String(p.assertion ?? ''), 60)}`;
+    case 'statement.edited': {
+      const undoes = p.undoes_seq;
+      if (typeof undoes === 'number') return `undid #${undoes}: ${trunc(String(p.assertion ?? ''), 60)}`;
+      return `edited: ${trunc(String(p.assertion ?? ''), 60)}`;
+    }
+    case 'statement.locked':
+      return `locked: ${trunc(String(p.assertion_preview ?? ''), 60)}`;
+    case 'statement.deleted':
+      return `deleted: ${trunc(String(p.assertion_preview ?? ''), 60)}`;
+    default:
+      return ev.kind;
+  }
+}
+
+function HistoryPanel({
+  projectId, onSelectStatement,
+}: {
+  projectId: string;
+  onSelectStatement: (id: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [undoError, setUndoError] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['history', projectId],
+    queryFn: () => historyApi.list(projectId, { limit: 50 }),
+    refetchInterval: 3000,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (seq: number) => historyApi.undo(projectId, seq),
+    onSuccess: () => {
+      setUndoError(null);
+      queryClient.invalidateQueries({ queryKey: ['history', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['graph', projectId] });
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'statement' });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      setUndoError(e.response?.data?.detail ?? e.message ?? 'Undo failed');
+    },
+  });
+
+  const events = data?.events ?? [];
+  const undoneSeqs = new Set(
+    events
+      .map((e) => e.payload_json.undoes_seq)
+      .filter((s): s is number => typeof s === 'number'),
+  );
+
+  return (
+    <div className={styles.panelContent}>
+      <div className={styles.panelKind}>history</div>
+
+      {undoError && (
+        <div className={styles.formError} style={{ marginBottom: 8 }}>{undoError}</div>
+      )}
+
+      {isLoading && <div className={styles.panelLoading}>Loading…</div>}
+
+      {!isLoading && events.length === 0 && (
+        <div className={styles.panelLoading}>No events yet.</div>
+      )}
+
+      <div className={styles.historyList}>
+        {events.map((ev) => {
+          const isUndone = undoneSeqs.has(ev.project_seq);
+          const isUndoable = ev.kind === 'statement.edited' && !isUndone;
+          return (
+            <div
+              key={ev.id}
+              className={`${styles.historyItem} ${isUndone ? styles.historyItemUndone : ''}`}
+            >
+              <div className={styles.historyMeta}>
+                <span className={styles.historySeq}>#{ev.project_seq}</span>
+                <span className={styles.historyKind}>{ev.kind}</span>
+                <span className={styles.historyActor}>
+                  {ev.actor_display_name ?? 'unknown'}
+                </span>
+                <span className={styles.historyTime}>{formatRelative(ev.created_at)}</span>
+              </div>
+              <div className={styles.historySummary}>
+                {ev.entity_kind === 'statement' && ev.entity_id ? (
+                  <button
+                    className={styles.historyLink}
+                    onClick={() => onSelectStatement(ev.entity_id!)}
+                  >
+                    {eventSummary(ev)}
+                  </button>
+                ) : (
+                  <span>{eventSummary(ev)}</span>
+                )}
+                {isUndoable && (
+                  <button
+                    className={styles.historyUndoBtn}
+                    disabled={undoMutation.isPending}
+                    onClick={() => undoMutation.mutate(ev.project_seq)}
+                  >
+                    Undo
+                  </button>
+                )}
+                {isUndone && <span className={styles.historyUndoneLabel}>undone</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BacktracePanel({
   chainId, initialResult, projectId,
 }: {
@@ -2344,7 +2472,7 @@ function BacktracePanel({
   );
 }
 
-// ── Right panel (overlays the graph pane) ───────────────────────────────────────
+// ── Right panel ───────────────────────────────────────────────────────────────
 
 function RightPanel({
   panelMode, onClose, projectId, papers, allStatements, onStatementCreated,
@@ -2372,6 +2500,12 @@ function RightPanel({
         )}
         {panelMode.kind === 'new' && (
           <NewStatementForm projectId={projectId} onCreated={onStatementCreated} />
+        )}
+        {panelMode.kind === 'history' && (
+          <HistoryPanel
+            projectId={projectId}
+            onSelectStatement={(id) => onStatementCreated(id)}
+          />
         )}
       </div>
     </div>
@@ -2860,6 +2994,12 @@ export default function WorkspaceView() {
         </span>
 
         <div style={{ marginLeft: 'auto' }} />
+        <button
+          className={`${styles.toolbarBtn} ${panelMode?.kind === 'history' ? styles.active : ''}`}
+          onClick={() => setPanelMode(panelMode?.kind === 'history' ? null : { kind: 'history' })}
+        >
+          History
+        </button>
         <button
           className={`${styles.toolbarBtn} ${panelMode?.kind === 'new' ? styles.active : ''}`}
           onClick={() => setPanelMode(panelMode?.kind === 'new' ? null : { kind: 'new' })}
