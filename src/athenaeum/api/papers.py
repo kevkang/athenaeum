@@ -23,6 +23,7 @@ from athenaeum.domain.models import (
     SentenceEvidenceOut,
     SentenceOut,
 )
+from athenaeum.events import apply_event
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import (
     Paper,
@@ -32,7 +33,6 @@ from athenaeum.storage.models import (
     Project,
     ProjectMember,
     ProjectPaper,
-    ProvenanceLog,
     Statement,
     StatementEvidence,
     ZoteroCredentials,
@@ -300,13 +300,14 @@ async def delete_paper(
         if paper is not None:
             await session.delete(paper)
 
-    session.add(
-        ProvenanceLog(
-            id=uuid.uuid4(),
-            project_id=project_id,
-            kind="paper_removed",
-            payload_json={"paper_id": str(paper_id), "fully_deleted": other_link is None},
-        )
+    await apply_event(
+        session,
+        project_id=project_id,
+        actor_id=user.id,
+        kind="paper_removed",
+        entity_kind="paper",
+        entity_id=paper_id,
+        payload={"paper_id": str(paper_id), "fully_deleted": other_link is None},
     )
     await session.commit()
     await _enqueue_graph_sync(request, project_id)
