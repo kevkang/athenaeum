@@ -22,6 +22,7 @@ import styles from './Workspace.module.css';
 import PapersSidebar, { type UploadQueueItem } from '../components/workspace/PapersSidebar';
 import FindPanel from '../components/workspace/FindPanel';
 import BacktracePanel from '../components/workspace/BacktracePanel';
+import BacktraceTree from '../components/workspace/BacktraceTree';
 
 cytoscape.use(dagre);
 
@@ -883,12 +884,24 @@ export default function WorkspaceView() {
   const [readerMode, setReaderMode] = useState<'read' | 'find' | 'backtrace'>('read');
   const [activeBacktrace, setActiveBacktrace] = useState<{ chainId: string } | null>(null);
 
+  // Right-pane view: the knowledge graph (default, always available) or the
+  // backtrace tree — an always-visible toggle, not gated on a chain
+  // existing yet (unlike the left pane's reader-mode "Backtrace" tab, which
+  // only appears once one has). treeChainId is deliberately independent of
+  // activeBacktrace.chainId: the history browser can load a past chain into
+  // the tree without disturbing whatever the left panel's linear stepper is
+  // currently doing.
+  const [graphViewMode, setGraphViewMode] = useState<'graph' | 'backtrace'>('graph');
+  const [treeChainId, setTreeChainId] = useState<string | null>(null);
+
   const startBacktraceMutation = useMutation({
     mutationFn: ({ sentenceId, text }: { sentenceId: string; text: string }) =>
       backtraceApi.start(projectId, selectedPaperId!, sentenceId, text),
     onSuccess: (chain) => {
       setActiveBacktrace({ chainId: chain.id });
       setReaderMode('backtrace');
+      setTreeChainId(chain.id);
+      setGraphViewMode('backtrace');
     },
   });
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
@@ -1335,6 +1348,23 @@ export default function WorkspaceView() {
           Reset zoom
         </button>
 
+        <div className={styles.toolbarSep} />
+
+        <div className={styles.graphModeToggle}>
+          <button
+            className={`${styles.graphModeBtn} ${graphViewMode === 'graph' ? styles.graphModeBtnActive : ''}`}
+            onClick={() => setGraphViewMode('graph')}
+          >
+            Knowledge graph
+          </button>
+          <button
+            className={`${styles.graphModeBtn} ${graphViewMode === 'backtrace' ? styles.graphModeBtnActive : ''}`}
+            onClick={() => setGraphViewMode('backtrace')}
+          >
+            Backtrace
+          </button>
+        </div>
+
         <span className={styles.countBadge}>{edgeCount} edge{edgeCount !== 1 ? 's' : ''}</span>
 
         <div className={styles.toolbarSep} />
@@ -1448,6 +1478,11 @@ export default function WorkspaceView() {
           onDrop={handleCanvasDrop}
           onContextMenu={(e) => e.preventDefault()}
         >
+          {/* Both layers stay mounted at all times — Cytoscape's creation
+              effect only runs once, tied to its container existing at
+              mount, so conditionally unmounting either canvas would break
+              re-initialization on toggling back. Visibility is CSS-only. */}
+          <div className={styles.canvasLayer} style={{ display: graphViewMode === 'graph' ? 'block' : 'none' }}>
           <div ref={containerRef} className={styles.cytoscapeContainer} />
 
           {/* Evidence-count badges — corner overlay per node, repositioned on every cytoscape render tick */}
@@ -1532,6 +1567,16 @@ export default function WorkspaceView() {
               onStatementCreated={handleStatementCreated}
             />
           )}
+          </div>
+
+          <div className={styles.canvasLayer} style={{ display: graphViewMode === 'backtrace' ? 'block' : 'none' }}>
+            <BacktraceTree
+              projectId={projectId}
+              chainId={treeChainId}
+              visible={graphViewMode === 'backtrace'}
+              onChainLoaded={setTreeChainId}
+            />
+          </div>
         </div>
       </div>
     </div>

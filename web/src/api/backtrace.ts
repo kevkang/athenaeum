@@ -135,6 +135,21 @@ export const backtraceApi = {
   get: (chainId: string) =>
     api.get<BacktraceChainDetail>(`/backtrace/chains/${chainId}`).then((r) => r.data),
 
+  /** Raw .athbacktrace YAML text — download it client-side (see ExportView's
+   * `downloadNow` for the established blob-download pattern) rather than
+   * following a browser navigation, since the request needs an auth header. */
+  exportChain: (chainId: string) =>
+    api
+      .get<string>(`/backtrace/chains/${chainId}/export`, { responseType: 'text' })
+      .then((r) => r.data),
+
+  importChain: (projectId: string, file: File) => {
+    const form = new FormData();
+    form.append('project_id', projectId);
+    form.append('file', file);
+    return api.post<{ chain_id: string }>('/backtrace/import', form).then((r) => r.data);
+  },
+
   list: (projectId: string, paperId?: string) =>
     api
       .get<BacktraceChainSummary[]>('/backtrace/chains', {
