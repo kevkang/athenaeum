@@ -1,5 +1,56 @@
 # Next session — what's left
 
+## Update 2026-07-24 — Compose Pane (new feature, on `compose` branch, not merged)
+
+**Built and live-browser-verified end to end**, all 7 phases: a new "Compose" nav tab (between
+Workspace and Export) with a TipTap/ProseMirror markdown editor (H1–H4, bold, italic). Selecting
+prose the user wrote opens an evidence-linking popover: create a new `Statement` from that text or
+link an existing one, then attach evidence (paper search, a new "Highlights" bookmark system,
+whole papers, or another statement) — all via the *existing* `POST /statements` /
+`POST /statements/{id}/evidence` endpoints, unmodified. Because the Workspace graph reads
+`Statement`/`StatementEvidence` straight from Postgres (`api/graph.py`'s own comment: "served from
+Postgres for immediate consistency"), statements authored in Compose appear on the Workspace graph
+immediately — verified via screenshot, no new sync code needed.
+
+Also new: a persisted **yellow highlight** system in the reader pane (`★ Highlight` button next to
+the existing "Drag to workspace"/"Backtrace" tooltip) — a personal "maybe useful" bookmark,
+independent of formal evidence-linking, backed by a new `highlights` table. Compose's Sources panel
+(right-hand, toggleable) surfaces these project-wide, draggable straight into the document — dropping
+one inserts its text and opens the evidence popover pre-seeded, so creating the statement is the only
+manual step before the citation auto-attaches.
+
+**New backend**: migration `0020_compose.py` (`compose_documents` — one JSONB doc per project,
+`version`-guarded optimistic-concurrency autosave; `highlights` — mirrors `Passage`'s shape minus
+verification fields), `ComposeDocument`/`Highlight` models, `api/compose.py`, `api/highlights.py`.
+Neither new table is event-logged or triggers graph-sync, matching the precedent set by `Annotation`
+(personal/free-text content sits outside the event system by design).
+
+**New frontend**: `ReaderPane` was extracted out of `WorkspaceView.tsx` into its own
+`components/ReaderPane.tsx` (Phase 0, no behavior change — needed since Compose mounts its own
+reader instance in the Sources panel) — `WorkspaceView.tsx` now imports it. New files:
+`pages/ComposeView.tsx` (+ `.module.css`), `extensions/StatementLink.ts` (custom TipTap mark binding
+prose spans to real statement IDs — lives in the ProseMirror doc's own JSON tree, so it can't drift
+as the document is edited), `components/EvidenceLinkPopover.tsx`, `components/StatementPicker.tsx`,
+`components/SourcesPanel.tsx`, `components/ComposeEditor.css` (plain, non-module — TipTap renders
+into DOM outside CSS Modules' reach), `api/compose.ts`, `api/highlights.ts`. New dependency:
+`@tiptap/{core,pm,react,starter-kit}` v3.
+
+**Verification performed**: full backend suite (115 tests, ruff, mypy) and frontend (`tsc`, `eslint`,
+`vite build`) all clean — confirmed no new lint/type errors beyond what already existed on `main`
+before this branch. Live-browser-tested via a Playwright driver script (`chromium-cli` wasn't
+available in this environment) against a locally-seeded test user/project/paper (bypassing ORCID
+OAuth and GROBID ingestion, neither needed for UI verification) — every phase covered: highlight
+create/persist/delete, editor formatting/autosave/reload, statement creation + evidence attach +
+appearance on the Workspace graph, drag-from-Sources-panel auto-attach, and statement-as-evidence
+linking. No project skill existed yet for driving this app headlessly — worth generating one via
+`/run-skill-generator` if this becomes a recurring need.
+
+**Not done / explicitly deferred**: Export-pane integration (turning the compose document + its
+locked statements into a manuscript export) was scoped out of this pass per the original request;
+the data model was kept compatible (`content_json` is portable JSON, every statement it creates is
+an ordinary `Statement` row) but no exporter was built. **Not yet committed** — all changes are
+sitting in the working tree on the `compose` branch, unstaged.
+
 ## Update 2026-07-21 — deploy fixes + browser-based Zotero import
 
 **Deploy is healthy again.** The 0011 migration constraint-ordering bug (UPDATE running before the

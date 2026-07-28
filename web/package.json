@@ -12,6 +12,10 @@
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",
     "@tanstack/react-router": "^1.170.4",
+    "@tiptap/core": "^3.29.0",
+    "@tiptap/pm": "^3.29.0",
+    "@tiptap/react": "^3.29.0",
+    "@tiptap/starter-kit": "^3.29.0",
     "@types/cytoscape": "^3.21.9",
     "@types/cytoscape-dagre": "^2.3.4",
     "axios": "^1.16.1",

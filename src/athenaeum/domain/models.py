@@ -732,3 +732,45 @@ class ZoteroBrowserImportCollectionOut(BaseModel):
 class ZoteroBrowserImportParseResponse(BaseModel):
     items: list[ZoteroBrowserImportItemOut]
     collections: list[ZoteroBrowserImportCollectionOut]
+
+
+# ── Compose ───────────────────────────────────────────────────────────────────
+
+class ComposeDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    content_json: Any
+    version: int
+    updated_by: UUID | None
+    updated_at: datetime
+
+
+class ComposeDocumentUpdate(BaseModel):
+    content_json: dict[str, Any]
+    version: int = Field(description="Client's last-known version, for optimistic concurrency")
+
+
+# ── Highlights ────────────────────────────────────────────────────────────────
+
+class HighlightCreate(BaseModel):
+    project_id: UUID
+    paper_id: UUID
+    sentence_ids: list[UUID] = Field(min_length=1)
+    verbatim_text: str = Field(min_length=1)
+
+
+class HighlightOut(BaseModel):
+    id: UUID
+    project_id: UUID
+    paper_id: UUID
+    sentence_ids: list[UUID]
+    verbatim_text: str
+    author_id: UUID | None
+    created_at: datetime
+    # Denormalized like PassageEvidenceOut, so the cross-paper Compose picker
+    # doesn't need N+1 paper fetches.
+    paper_title: str
+    paper_year: int | None
+    paper_first_author: str | None

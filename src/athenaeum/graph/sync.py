@@ -1,7 +1,16 @@
-"""Postgres → Neo4j sync helpers (all MERGE-based, idempotent)."""
+"""Postgres → Neo4j sync helpers (all MERGE-based, idempotent).
+
+upsert_paper() and sync_paper_cites() stay single-item — worker/jobs.py
+calls them as each paper/citation is individually discovered during
+ingestion, where there's nothing to batch. sync_project_graph() is the
+batch path (a full per-project re-sync), and does batch: one UNWIND-based
+Cypher statement per node/edge *type* regardless of how many papers or
+statements the project has, instead of one round trip per row.
+"""
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import neo4j
 import structlog
@@ -63,84 +72,155 @@ async def sync_paper_cites(
         )
 
 
-async def _sync_statement(neo_session: neo4j.AsyncSession, statement: Statement) -> None:
-    sid = str(statement.id)
+async def _upsert_papers_batch(
+    neo_session: neo4j.AsyncSession, project_id: str, papers: list[Paper]
+) -> None:
+    if not papers:
+        return
     await neo_session.run(
         """
-        MERGE (s:Statement {id: $id})
-        SET s.project_id = $project_id,
-            s.type       = $type,
-            s.status     = $status,
-            s.assertion  = $assertion
+        UNWIND $rows AS row
+        MERGE (p:Paper {id: row.id})
+        SET p.doi = row.doi, p.title = row.title, p.year = row.year,
+            p.venue = row.venue, p.openalex_id = row.openalex_id
+        WITH p
+        MATCH (proj:Project {id: $project_id})
+        MERGE (proj)-[:HAS_PAPER]->(p)
         """,
-        id=sid,
-        project_id=str(statement.project_id),
-        type=statement.type,
-        status=statement.status,
-        assertion=statement.assertion,
+        project_id=project_id,
+        rows=[
+            {
+                "id": str(p.id), "doi": p.doi, "title": p.title,
+                "year": p.year, "venue": p.venue, "openalex_id": p.openalex_id,
+            }
+            for p in papers
+        ],
     )
 
 
-async def _sync_statement_evidence(
-    neo_session: neo4j.AsyncSession,
-    sid: str,
-    evidence: list[StatementEvidence],
+async def _upsert_statements_batch(
+    neo_session: neo4j.AsyncSession, statements: list[Statement]
 ) -> None:
+    if not statements:
+        return
     await neo_session.run(
-        "MATCH (s:Statement {id: $id})-[r:HAS_EVIDENCE]->() DELETE r",
-        id=sid,
+        """
+        UNWIND $rows AS row
+        MERGE (s:Statement {id: row.id})
+        SET s.project_id = row.project_id, s.type = row.type,
+            s.status = row.status, s.assertion = row.assertion
+        """,
+        rows=[
+            {
+                "id": str(s.id), "project_id": str(s.project_id),
+                "type": s.type, "status": s.status, "assertion": s.assertion,
+            }
+            for s in statements
+        ],
     )
-    for ev in evidence:
-        tid = str(ev.target_id)
-        tk = ev.target_kind
-        if tk == "paper":
-            await neo_session.run(
-                """
-                MATCH (s:Statement {id: $sid})
-                MERGE (t:Paper {id: $tid})
-                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
-                """,
-                sid=sid, tid=tid, role=ev.role, kind=tk,
-            )
-        elif tk == "statement":
-            await neo_session.run(
-                """
-                MATCH (s:Statement {id: $sid})
-                MATCH (t:Statement {id: $tid})
-                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
-                """,
-                sid=sid, tid=tid, role=ev.role, kind=tk,
-            )
-        else:
-            await neo_session.run(
-                """
-                MATCH (s:Statement {id: $sid})
-                MERGE (t:Artifact {id: $tid, kind: $kind})
-                MERGE (s)-[:HAS_EVIDENCE {role: $role, target_kind: $kind}]->(t)
-                """,
-                sid=sid, tid=tid, role=ev.role, kind=tk,
-            )
 
 
-async def _sync_statement_edges(
+async def _sync_all_statement_evidence(
     neo_session: neo4j.AsyncSession,
-    sid: str,
-    edges: list[StatementEdge],
+    statement_ids: list[str],
+    evidence_rows: list[StatementEvidence],
 ) -> None:
+    """Clears every statement's outgoing HAS_EVIDENCE edges and re-creates
+    them from `evidence_rows`, in three UNWIND batches (grouped by target
+    node label — Cypher can't parameterize a node's label any more than it
+    can a relationship type) rather than one round trip per evidence row."""
+    if not statement_ids:
+        return
     await neo_session.run(
-        "MATCH (s:Statement {id: $id})-[r:RELATES_TO|SUPPORTS|IN_TENSION]->() DELETE r",
-        id=sid,
+        """
+        UNWIND $sids AS sid
+        MATCH (s:Statement {id: sid})-[r:HAS_EVIDENCE]->()
+        DELETE r
+        """,
+        sids=statement_ids,
     )
-    for edge in edges:
+
+    by_kind: dict[str, list[dict[str, Any]]] = {"paper": [], "statement": [], "other": []}
+    for ev in evidence_rows:
+        bucket = ev.target_kind if ev.target_kind in ("paper", "statement") else "other"
+        by_kind[bucket].append({
+            "sid": str(ev.statement_id), "tid": str(ev.target_id),
+            "role": ev.role, "kind": ev.target_kind,
+        })
+
+    if by_kind["paper"]:
+        await neo_session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (s:Statement {id: row.sid})
+            MERGE (t:Paper {id: row.tid})
+            MERGE (s)-[:HAS_EVIDENCE {role: row.role, target_kind: row.kind}]->(t)
+            """,
+            rows=by_kind["paper"],
+        )
+    if by_kind["statement"]:
+        await neo_session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (s:Statement {id: row.sid})
+            MATCH (t:Statement {id: row.tid})
+            MERGE (s)-[:HAS_EVIDENCE {role: row.role, target_kind: row.kind}]->(t)
+            """,
+            rows=by_kind["statement"],
+        )
+    if by_kind["other"]:
+        await neo_session.run(
+            """
+            UNWIND $rows AS row
+            MATCH (s:Statement {id: row.sid})
+            MERGE (t:Artifact {id: row.tid, kind: row.kind})
+            MERGE (s)-[:HAS_EVIDENCE {role: row.role, target_kind: row.kind}]->(t)
+            """,
+            rows=by_kind["other"],
+        )
+
+
+async def _sync_all_statement_edges(
+    neo_session: neo4j.AsyncSession,
+    statement_ids: list[str],
+    edge_rows: list[StatementEdge],
+) -> None:
+    """Same batching approach as evidence, grouped by relationship type
+    instead of target label. `edge_rows` is filtered to edges *originating*
+    from one of `statement_ids` — matching the original per-statement sync,
+    which only ever managed a statement's outgoing edges; an edge whose
+    from_statement_id belongs to a different project is left for that
+    project's own sync to handle."""
+    if not statement_ids:
+        return
+    await neo_session.run(
+        """
+        UNWIND $sids AS sid
+        MATCH (s:Statement {id: sid})-[r:RELATES_TO|SUPPORTS|IN_TENSION]->()
+        DELETE r
+        """,
+        sids=statement_ids,
+    )
+
+    statement_id_set = set(statement_ids)
+    by_type: dict[str, list[dict[str, str]]] = {}
+    for edge in edge_rows:
+        if str(edge.from_statement_id) not in statement_id_set:
+            continue
         rel_type = _EDGE_RELATION_TYPES.get(edge.relation, "RELATES_TO")
+        by_type.setdefault(rel_type, []).append({
+            "from_id": str(edge.from_statement_id), "to_id": str(edge.to_statement_id),
+        })
+
+    for rel_type, rows in by_type.items():
         await neo_session.run(
             f"""
-            MATCH (a:Statement {{id: $from_id}})
-            MATCH (b:Statement {{id: $to_id}})
+            UNWIND $rows AS row
+            MATCH (a:Statement {{id: row.from_id}})
+            MATCH (b:Statement {{id: row.to_id}})
             MERGE (a)-[:{rel_type}]->(b)
             """,
-            from_id=str(edge.from_statement_id),
-            to_id=str(edge.to_statement_id),
+            rows=rows,
         )
 
 
@@ -179,33 +259,17 @@ async def sync_project_graph(
                 )
             ))
 
-    evidence_by_statement: dict[str, list[StatementEvidence]] = {}
-    for ev in evidence_rows:
-        evidence_by_statement.setdefault(str(ev.statement_id), []).append(ev)
-    edges_by_statement: dict[str, list[StatementEdge]] = {}
-    for edge in edge_rows:
-        edges_by_statement.setdefault(str(edge.from_statement_id), []).append(edge)
+    statement_id_strs = [str(sid) for sid in statement_ids]
 
     async with driver.session() as neo:
         await neo.run(
             "MERGE (p:Project {id: $id}) SET p.title = $title",
             id=str(project_id), title=project.title,
         )
-        for paper in papers:
-            await upsert_paper(neo, paper)
-            await neo.run(
-                """
-                MATCH (proj:Project {id: $pid})
-                MATCH (p:Paper {id: $paper_id})
-                MERGE (proj)-[:HAS_PAPER]->(p)
-                """,
-                pid=str(project_id), paper_id=str(paper.id),
-            )
-        for statement in statements:
-            sid = str(statement.id)
-            await _sync_statement(neo, statement)
-            await _sync_statement_evidence(neo, sid, evidence_by_statement.get(sid, []))
-            await _sync_statement_edges(neo, sid, edges_by_statement.get(sid, []))
+        await _upsert_papers_batch(neo, str(project_id), papers)
+        await _upsert_statements_batch(neo, statements)
+        await _sync_all_statement_evidence(neo, statement_id_strs, evidence_rows)
+        await _sync_all_statement_edges(neo, statement_id_strs, edge_rows)
 
     log.info(
         "neo4j.sync_done",

@@ -81,6 +81,17 @@ only at the application layer.
 
 ## 3. Knowledge graph layer (Postgres → Neo4j projection)
 
+> **Note (as-built, differs from the plan below):** the main statement-graph
+> view (`GET /projects/:id/graph`, §5) reads directly from Postgres, not the
+> Neo4j projection — see `api/graph.py`'s own section comment, "served from
+> Postgres for immediate consistency." Ghost-paper surfacing and co-citation
+> neighbors (§5's `/ghosts` endpoint and the co-citation query) do genuinely
+> go through Neo4j as this section describes. The pragmatic reasoning:
+> avoiding projection lag on the primary UI outweighs the architectural
+> purity of routing everything through the graph layer. The rest of this
+> section describes the original intent and still applies to ghosts/
+> co-citation.
+
 Postgres holds truth. **Neo4j is a derived read model**, rebuilt from events emitted on
 Postgres writes. The application never writes directly to Neo4j from request handlers.
 

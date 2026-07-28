@@ -682,3 +682,56 @@ class ZoteroLocalConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ComposeDocument(Base):
+    """One per project — the long-form TipTap/ProseMirror draft. Headings
+    (H1-H4) give it internal structure (Intro/Methods/Discussion) without
+    being separate documents. `version` backs optimistic-concurrency checks
+    on the autosave PUT; this is not event-logged (see events/applier.py
+    docstring) — continuous free-text editing isn't a discrete transition
+    the way Statement.status changes are, and logging every debounced
+    autosave would flood /history."""
+    __tablename__ = "compose_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Highlight(Base):
+    """A personal 'maybe useful' bookmark in the reader pane — yellow,
+    independent of the evidence-linking system (StatementEvidence). Mirrors
+    Passage's shape (paper_id, sentence_ids array, verbatim_text) minus the
+    verification/synthesis bookkeeping, which is meaningless for a bookmark
+    the user made unilaterally while reading. Not event-logged, matching
+    Annotation's precedent for personal auxiliary content."""
+    __tablename__ = "highlights"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
+    )
+    sentence_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False
+    )
+    verbatim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

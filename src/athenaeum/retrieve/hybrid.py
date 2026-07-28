@@ -35,9 +35,15 @@ async def _vector_search(
     k: int,
     paper_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    vec = _vec_str(embedding)
     paper_clause = "AND ps.paper_id = :paper_id" if paper_id is not None else ""
-    params: dict[str, Any] = {"pid": str(project_id), "k": k}
+    # Bound as a parameter, not f-string-interpolated into the SQL text — the
+    # value is currently always our own embedding model's output, but the
+    # query text itself shouldn't depend on that staying true. Written as
+    # CAST(:vec AS vector), not :vec::vector — SQLAlchemy's text() bind-param
+    # regex requires a bind name not be immediately followed by another `:`,
+    # so `:vec::vector` silently fails to recognize `:vec` as a parameter at
+    # all and leaves it as literal (invalid) SQL text instead of binding it.
+    params: dict[str, Any] = {"pid": str(project_id), "k": k, "vec": _vec_str(embedding)}
     if paper_id is not None:
         params["paper_id"] = str(paper_id)
     rows = await session.execute(
@@ -49,13 +55,13 @@ async def _vector_search(
                 ps.text,
                 ps.char_start,
                 ps.char_end,
-                (1 - (ps.embedding <=> '{vec}'::vector))::float AS score
+                (1 - (ps.embedding <=> CAST(:vec AS vector)))::float AS score
             FROM paper_sentences ps
             JOIN project_papers pp ON pp.paper_id = ps.paper_id
             WHERE pp.project_id = :pid
               AND ps.embedding IS NOT NULL
               {paper_clause}
-            ORDER BY ps.embedding <=> '{vec}'::vector
+            ORDER BY ps.embedding <=> CAST(:vec AS vector)
             LIMIT :k
         """),
         params,

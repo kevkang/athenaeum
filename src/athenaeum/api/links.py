@@ -56,6 +56,24 @@ def _link_to_out(link: KnowledgeLink, from_title: str, to_title: str) -> Knowled
     )
 
 
+async def _batch_resolve_titles(
+    session: SessionDep, refs: set[tuple[str, uuid.UUID]]
+) -> dict[tuple[str, uuid.UUID], str]:
+    """Same fallback text as _resolve_title, but two queries total regardless
+    of how many refs there are, instead of one `session.get` per ref."""
+    paper_ids = {rid for rtype, rid in refs if rtype == "paper"}
+    synthesis_ids = {rid for rtype, rid in refs if rtype == "synthesis"}
+
+    titles: dict[tuple[str, uuid.UUID], str] = {}
+    if paper_ids:
+        for p in await session.scalars(select(Paper).where(Paper.id.in_(paper_ids))):
+            titles[("paper", p.id)] = p.title
+    if synthesis_ids:
+        for s in await session.scalars(select(Synthesis).where(Synthesis.id.in_(synthesis_ids))):
+            titles[("synthesis", s.id)] = s.claim_text[:120]
+    return titles
+
+
 async def _check_membership(
     session: SessionDep, project_id: uuid.UUID, user_id: uuid.UUID
 ) -> None:
@@ -142,11 +160,22 @@ async def list_links(
 
     stmt = stmt.order_by(KnowledgeLink.created_at.desc())
     rows = list(await session.scalars(stmt))
+    if not rows:
+        return []
+
+    refs = {(link.from_type, link.from_id) for link in rows} | {
+        (link.to_type, link.to_id) for link in rows
+    }
+    titles = await _batch_resolve_titles(session, refs)
 
     result: list[KnowledgeLinkOut] = []
     for link in rows:
-        from_title = await _resolve_title(session, link.from_type, link.from_id)
-        to_title = await _resolve_title(session, link.to_type, link.to_id)
+        from_title = titles.get(
+            (link.from_type, link.from_id), f"[deleted {link.from_type} {link.from_id}]"
+        )
+        to_title = titles.get(
+            (link.to_type, link.to_id), f"[deleted {link.to_type} {link.to_id}]"
+        )
         result.append(_link_to_out(link, from_title, to_title))
     return result
 

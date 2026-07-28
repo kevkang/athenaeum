@@ -5,6 +5,9 @@ services:
   api:
     command: uvicorn athenaeum.main:app --host 0.0.0.0 --port 8000 --workers 2
     environment:
+      # Trips the startup guard in main.py if JWT_SECRET is ever left at its
+      # dev default here — see _reject_insecure_defaults.
+      ENVIRONMENT: production
       JWT_SECRET: ${JWT_SECRET}
       ORCID_CLIENT_ID: ${ORCID_CLIENT_ID}
       ORCID_CLIENT_SECRET: ${ORCID_CLIENT_SECRET}

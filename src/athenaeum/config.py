@@ -6,11 +6,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Resolve .env relative to this file so the path is correct regardless of CWD.
 _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
+# Shared with main.py's startup guard, which refuses to boot with this value
+# outside of ENVIRONMENT=development — see that check for why.
+DEFAULT_JWT_SECRET = "dev-secret-change-me"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )
+
+    # "development" (the default) is what a bare `pip install -e .` run or
+    # the dev docker-compose.yml get implicitly. Real deployments must set
+    # ENVIRONMENT=production explicitly (docker-compose.prod.yml does) — see
+    # main.py's startup guard, which uses this to reject the default
+    # jwt_secret instead of silently booting with a publicly-known key.
+    environment: str = "development"
 
     database_url: str = (
         "postgresql+asyncpg://athenaeum:athenaeum@localhost:5432/athenaeum"
@@ -20,7 +31,7 @@ class Settings(BaseSettings):
     neo4j_password: str = "athenaeum"
     redis_url: str = "redis://localhost:6379/0"
 
-    jwt_secret: str = "dev-secret-change-me"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expiry_seconds: int = 60 * 60 * 24 * 7
 
@@ -36,7 +47,13 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     synthesis_model: str = "claude-opus-4-7"
-    checker_model: str = "claude-opus-4-7"
+    # Deliberately a different model line from synthesis_model, not just a
+    # different size within the same one — PLAN.md's own design intent is
+    # that extraction and its independent check shouldn't share training-time
+    # blind spots. Also deliberately NOT the same lightweight tier used for
+    # summarize_model/zotero_find_model below: this is the credibility-
+    # critical path, not a place to economize.
+    checker_model: str = "claude-sonnet-5"
     summarize_model: str = "claude-haiku-4-5-20251001"
     zotero_find_model: str = "claude-haiku-4-5-20251001"
 

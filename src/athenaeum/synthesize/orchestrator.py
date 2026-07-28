@@ -23,6 +23,7 @@ from athenaeum.storage.models import (
     SynthesisEvidence,
     SynthesisStep,
 )
+from athenaeum.synthesize.passage_util import is_contiguous
 from athenaeum.synthesize.prompts import (
     CLASSIFY_SIGNALS_TOOL,
     EXTRACT_PASSAGES_TOOL,
@@ -166,6 +167,18 @@ async def _step_extract(
                 .order_by(PaperSentence.ord)
             )
         ).all()
+        if not is_contiguous([r.ord for r in rows]):
+            # A non-contiguous selection would still join into what reads as
+            # one continuous quote, silently skipping whatever sentence(s)
+            # sit in the gap. Reject rather than publish a spliced "verbatim"
+            # passage — mirrors the invalid_sentence_ids/bad_sentence_uuid
+            # handling above.
+            log.warning(
+                "extract.non_contiguous_sentences",
+                sentence_ids=valid_sids,
+                ords=[r.ord for r in rows],
+            )
+            continue
         verbatim = " ".join(r.text for r in rows)
 
         # paper_id: prefer what the LLM returned, fall back to the hit's paper id

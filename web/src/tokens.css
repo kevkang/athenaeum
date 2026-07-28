@@ -30,6 +30,12 @@
   --question: #b39ac4;
   --annotation: #c9a876;
   --orcid: #a6ce39;
+  /* Personal 'maybe useful' bookmark in the reader pane — a true yellow,
+   * deliberately far in hue from both --link (blue, the AI found-quote
+   * highlight) and --accent (gold, the real-evidence highlight) so none of
+   * the three can be mistaken for one another. */
+  --highlight-yellow: #d9c34a;
+  --highlight-yellow-bg: rgba(217, 195, 74, 0.28);
 
   /* YAML syntax */
   --yaml-key: #c9a876;
@@ -80,6 +86,10 @@
   --question: #7c5a91;
   --annotation: #2f7bbf;
   --orcid: #6f8f22;
+  /* Deepened from the dark-mode value, same rationale as the status colors
+   * above — a wash-out risk against off-white. */
+  --highlight-yellow: #96801a;
+  --highlight-yellow-bg: rgba(150, 128, 26, 0.22);
 
   /* YAML syntax */
   --yaml-key: #2f7bbf;
