@@ -9,7 +9,7 @@ structured search components so that a retrieval system can locate supporting ev
 in scientific papers.
 
 Be precise: prefer specific technical terms over generic language.
-Produce 2–4 distinct search queries that together cover the claim from different angles.
+Produce 2-4 distinct search queries that together cover the claim from different angles.
 """
 
 EXTRACT_SYSTEM = """\
@@ -209,7 +209,9 @@ CLASSIFY_SIGNALS_TOOL: dict = {
 
 VERIFY_PASSAGES_TOOL: dict = {
     "name": "verify_passages",
-    "description": "Verify that each passage is verbatim scientific text and is relevant to the claim.",
+    "description": (
+        "Verify that each passage is verbatim scientific text and is relevant to the claim."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
@@ -260,11 +262,15 @@ SELECT_RELEVANT_ITEMS_TOOL: dict = {
                         },
                         "quote": {
                             "type": "string",
-                            "description": "An exact verbatim substring of this candidate's abstract.",
+                            "description": (
+                                "An exact verbatim substring of this candidate's abstract."
+                            ),
                         },
                         "relevance_note": {
                             "type": "string",
-                            "description": "One-line explanation of why this candidate is relevant.",
+                            "description": (
+                                "One-line explanation of why this candidate is relevant."
+                            ),
                         },
                     },
                     "required": ["candidate_index", "quote", "relevance_note"],

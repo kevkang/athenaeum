@@ -1,8 +1,6 @@
 """Round-trip tests for the .ath archive format (no database required)."""
 import uuid
 
-import pytest
-
 from athenaeum.archive.export import ATH_VERSION, dumps, loads
 
 _PROJECT_ID = str(uuid.uuid4())

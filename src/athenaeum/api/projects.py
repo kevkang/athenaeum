@@ -5,7 +5,6 @@ from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.models import PaperOut, ProjectCreate, ProjectOut, ProjectUpdate, SynthesisOut
-
 from athenaeum.storage.models import Paper, Project, ProjectMember, ProjectPaper, Synthesis
 
 router = APIRouter(prefix="/projects", tags=["projects"])

@@ -1,8 +1,6 @@
 """POST /search — hybrid sentence retrieval scoped to a project."""
 from __future__ import annotations
 
-import asyncio
-
 import structlog
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select

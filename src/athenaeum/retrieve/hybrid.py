@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.domain.models import PaperSnippet, SentenceHit
-from athenaeum.storage.models import Paper, PaperSection, PaperSentence, ProjectPaper
+from athenaeum.storage.models import Paper, PaperSection, PaperSentence
 
 _RRF_K = 60  # standard constant; lower values weight high-rank hits more
 

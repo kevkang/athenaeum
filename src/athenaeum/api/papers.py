@@ -167,19 +167,22 @@ _ALLOWED_SUFFIXES = {".pdf", ".txt"}
 
 @router.post("/upload", response_model=PaperOut, status_code=status.HTTP_201_CREATED)
 async def upload_paper(
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
     project_id: uuid.UUID = Form(...),
     file: UploadFile = File(...),
     title: str | None = Form(default=None),
     doi: str | None = Form(default=None),
-    session: SessionDep = ...,
-    user: CurrentUserDep = ...,
-    request: Request = ...,
 ) -> Paper:
     settings = get_settings()
     if not settings.s3_bucket:
         raise HTTPException(status_code=501, detail="S3 upload not configured (set S3_BUCKET)")
 
-    suffix = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    suffix = (
+        "." + (file.filename or "").rsplit(".", 1)[-1].lower()
+        if "." in (file.filename or "") else ""
+    )
     if suffix not in _ALLOWED_SUFFIXES:
         raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported")
 
@@ -335,16 +338,19 @@ async def delete_paper(
 @router.post("/{paper_id}/reupload", response_model=PaperOut)
 async def reupload_paper(
     paper_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
     file: UploadFile = File(...),
-    session: SessionDep = ...,
-    user: CurrentUserDep = ...,
-    request: Request = ...,
 ) -> Paper:
     settings = get_settings()
     if not settings.s3_bucket:
         raise HTTPException(status_code=501, detail="S3 upload not configured (set S3_BUCKET)")
 
-    suffix = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
+    suffix = (
+        "." + (file.filename or "").rsplit(".", 1)[-1].lower()
+        if "." in (file.filename or "") else ""
+    )
     if suffix not in _ALLOWED_SUFFIXES:
         raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported")
 
@@ -414,7 +420,7 @@ async def summarize_paper(
                 content=(
                     f'Paper title: "{paper.title}"\n\n'
                     f"Full text (excerpt):\n{text[:8000]}\n\n"
-                    "Write a concise abstract (150–250 words) covering the paper's "
+                    "Write a concise abstract (150-250 words) covering the paper's "
                     "objectives, methods, key findings, and conclusions. "
                     "Output only the abstract text."
                 ),
@@ -484,7 +490,9 @@ async def retry_ingest(
             )
             log.info("papers.zotero_retry_enqueued", paper_id=str(paper.id))
         except Exception as exc:
-            log.warning("papers.zotero_retry_enqueue_failed", paper_id=str(paper.id), error=str(exc))
+            log.warning(
+                "papers.zotero_retry_enqueue_failed", paper_id=str(paper.id), error=str(exc)
+            )
 
         return paper
 
@@ -503,9 +511,9 @@ async def retry_ingest(
 
 @router.get("/search", response_model=list[OpenAlexSearchResult])
 async def search_openalex(
+    user: CurrentUserDep,
     q: str = Query(min_length=3, max_length=500),
     per_page: int = Query(default=15, ge=1, le=25),
-    user: CurrentUserDep = ...,
 ) -> list[OpenAlexSearchResult]:
     from athenaeum.ingest.openalex import search_works
 
@@ -514,7 +522,7 @@ async def search_openalex(
         hits = await loop.run_in_executor(None, search_works, q, per_page)
     except Exception as exc:
         log.warning("papers.openalex_search_failed", q=q, error=str(exc))
-        raise HTTPException(status_code=502, detail="OpenAlex search failed")
+        raise HTTPException(status_code=502, detail="OpenAlex search failed") from exc
     return [
         OpenAlexSearchResult(
             openalex_id=h.openalex_id,
@@ -636,7 +644,9 @@ async def list_evidence_sentences(
     for target_id, statement_id, role, assertion in rows:
         sids = passage_sentence_map.get(target_id, [target_id])
         result.extend(
-            SentenceEvidenceOut(sentence_id=sid, statement_id=statement_id, assertion=assertion, role=role)
+            SentenceEvidenceOut(
+                sentence_id=sid, statement_id=statement_id, assertion=assertion, role=role
+            )
             for sid in sids
         )
     return result

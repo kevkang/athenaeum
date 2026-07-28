@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 
-
 _TEI_NS = "http://www.tei-c.org/ns/1.0"
 _NS = {"tei": _TEI_NS}
 _GROBID_TIMEOUT = httpx.Timeout(30.0, read=300.0)

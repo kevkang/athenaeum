@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -145,7 +145,7 @@ async def save_credentials(
     else:
         row.zotero_user_id = key_info.user_id
         row.api_key_encrypted = encrypted
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(UTC)
 
     await session.commit()
     return ZoteroCredentialsStatus(connected=True, zotero_user_id=key_info.user_id)

@@ -5,16 +5,16 @@ Revises: 0009
 Create Date: 2026-07-10
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision: str = "0010"
-down_revision: Union[str, None] = "0009"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0009"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -35,7 +35,9 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
-        sa.CheckConstraint("library_type IN ('user','group')", name="zotero_credentials_library_type_chk"),
+        sa.CheckConstraint(
+            "library_type IN ('user','group')", name="zotero_credentials_library_type_chk",
+        ),
     )
 
     op.add_column("papers", sa.Column("zotero_item_key", sa.String(50), nullable=True))

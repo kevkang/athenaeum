@@ -67,7 +67,9 @@ def _build_db(path: Path) -> None:
     conn.execute("INSERT INTO itemData VALUES (1, 4, 4)")
     conn.execute("INSERT INTO creators VALUES (1, 'Ada', 'Borton', 0)")
     conn.execute("INSERT INTO itemCreators VALUES (1, 1, 0)")
-    conn.execute("INSERT INTO itemDataValues VALUES (7, 'Chemosynthesis sustains vent ecosystems.')")
+    conn.execute(
+        "INSERT INTO itemDataValues VALUES (7, 'Chemosynthesis sustains vent ecosystems.')"
+    )
     conn.execute("INSERT INTO itemData VALUES (1, 5, 7)")
 
     conn.execute(

@@ -43,7 +43,7 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+    projects: Mapped[list[Project]] = relationship(back_populates="owner")
 
 
 class Project(Base):
@@ -62,7 +62,7 @@ class Project(Base):
     )
 
     owner: Mapped[User] = relationship(back_populates="projects")
-    members: Mapped[list["ProjectMember"]] = relationship(back_populates="project")
+    members: Mapped[list[ProjectMember]] = relationship(back_populates="project")
 
 
 class ProjectMember(Base):
@@ -231,7 +231,7 @@ class Synthesis(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    steps: Mapped[list["SynthesisStep"]] = relationship(
+    steps: Mapped[list[SynthesisStep]] = relationship(
         back_populates="synthesis", order_by="SynthesisStep.ord", passive_deletes=True
     )
 
@@ -346,7 +346,7 @@ class Statement(Base):
         UUID(as_uuid=True), ForeignKey("syntheses.id", ondelete="SET NULL")
     )
 
-    evidence: Mapped[list["StatementEvidence"]] = relationship(back_populates="statement")
+    evidence: Mapped[list[StatementEvidence]] = relationship(back_populates="statement")
 
 
 class StatementEvidence(Base):
@@ -568,7 +568,9 @@ class LLMCredentials(Base):
     precedence over the server's global ANTHROPIC_API_KEY for that user's
     Find/summarize requests — see provider/resolver.py."""
     __tablename__ = "llm_credentials"
-    __table_args__ = (CheckConstraint("provider IN ('anthropic')", name="llm_credentials_provider_chk"),)
+    __table_args__ = (
+        CheckConstraint("provider IN ('anthropic')", name="llm_credentials_provider_chk"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
@@ -608,7 +610,7 @@ class BacktraceChain(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    hops: Mapped[list["BacktraceHop"]] = relationship(
+    hops: Mapped[list[BacktraceHop]] = relationship(
         back_populates="chain", order_by="BacktraceHop.hop_index", passive_deletes=True
     )
 

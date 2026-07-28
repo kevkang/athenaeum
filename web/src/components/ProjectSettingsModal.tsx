@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectsApi } from '../api/projects';
 import { membersApi } from '../api/members';
@@ -32,13 +32,20 @@ export default function ProjectSettingsModal({
   const [isPublic, setIsPublic] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (project) {
-      setTitle(project.title);
-      setDescription(project.description ?? '');
-      setIsPublic(project.is_public);
-    }
-  }, [project]);
+  // Adjusted during render, not in an effect — the React-recommended pattern
+  // for resetting local editable state when an async-loaded value arrives
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  // Calling setState in an effect body would commit once with stale state
+  // and then re-render a second time; this bails out and re-renders once.
+  // Re-fires after save too, since updateMutation invalidates the query —
+  // the form should reflect the canonical saved value, not just the local edit.
+  const [syncedProject, setSyncedProject] = useState(project);
+  if (project && project !== syncedProject) {
+    setSyncedProject(project);
+    setTitle(project.title);
+    setDescription(project.description ?? '');
+    setIsPublic(project.is_public);
+  }
 
   const updateMutation = useMutation({
     mutationFn: () =>

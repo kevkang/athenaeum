@@ -1,7 +1,7 @@
 """Per-user "bring your own" LLM API key management (Claude, for now)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import anthropic
 import structlog
@@ -68,7 +68,7 @@ async def save_credentials(
         session.add(row)
     else:
         row.api_key_encrypted = encrypted
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(UTC)
 
     await session.commit()
     return LLMCredentialsStatus(connected=True, provider="anthropic")

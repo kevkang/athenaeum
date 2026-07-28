@@ -27,7 +27,11 @@ async def test_rank_candidates_maps_singular_first_author_to_creators_list() -> 
     hits = [_hit("W1", "Ada Borton", "Methane fluxes correlate with temperature.")]
     provider = _FakeProvider(
         {"name": "select_relevant_items", "input": {"results": [
-            {"candidate_index": 0, "quote": "Methane fluxes correlate with temperature.", "relevance_note": "on topic"},
+            {
+                "candidate_index": 0,
+                "quote": "Methane fluxes correlate with temperature.",
+                "relevance_note": "on topic",
+            },
         ]}}
     )
 

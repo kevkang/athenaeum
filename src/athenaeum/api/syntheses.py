@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
+from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.models import (
     EvaluationOut,
     SynthesisCreate,
@@ -21,7 +22,6 @@ from athenaeum.domain.models import (
     SynthesisStepOut,
     SynthesisUpdate,
 )
-from athenaeum.domain.authors import first_author_name
 from athenaeum.provider.resolver import NoLLMKeyConfigured, resolve_api_key
 from athenaeum.security import decode_session_token
 from athenaeum.storage.db import get_sessionmaker
@@ -33,7 +33,6 @@ from athenaeum.storage.models import (
     Synthesis,
     SynthesisEvidence,
     SynthesisStep,
-    User,
 )
 
 log = structlog.get_logger()

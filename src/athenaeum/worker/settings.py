@@ -1,4 +1,7 @@
 """arq WorkerSettings — entry point for `arq athenaeum.worker.settings.WorkerSettings`."""
+from collections.abc import Callable
+from typing import ClassVar
+
 from arq.connections import RedisSettings
 
 from athenaeum.config import get_settings
@@ -16,7 +19,10 @@ _settings = get_settings()
 
 
 class WorkerSettings:
-    functions = [
+    # arq reads this as a class attribute, not an instance one — there's no
+    # per-instance mutation risk RUF012 normally warns about, but ClassVar
+    # makes that explicit rather than silencing the check.
+    functions: ClassVar[list[Callable]] = [
         ingest_paper,
         ingest_zotero_item,
         ingest_local_zotero_item,

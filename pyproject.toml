@@ -59,9 +59,29 @@ packages = ["src/athenaeum"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.mypy]
+# These third-party libraries don't ship type stubs or a py.typed marker —
+# mypy can't check calls into them either way, so "missing stubs" just adds
+# noise on top of that same fact. Scoped per-module rather than a global
+# ignore_missing_imports, so a real missing-stub issue on a *typed* library
+# would still be caught.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*", "pyalex.*", "pysbd.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection idiom is `param: T = Query(...)` /
+# `= File(...)` / `= Form(...)` — B008 flags this as a general
+# mutable-default-argument anti-pattern, but FastAPI evaluates these
+# specially per-request rather than once at function-definition time, so
+# it isn't the bug the rule is designed to catch. Scoped to api/ rather
+# than disabled project-wide, since a real mutable-default bug elsewhere
+# should still be caught.
+"src/athenaeum/api/*.py" = ["B008"]

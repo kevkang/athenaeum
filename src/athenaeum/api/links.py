@@ -31,11 +31,11 @@ async def _resolve_title(
     session: SessionDep, ref_type: str, ref_id: uuid.UUID
 ) -> str:
     if ref_type == "paper":
-        obj = await session.get(Paper, ref_id)
-        return obj.title if obj else f"[deleted paper {ref_id}]"
+        paper = await session.get(Paper, ref_id)
+        return paper.title if paper else f"[deleted paper {ref_id}]"
     if ref_type == "synthesis":
-        obj = await session.get(Synthesis, ref_id)
-        return obj.claim_text[:120] if obj else f"[deleted synthesis {ref_id}]"
+        synthesis = await session.get(Synthesis, ref_id)
+        return synthesis.claim_text[:120] if synthesis else f"[deleted synthesis {ref_id}]"
     return str(ref_id)
 
 
@@ -114,9 +114,9 @@ async def create_link(
     session.add(link)
     try:
         await session.commit()
-    except Exception:
+    except Exception as exc:
         await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "Link already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Link already exists") from exc
     await session.refresh(link)
 
     from_title = await _resolve_title(session, link.from_type, link.from_id)

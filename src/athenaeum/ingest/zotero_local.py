@@ -233,7 +233,9 @@ def _matches_query_broad(conn: sqlite3.Connection, item_id: int, query_lc: str) 
     if query_lc in title.lower() or query_lc in abstract.lower():
         return True
     for creator in _item_creators(conn, item_id):
-        name = creator.get("name") or f"{creator.get('firstName', '')} {creator.get('lastName', '')}"
+        name = creator.get("name") or (
+            f"{creator.get('firstName', '')} {creator.get('lastName', '')}"
+        )
         if query_lc in name.lower():
             return True
     return False

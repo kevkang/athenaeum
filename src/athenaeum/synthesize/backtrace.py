@@ -30,7 +30,7 @@ from athenaeum.ingest.openalex import (
 )
 from athenaeum.provider.base import Message, Provider
 from athenaeum.retrieve.hybrid import search as hybrid_search
-from athenaeum.storage.models import Passage, PaperSentence
+from athenaeum.storage.models import PaperSentence, Passage
 from athenaeum.synthesize.find_ranking import FindCandidate, rank_candidates
 from athenaeum.synthesize.passage_util import is_contiguous
 from athenaeum.synthesize.prompts import (
@@ -98,17 +98,24 @@ async def identify_cited_work(
 ) -> IdentifyResult:
     if not candidates:
         return IdentifyResult(
-            candidate=None, reasoning="This paper has no OpenAlex references to trace.", confident=False
+            candidate=None,
+            reasoning="This paper has no OpenAlex references to trace.",
+            confident=False,
         )
 
-    user_msg = f"CITING SENTENCE:\n{citing_text}\n\nCANDIDATE REFERENCES:\n{_format_candidates(candidates)}"
+    user_msg = (
+        f"CITING SENTENCE:\n{citing_text}\n\n"
+        f"CANDIDATE REFERENCES:\n{_format_candidates(candidates)}"
+    )
     _, tool_result = await provider.complete(
         messages=[Message(role="user", content=user_msg)],
         system=BACKTRACE_IDENTIFY_SYSTEM,
         tools=[IDENTIFY_CITED_WORK_TOOL],
     )
     if tool_result is None:
-        return IdentifyResult(candidate=None, reasoning="No response from provider.", confident=False)
+        return IdentifyResult(
+            candidate=None, reasoning="No response from provider.", confident=False,
+        )
 
     input_ = tool_result["input"]
     idx = input_.get("candidate_index")
@@ -119,7 +126,9 @@ async def identify_cited_work(
     return IdentifyResult(candidate=candidates[idx], reasoning=reasoning, confident=confident)
 
 
-async def extract_abstract_quote(provider: Provider, claim: str, meta: OpenAlexMeta) -> tuple[str, str] | None:
+async def extract_abstract_quote(
+    provider: Provider, claim: str, meta: OpenAlexMeta,
+) -> tuple[str, str] | None:
     """Try to find a verbatim quote supporting `claim` in `meta`'s own abstract.
     Returns (quote, relevance_note), or None if no verified match."""
     if not meta.abstract:

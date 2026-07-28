@@ -101,7 +101,9 @@ async def _load_chain_and_hops(
     await _require_member(session, chain.project_id, user_id)
     hops = list(
         await session.scalars(
-            select(BacktraceHop).where(BacktraceHop.chain_id == chain_id).order_by(BacktraceHop.hop_index)
+            select(BacktraceHop)
+            .where(BacktraceHop.chain_id == chain_id)
+            .order_by(BacktraceHop.hop_index)
         )
     )
     return chain, hops
@@ -175,7 +177,9 @@ async def _resolve_hop(
         excluded.add(origin_openalex_id)
     available = [c for c in candidates if c.openalex_id not in excluded]
     if not available:
-        return None, None, "No new references to trace — every candidate is already part of this chain."
+        return None, None, (
+            "No new references to trace — every candidate is already part of this chain."
+        )
 
     if manual_openalex_id is not None:
         chosen = next((c for c in available if c.openalex_id == manual_openalex_id), None)
@@ -252,7 +256,8 @@ async def _resolve_hop(
     if arq_pool is not None:
         try:
             await arq_pool.enqueue_job(
-                "ingest_paper", str(paper.id), oa_pdf_url=meta.oa_pdf_url, backtrace_hop_id=str(hop.id)
+                "ingest_paper", str(paper.id),
+                oa_pdf_url=meta.oa_pdf_url, backtrace_hop_id=str(hop.id),
             )
         except Exception:
             log.warning("backtrace.ingest_enqueue_failed", hop_id=str(hop.id))
@@ -281,12 +286,15 @@ def _step_result(
     )
 
 
-def _candidates_out(candidates: list[ReferenceCandidate] | None) -> list[BacktraceCandidateOut] | None:
+def _candidates_out(
+    candidates: list[ReferenceCandidate] | None,
+) -> list[BacktraceCandidateOut] | None:
     if candidates is None:
         return None
     return [
         BacktraceCandidateOut(
-            openalex_id=c.openalex_id, title=c.title, authors=c.authors, year=c.year, doi=c.doi, venue=c.venue
+            openalex_id=c.openalex_id, title=c.title, authors=c.authors,
+            year=c.year, doi=c.doi, venue=c.venue,
         )
         for c in candidates
     ]
@@ -327,7 +335,9 @@ async def start_chain(
 
     settings = get_settings()
     try:
-        provider = await get_provider_for_user(session, user.id, settings.zotero_find_model, settings)
+        provider = await get_provider_for_user(
+            session, user.id, settings.zotero_find_model, settings
+        )
     except NoLLMKeyConfigured as exc:
         raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
 
@@ -383,6 +393,14 @@ async def _continue_or_pick(
             )
         last.user_decision = "continued"
         hop_index, from_openalex_id, citing_text = len(hops), last.to_openalex_id, last.quote
+        if citing_text is None:
+            # Shouldn't happen — resolution_status in _RESOLVED_STATES is
+            # supposed to imply a quote was found — but quote has no NOT
+            # NULL constraint at the DB level, so guard rather than crash
+            # deeper in _resolve_hop on a data-integrity edge case.
+            raise HTTPException(
+                status_code=409, detail="The latest hop has no quote text to trace from."
+            )
     else:
         origin_openalex_id = await session.scalar(
             select(Paper.openalex_id).where(Paper.id == chain.origin_paper_id)
@@ -393,7 +411,9 @@ async def _continue_or_pick(
 
     settings = get_settings()
     try:
-        provider = await get_provider_for_user(session, user.id, settings.zotero_find_model, settings)
+        provider = await get_provider_for_user(
+            session, user.id, settings.zotero_find_model, settings
+        )
     except NoLLMKeyConfigured as exc:
         raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
 
@@ -440,19 +460,23 @@ async def pick_hop(
     stream_id: str | None = Query(default=None),
 ) -> BacktraceStepResult:
     return await _continue_or_pick(
-        session, user, request, chain_id, manual_openalex_id=payload.openalex_id, stream_id=stream_id
+        session, user, request, chain_id,
+        manual_openalex_id=payload.openalex_id, stream_id=stream_id,
     )
 
 
 @router.post("/chains/{chain_id}/stop", response_model=BacktraceChainDetailOut)
-async def stop_chain(chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep) -> BacktraceChainDetailOut:
+async def stop_chain(
+    chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
+) -> BacktraceChainDetailOut:
     chain, hops = await _load_chain_and_hops(session, chain_id, user.id)
     if not hops:
         raise HTTPException(status_code=400, detail="No hops to stop at.")
     hops[-1].user_decision = "stopped_here"
     await session.commit()
     return BacktraceChainDetailOut(
-        chain=BacktraceChainOut.model_validate(chain), hops=[BacktraceHopOut.model_validate(h) for h in hops]
+        chain=BacktraceChainOut.model_validate(chain),
+        hops=[BacktraceHopOut.model_validate(h) for h in hops],
     )
 
 
@@ -491,7 +515,9 @@ async def recheck_hop(
 
     settings = get_settings()
     try:
-        provider = await get_provider_for_user(session, user.id, settings.zotero_find_model, settings)
+        provider = await get_provider_for_user(
+            session, user.id, settings.zotero_find_model, settings
+        )
     except NoLLMKeyConfigured as exc:
         raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
 
@@ -512,10 +538,13 @@ async def recheck_hop(
 
 
 @router.get("/chains/{chain_id}", response_model=BacktraceChainDetailOut)
-async def get_chain(chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep) -> BacktraceChainDetailOut:
+async def get_chain(
+    chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
+) -> BacktraceChainDetailOut:
     chain, hops = await _load_chain_and_hops(session, chain_id, user.id)
     return BacktraceChainDetailOut(
-        chain=BacktraceChainOut.model_validate(chain), hops=[BacktraceHopOut.model_validate(h) for h in hops]
+        chain=BacktraceChainOut.model_validate(chain),
+        hops=[BacktraceHopOut.model_validate(h) for h in hops],
     )
 
 
@@ -542,7 +571,10 @@ async def list_chains(
             .group_by(BacktraceHop.chain_id)
         )
     ).all()
-    counts = dict(count_rows)
+    # Dict comprehension, not dict(count_rows) — SQLAlchemy Row objects
+    # unpack like tuples at runtime, but mypy's dict() overloads don't
+    # recognize Row[tuple[...]] as Iterable[tuple[_KT, _VT]].
+    counts = {chain_id: count for chain_id, count in count_rows}
 
     return [
         BacktraceChainSummaryOut(

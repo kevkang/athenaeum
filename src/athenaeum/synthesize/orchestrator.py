@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -17,8 +18,8 @@ from athenaeum.provider.base import Message, Provider
 from athenaeum.provider.resolver import get_provider_for_user
 from athenaeum.retrieve.hybrid import search as hybrid_search
 from athenaeum.storage.models import (
-    Passage,
     PaperSentence,
+    Passage,
     Synthesis,
     SynthesisEvidence,
     SynthesisStep,
@@ -31,8 +32,8 @@ from athenaeum.synthesize.prompts import (
     INTERPRET_QUERY_TOOL,
     QUERY_INTERP_SYSTEM,
     SIGNAL_SYSTEM,
-    VERIFY_SYSTEM,
     VERIFY_PASSAGES_TOOL,
+    VERIFY_SYSTEM,
 )
 from athenaeum.synthesize.verifier import verify_passages
 
@@ -185,7 +186,10 @@ async def _step_extract(
         raw_paper_id = pd.get("paper_id")
         fallback_paper_id = str(valid_ids[valid_sids[0]].paper.id)
         try:
-            paper_id = uuid.UUID(_clean_uuid(str(raw_paper_id))) if raw_paper_id else uuid.UUID(fallback_paper_id)
+            paper_id = (
+                uuid.UUID(_clean_uuid(str(raw_paper_id))) if raw_paper_id
+                else uuid.UUID(fallback_paper_id)
+            )
         except ValueError:
             paper_id = uuid.UUID(fallback_paper_id)
 
@@ -209,7 +213,8 @@ async def _step_signal(
     passages: list[Passage],
 ) -> list[dict[str, Any]]:
     passage_lines = "\n".join(
-        f"[{i}] {p.verbatim_text[:300]}…" if len(p.verbatim_text) > 300 else f"[{i}] {p.verbatim_text}"
+        f"[{i}] {p.verbatim_text[:300]}…" if len(p.verbatim_text) > 300
+        else f"[{i}] {p.verbatim_text}"
         for i, p in enumerate(passages)
     )
     user_msg = f"CLAIM: {claim}\n\nPASSAGES:\n{passage_lines}"
@@ -336,12 +341,14 @@ async def run_synthesis(
             synthesis.verification_rate = verification_rate
             synthesis.checker_model = settings.checker_model
 
-            # Mark passages as verified / not verified
-            for passage, verified in zip(passages, verified_flags):
+            # Mark passages as verified / not verified. strict=True: verify_passages()
+            # always returns one flag per passage by construction — a mismatch would
+            # mean flags got silently misassigned to the wrong passages.
+            for passage, verified in zip(passages, verified_flags, strict=True):
                 passage.verified = verified
                 if verified:
-                    from datetime import datetime, timezone
-                    passage.verified_at = datetime.now(timezone.utc)
+                    from datetime import datetime
+                    passage.verified_at = datetime.now(UTC)
                     passage.checker_model = settings.checker_model
 
             synthesis.status = "done"

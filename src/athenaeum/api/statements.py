@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -113,7 +113,11 @@ async def create_statement(
         user.id,
         "statement.created",
         entity_id=statement.id,
-        payload={"statement_id": str(statement.id), "type": payload.type, "assertion": statement.assertion},
+        payload={
+            "statement_id": str(statement.id),
+            "type": payload.type,
+            "assertion": statement.assertion,
+        },
     )
     await session.commit()
     await session.refresh(statement)
@@ -255,7 +259,7 @@ async def lock_statement(
         raise HTTPException(status_code=409, detail="Statement is already locked")
 
     statement.status = "locked"
-    statement.locked_at = datetime.now(timezone.utc)
+    statement.locked_at = datetime.now(UTC)
     await _record_event(
         session,
         statement.project_id,
@@ -476,7 +480,7 @@ async def lock_all_statements(
         )
     )
     statements = list(rows)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for statement in statements:
         statement.status = "locked"
         statement.locked_at = now

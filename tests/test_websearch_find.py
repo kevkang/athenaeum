@@ -6,7 +6,9 @@ from athenaeum.synthesize.websearch_find import (
 )
 
 
-def _citation(url: str, title: str | None, cited_text: str, kind: str = "web_search_result_location"):
+def _citation(
+    url: str, title: str | None, cited_text: str, kind: str = "web_search_result_location"
+):
     return SimpleNamespace(type=kind, url=url, title=title, cited_text=cited_text)
 
 
@@ -21,7 +23,9 @@ class _FakeProvider:
         self.last_call: dict | None = None
 
     async def complete_raw(self, messages, system, max_tokens=4096, tools=None):
-        self.last_call = {"messages": messages, "system": system, "tools": tools, "max_tokens": max_tokens}
+        self.last_call = {
+            "messages": messages, "system": system, "tools": tools, "max_tokens": max_tokens,
+        }
         return self._response
 
 
@@ -41,7 +45,10 @@ async def test_find_via_web_search_extracts_citations_as_matches() -> None:
     content = [
         _text_block(
             "Methane fluxes rise sharply with soil temperature, per one field study.",
-            citations=[_citation("https://example.com/paper", "Permafrost Methane Study", "Methane fluxes rise sharply with temperature.")],
+            citations=[_citation(
+                "https://example.com/paper", "Permafrost Methane Study",
+                "Methane fluxes rise sharply with temperature.",
+            )],
         ),
     ]
     provider = _FakeProvider(content)
@@ -61,7 +68,10 @@ async def test_find_via_web_search_extracts_citations_as_matches() -> None:
 async def test_find_via_web_search_dedupes_by_url() -> None:
     content = [
         _text_block("First mention.", citations=[_citation("https://a.com", "A", "quote one")]),
-        _text_block("Second mention of the same source.", citations=[_citation("https://a.com", "A", "quote two")]),
+        _text_block(
+            "Second mention of the same source.",
+            citations=[_citation("https://a.com", "A", "quote two")],
+        ),
     ]
     provider = _FakeProvider(content)
 
@@ -75,7 +85,10 @@ async def test_find_via_web_search_ignores_non_text_blocks_and_non_web_citations
     content = [
         SimpleNamespace(type="server_tool_use", name="web_search", input={"query": "x"}),
         SimpleNamespace(type="web_search_tool_result", content=[]),
-        _text_block("A claim citing a document, not the web.", citations=[_citation("doc://x", "Doc", "quote", kind="page_location")]),
+        _text_block(
+            "A claim citing a document, not the web.",
+            citations=[_citation("doc://x", "Doc", "quote", kind="page_location")],
+        ),
         _text_block("No citations here at all.", citations=None),
     ]
     provider = _FakeProvider(content)
@@ -86,7 +99,11 @@ async def test_find_via_web_search_ignores_non_text_blocks_and_non_web_citations
 
 
 async def test_find_via_web_search_falls_back_to_url_when_no_title() -> None:
-    content = [_text_block("A source with no title.", citations=[_citation("https://b.com", None, "quote")])]
+    content = [
+        _text_block(
+            "A source with no title.", citations=[_citation("https://b.com", None, "quote")]
+        )
+    ]
     provider = _FakeProvider(content)
 
     matches = await find_via_web_search(provider, "query")

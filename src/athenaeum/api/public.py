@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import UUID, func, select
+from sqlalchemy import func, select
 
 from athenaeum.api.deps import SessionDep
 from athenaeum.domain.models import (

@@ -1,12 +1,10 @@
 """PDF acquisition chain: OA URL → Unpaywall → Semantic Scholar."""
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-
 
 _PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf"}
 _PDF_TIMEOUT = httpx.Timeout(10.0, read=60.0)

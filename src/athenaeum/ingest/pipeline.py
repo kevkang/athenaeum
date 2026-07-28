@@ -170,7 +170,11 @@ async def _finalize_sections(
         )
         embeddings = await embed_sentences(sentence_texts, settings.embed_model)
 
-        for span, embedding in zip(spans, embeddings):
+        # strict=True: spans and embeddings must be 1:1 by construction (one
+        # embedding per sentence_texts entry) — a length mismatch would mean
+        # embeddings got silently misaligned to the wrong sentences, which
+        # should fail loudly rather than zip to the shorter length.
+        for span, embedding in zip(spans, embeddings, strict=True):
             db_sent = PaperSentence(
                 id=uuid.uuid4(),
                 paper_id=paper.id,
@@ -219,7 +223,8 @@ async def backfill_openalex_id(paper: Paper, session: AsyncSession) -> bool:
     existing = await session.scalar(select(Paper).where(Paper.openalex_id == meta.openalex_id))
     if existing is not None and existing.id != paper.id:
         log.info(
-            "ingest.openalex_backfill_duplicate", paper_id=str(paper.id), existing_paper_id=str(existing.id)
+            "ingest.openalex_backfill_duplicate",
+            paper_id=str(paper.id), existing_paper_id=str(existing.id),
         )
         return False
 

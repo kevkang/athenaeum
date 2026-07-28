@@ -5,16 +5,16 @@ Revises: 0008
 Create Date: 2026-05-27
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 revision: str = "0009"
-down_revision: Union[str, None] = "0008"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0008"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -36,7 +36,8 @@ def upgrade() -> None:
     # 3. Copy questions into bricks as type='question'
     op.execute("""
         INSERT INTO bricks
-            (id, project_id, type, status, assertion, author_id, drafted_at, built_from_synthesis_id)
+            (id, project_id, type, status, assertion, author_id, drafted_at,
+             built_from_synthesis_id)
         SELECT
             id, project_id, 'question', status, body, author_id, created_at, NULL
         FROM questions
@@ -67,12 +68,18 @@ def downgrade() -> None:
     op.create_table(
         "questions",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "project_id", UUID(as_uuid=True),
+            sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False,
+        ),
         sa.Column("author_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("status", sa.String(20), nullable=False),
         sa.Column("attached_to", JSONB(), nullable=False, server_default="[]"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.CheckConstraint("status IN ('open','resolved','wontfix')", name="questions_status_chk"),
     )
 

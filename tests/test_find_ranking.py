@@ -31,7 +31,11 @@ async def test_rank_candidates_excludes_hits_with_no_abstract() -> None:
     ]
     provider = _FakeProvider(
         {"name": "select_relevant_items", "input": {"results": [
-            {"candidate_index": 0, "quote": "Melatonin reduces oxidative stress in mitochondria.", "relevance_note": "on topic"},
+            {
+                "candidate_index": 0,
+                "quote": "Melatonin reduces oxidative stress in mitochondria.",
+                "relevance_note": "on topic",
+            },
         ]}}
     )
 
@@ -46,7 +50,11 @@ async def test_rank_candidates_discards_fabricated_quote() -> None:
     candidates = [_candidate("A", "The real abstract text.")]
     provider = _FakeProvider(
         {"name": "select_relevant_items", "input": {"results": [
-            {"candidate_index": 0, "quote": "a quote that does not appear anywhere", "relevance_note": "x"},
+            {
+                "candidate_index": 0,
+                "quote": "a quote that does not appear anywhere",
+                "relevance_note": "x",
+            },
         ]}}
     )
 

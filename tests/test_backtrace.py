@@ -62,8 +62,12 @@ async def test_identify_cited_work_no_candidates_returns_unconfident() -> None:
 
 async def test_identify_cited_work_confident_match() -> None:
     candidates = [
-        backtrace.ReferenceCandidate(openalex_id="W1", title="Paper A", authors=["Smith"], year=2020),
-        backtrace.ReferenceCandidate(openalex_id="W2", title="Paper B", authors=["Jones"], year=2018),
+        backtrace.ReferenceCandidate(
+            openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
+        ),
+        backtrace.ReferenceCandidate(
+            openalex_id="W2", title="Paper B", authors=["Jones"], year=2018,
+        ),
     ]
     provider = _FakeProvider(
         {"name": "identify_cited_work", "input": {
@@ -71,7 +75,9 @@ async def test_identify_cited_work_confident_match() -> None:
         }}
     )
 
-    result = await backtrace.identify_cited_work(provider, "consistent with Smith et al. 2020", candidates)
+    result = await backtrace.identify_cited_work(
+        provider, "consistent with Smith et al. 2020", candidates
+    )
 
     assert result.candidate is not None
     assert result.candidate.openalex_id == "W1"
@@ -82,7 +88,11 @@ async def test_identify_cited_work_low_confidence_still_surfaces_guess() -> None
     """confident=False doesn't null the candidate — callers (e.g. api/backtrace.py's
     _resolve_hop) use `confident` alone to decide whether to auto-proceed; the guess
     itself is preserved for the UI/manual-pick fallback."""
-    candidates = [backtrace.ReferenceCandidate(openalex_id="W1", title="Paper A", authors=["Smith"], year=2020)]
+    candidates = [
+        backtrace.ReferenceCandidate(
+            openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
+        )
+    ]
     provider = _FakeProvider(
         {"name": "identify_cited_work", "input": {
             "candidate_index": 0, "reasoning": "Weak signal.", "confident": False,
@@ -97,7 +107,11 @@ async def test_identify_cited_work_low_confidence_still_surfaces_guess() -> None
 
 
 async def test_identify_cited_work_out_of_range_index_ignored() -> None:
-    candidates = [backtrace.ReferenceCandidate(openalex_id="W1", title="Paper A", authors=["Smith"], year=2020)]
+    candidates = [
+        backtrace.ReferenceCandidate(
+            openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
+        )
+    ]
     provider = _FakeProvider(
         {"name": "identify_cited_work", "input": {
             "candidate_index": 5, "reasoning": "hallucinated index", "confident": True,
@@ -110,7 +124,11 @@ async def test_identify_cited_work_out_of_range_index_ignored() -> None:
 
 
 async def test_identify_cited_work_no_tool_result() -> None:
-    candidates = [backtrace.ReferenceCandidate(openalex_id="W1", title="Paper A", authors=["Smith"], year=2020)]
+    candidates = [
+        backtrace.ReferenceCandidate(
+            openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
+        )
+    ]
     provider = _FakeProvider(None)
 
     result = await backtrace.identify_cited_work(provider, "sentence", candidates)

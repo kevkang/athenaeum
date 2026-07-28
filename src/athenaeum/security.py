@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import jwt
@@ -8,7 +8,7 @@ from athenaeum.config import get_settings
 
 def issue_session_token(user_id: UUID) -> str:
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "iat": int(now.timestamp()),

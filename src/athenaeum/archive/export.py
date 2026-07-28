@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import StringIO
 from typing import Any
 
@@ -15,12 +15,12 @@ from athenaeum.storage.models import (
     ComposeDocument,
     Dataset,
     Evaluation,
+    Event,
     Highlight,
     Paper,
     Passage,
     Project,
     ProjectPaper,
-    Event,
     Statement,
     StatementEdge,
     StatementEvidence,
@@ -117,7 +117,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
 
     return {
         "ath_version": ATH_VERSION,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_at": datetime.now(UTC).isoformat(),
         "project": {
             "id": str(project.id),
             "title": project.title,

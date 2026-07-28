@@ -1,5 +1,5 @@
 import secrets
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, status

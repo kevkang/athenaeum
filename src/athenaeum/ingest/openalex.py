@@ -1,7 +1,7 @@
 """Fetch paper metadata from the OpenAlex API via pyalex."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 import pyalex
@@ -159,7 +159,9 @@ def fetch_metadata(doi: str, email: str = "contact@athenaeum.app") -> OpenAlexMe
     return _meta_from_work(work, fallback_doi=bare_doi)
 
 
-def fetch_metadata_by_id(openalex_id: str, email: str = "contact@athenaeum.app") -> OpenAlexMeta | None:
+def fetch_metadata_by_id(
+    openalex_id: str, email: str = "contact@athenaeum.app",
+) -> OpenAlexMeta | None:
     """Single-work lookup by OpenAlex ID — used once a specific reference has
     been identified (by identify_cited_work), to get its full abstract +
     open-access PDF URL (deliberately not fetched in bulk by

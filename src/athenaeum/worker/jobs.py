@@ -8,7 +8,7 @@ from functools import partial
 import httpx
 import redis.asyncio as aioredis
 import structlog
-from sqlalchemy import insert, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
@@ -18,7 +18,13 @@ from athenaeum.ingest.openalex import fetch_referenced_work_ids
 from athenaeum.ingest.pipeline import run_ingest, run_local_zotero_ingest, run_zotero_ingest
 from athenaeum.ingest.zotero import ZoteroCreds
 from athenaeum.provider.resolver import NoLLMKeyConfigured, get_provider_for_user
-from athenaeum.storage.models import BacktraceChain, BacktraceHop, CitationEdge, Paper, ZoteroCredentials
+from athenaeum.storage.models import (
+    BacktraceChain,
+    BacktraceHop,
+    CitationEdge,
+    Paper,
+    ZoteroCredentials,
+)
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
 from athenaeum.synthesize.orchestrator import run_synthesis
 
@@ -133,7 +139,9 @@ async def _resolve_backtrace_hop_after_ingest(ctx: dict, hop_id: uuid.UUID, sett
         else:
             hop.resolution_status = "no_match"
         await session.commit()
-        log.info("backtrace.hop_resolved_full_text", hop_id=str(hop_id), status=hop.resolution_status)
+        log.info(
+            "backtrace.hop_resolved_full_text", hop_id=str(hop_id), status=hop.resolution_status
+        )
 
 
 async def _sync_citations(ctx: dict, paper_id: uuid.UUID, settings) -> None:
