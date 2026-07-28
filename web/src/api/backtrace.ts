@@ -13,6 +13,8 @@ export type BacktraceUserDecision = 'pending' | 'continued' | 'stopped_here';
 export interface BacktraceHop {
   id: string;
   chain_id: string;
+  // NULL means this hop branches directly off the chain's origin paper.
+  parent_hop_id: string | null;
   hop_index: number;
   to_openalex_id: string;
   to_doi: string | null;
@@ -43,8 +45,12 @@ export interface BacktraceChain {
 export interface BacktraceChainSummary {
   id: string;
   origin_paper_id: string;
+  origin_sentence_id: string | null;
   origin_text: string;
   hop_count: number;
+  max_depth: number;
+  leaf_count: number;
+  has_pending: boolean;
   created_at: string;
 }
 
@@ -55,6 +61,10 @@ export interface BacktraceCandidate {
   year: number | null;
   doi: string | null;
   venue: string | null;
+  // The ranking model's own stated confidence/reasoning for this specific
+  // candidate — a human still picks, this only narrows the options.
+  reasoning: string;
+  confident: boolean;
 }
 
 export interface BacktraceChainDetail {
@@ -62,52 +72,62 @@ export interface BacktraceChainDetail {
   hops: BacktraceHop[];
 }
 
-export interface BacktraceStepResult {
-  chain: BacktraceChain;
-  hop: BacktraceHop | null;
-  candidates: BacktraceCandidate[] | null;
+/** Response for /rank — advisory only, never creates a hop. */
+export interface BacktraceRankResult {
+  candidates: BacktraceCandidate[];
   message: string | null;
   model: string | null;
 }
 
-export const backtraceApi = {
-  start: (
-    projectId: string,
-    paperId: string,
-    sentenceId: string | null,
-    claimText: string,
-    streamId?: string,
-  ) =>
-    api
-      .post<BacktraceStepResult>(
-        '/backtrace/chains',
-        { project_id: projectId, paper_id: paperId, sentence_id: sentenceId, claim_text: claimText },
-        { params: { stream_id: streamId } },
-      )
-      .then((r) => r.data),
+/** Response for /recheck — a hop plus an optional status note. */
+export interface BacktraceHopResult {
+  hop: BacktraceHop;
+  message: string | null;
+}
 
-  continueChain: (chainId: string, streamId?: string) =>
+export const backtraceApi = {
+  start: (projectId: string, paperId: string, sentenceId: string | null, claimText: string) =>
     api
-      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/continue`, null, {
-        params: { stream_id: streamId },
+      .post<BacktraceChain>('/backtrace/chains', {
+        project_id: projectId,
+        paper_id: paperId,
+        sentence_id: sentenceId,
+        claim_text: claimText,
       })
       .then((r) => r.data),
 
-  pick: (chainId: string, openalexId: string, streamId?: string) =>
+  /** parentHopId null ranks against the chain's origin paper. Creates no hop. */
+  rank: (chainId: string, parentHopId: string | null, streamId?: string) =>
     api
-      .post<BacktraceStepResult>(
-        `/backtrace/chains/${chainId}/pick`,
-        { openalex_id: openalexId },
+      .post<BacktraceRankResult>(
+        `/backtrace/chains/${chainId}/rank`,
+        { parent_hop_id: parentHopId },
         { params: { stream_id: streamId } },
       )
       .then((r) => r.data),
 
-  stop: (chainId: string) =>
-    api.post<BacktraceChainDetail>(`/backtrace/chains/${chainId}/stop`).then((r) => r.data),
+  /** Commits one specific candidate (from a prior `rank` call) as a real hop. */
+  commitHop: (
+    chainId: string,
+    parentHopId: string | null,
+    openalexId: string,
+    reasoning: string | null,
+    streamId?: string,
+  ) =>
+    api
+      .post<BacktraceHop>(
+        `/backtrace/chains/${chainId}/hops`,
+        { parent_hop_id: parentHopId, openalex_id: openalexId, reasoning },
+        { params: { stream_id: streamId } },
+      )
+      .then((r) => r.data),
+
+  stopHop: (chainId: string, hopId: string) =>
+    api.post<BacktraceHop>(`/backtrace/chains/${chainId}/hops/${hopId}/stop`).then((r) => r.data),
 
   recheckHop: (chainId: string, hopId: string, streamId?: string) =>
     api
-      .post<BacktraceStepResult>(`/backtrace/chains/${chainId}/hops/${hopId}/recheck`, null, {
+      .post<BacktraceHopResult>(`/backtrace/chains/${chainId}/hops/${hopId}/recheck`, null, {
         params: { stream_id: streamId },
       })
       .then((r) => r.data),

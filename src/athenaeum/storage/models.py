@@ -637,6 +637,16 @@ class BacktraceHop(Base):
     chain_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("backtrace_chains.id", ondelete="CASCADE"), nullable=False
     )
+    # NULL means this hop branches directly off the chain's origin paper.
+    # Together with hop_index (now "depth from origin," not a unique
+    # per-chain sequence number — several hops can share a depth as
+    # siblings), this makes a chain's hops a tree rather than a line: a hop
+    # can have any number of children, letting a user explore several of a
+    # claim's citations as parallel branches instead of only ever
+    # continuing from "the last hop."
+    parent_hop_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("backtrace_hops.id", ondelete="CASCADE")
+    )
     hop_index: Mapped[int] = mapped_column(Integer, nullable=False)
     # Snapshotted target-paper metadata — the target usually isn't an ingested
     # Paper row yet (see to_paper_id), so identity/display data lives here.

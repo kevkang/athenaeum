@@ -37,7 +37,7 @@ from athenaeum.synthesize.prompts import (
     BACKTRACE_IDENTIFY_SYSTEM,
     EXTRACT_PASSAGES_TOOL,
     EXTRACT_SYSTEM,
-    IDENTIFY_CITED_WORK_TOOL,
+    RANK_REFERENCES_TOOL,
 )
 
 log = structlog.get_logger()
@@ -54,10 +54,15 @@ class ReferenceCandidate:
 
 
 @dataclass
-class IdentifyResult:
-    candidate: ReferenceCandidate | None
+class RankedCandidate:
+    candidate: ReferenceCandidate
     reasoning: str
     confident: bool
+
+
+@dataclass
+class IdentifyResult:
+    candidates: list[RankedCandidate]
 
 
 def _names(meta_authors: list[dict]) -> list[str]:
@@ -96,12 +101,11 @@ def _format_candidates(candidates: list[ReferenceCandidate]) -> str:
 async def identify_cited_work(
     provider: Provider, citing_text: str, candidates: list[ReferenceCandidate]
 ) -> IdentifyResult:
+    """Rank which of `candidates` the citing sentence could plausibly invoke —
+    a human picks one (or several, to open as parallel branches) from the
+    result, so this never auto-commits to a single guess itself."""
     if not candidates:
-        return IdentifyResult(
-            candidate=None,
-            reasoning="This paper has no OpenAlex references to trace.",
-            confident=False,
-        )
+        return IdentifyResult(candidates=[])
 
     user_msg = (
         f"CITING SENTENCE:\n{citing_text}\n\n"
@@ -110,20 +114,28 @@ async def identify_cited_work(
     _, tool_result = await provider.complete(
         messages=[Message(role="user", content=user_msg)],
         system=BACKTRACE_IDENTIFY_SYSTEM,
-        tools=[IDENTIFY_CITED_WORK_TOOL],
+        tools=[RANK_REFERENCES_TOOL],
     )
     if tool_result is None:
-        return IdentifyResult(
-            candidate=None, reasoning="No response from provider.", confident=False,
-        )
+        return IdentifyResult(candidates=[])
 
-    input_ = tool_result["input"]
-    idx = input_.get("candidate_index")
-    reasoning = input_.get("reasoning", "")
-    confident = bool(input_.get("confident", False))
-    if not isinstance(idx, int) or idx < 0 or idx >= len(candidates):
-        return IdentifyResult(candidate=None, reasoning=reasoning, confident=False)
-    return IdentifyResult(candidate=candidates[idx], reasoning=reasoning, confident=confident)
+    ranked: list[RankedCandidate] = []
+    for m in tool_result["input"].get("matches", []):
+        idx = m.get("candidate_index")
+        if not isinstance(idx, int) or idx < 0 or idx >= len(candidates):
+            continue
+        ranked.append(
+            RankedCandidate(
+                candidate=candidates[idx],
+                reasoning=m.get("reasoning", ""),
+                confident=bool(m.get("confident", False)),
+            )
+        )
+    # Confident matches first; stable sort preserves the model's own
+    # most-to-least-plausible ordering within each confidence bucket, so
+    # candidates[0] is the sensible default to pre-check in the UI.
+    ranked.sort(key=lambda r: not r.confident)
+    return IdentifyResult(candidates=ranked)
 
 
 async def extract_abstract_quote(
