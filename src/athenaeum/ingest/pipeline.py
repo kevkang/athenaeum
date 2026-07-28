@@ -17,7 +17,7 @@ from athenaeum.ingest.acquire import acquire_pdf
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.ingest.grobid import Section, parse_pdf
 from athenaeum.ingest.htmlextract import extract_main_text
-from athenaeum.ingest.openalex import fetch_metadata
+from athenaeum.ingest.openalex import OpenAlexMeta, fetch_metadata
 from athenaeum.ingest.zotero import (
     ZoteroAuthError,
     ZoteroCreds,
@@ -31,7 +31,7 @@ from athenaeum.ingest.zotero_local import (
     resolve_configured_data_dir,
     resolve_local_attachment_file,
 )
-from athenaeum.storage.models import Paper, PaperSection, PaperSentence
+from athenaeum.storage.models import Paper, PaperSection, PaperSentence, ProjectPaper
 
 log = structlog.get_logger()
 
@@ -237,6 +237,50 @@ async def backfill_openalex_id(paper: Paper, session: AsyncSession) -> bool:
         paper.year = meta.year
     log.info("ingest.openalex_backfilled", paper_id=str(paper.id), openalex_id=meta.openalex_id)
     return True
+
+
+async def find_or_create_target_paper(
+    session: AsyncSession, project_id: uuid.UUID, user_id: uuid.UUID, meta: OpenAlexMeta
+) -> Paper:
+    """Resolve `meta` to a real Paper row in this project — reusing an
+    existing paper (matched by DOI, then OpenAlex id) if one already exists
+    anywhere in the DB, linking it into the project if it isn't already, or
+    else creating a new ghost (not-yet-ingested) Paper. Shared by live
+    backtrace hop resolution and .athbacktrace import, both of which need to
+    point a hop at whatever UUID a cited paper already has in *this*
+    database rather than assuming a fresh id."""
+    existing = None
+    if meta.doi:
+        existing = await session.scalar(select(Paper).where(Paper.doi == meta.doi))
+    if existing is None and meta.openalex_id:
+        existing = await session.scalar(select(Paper).where(Paper.openalex_id == meta.openalex_id))
+
+    if existing is not None:
+        already_linked = await session.scalar(
+            select(ProjectPaper).where(
+                ProjectPaper.project_id == project_id, ProjectPaper.paper_id == existing.id
+            )
+        )
+        if already_linked is None:
+            session.add(ProjectPaper(project_id=project_id, paper_id=existing.id, added_by=user_id))
+            await session.flush()
+        return existing
+
+    paper = Paper(
+        id=uuid.uuid4(),
+        doi=meta.doi,
+        openalex_id=meta.openalex_id,
+        title=meta.title,
+        authors_json=meta.authors,
+        venue=meta.venue,
+        year=meta.year,
+        abstract=meta.abstract,
+        status="ghost",
+    )
+    session.add(paper)
+    session.add(ProjectPaper(project_id=project_id, paper_id=paper.id, added_by=user_id))
+    await session.flush()
+    return paper
 
 
 # ── Zotero ingestion ────────────────────────────────────────────────────────────

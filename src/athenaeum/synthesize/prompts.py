@@ -78,20 +78,22 @@ numbered list of that paper's OWN references — each with only a title, authors
 do not have the referenced papers' content, and you do not have the citing paper's full
 bibliography, only OpenAlex's record of which works it cites).
 
-Your job is to identify which single reference the sentence is most likely citing, by matching
-author names and/or years mentioned in the sentence against the candidate list.
+Your job is to rank which of the candidate references the sentence could plausibly be citing,
+most to least likely, by matching author names and/or years mentioned in the sentence against
+the candidate list. A human reviewer picks from your ranked list — you are narrowing their
+options, not making the final call alone.
 
 IMPORTANT CONSTRAINTS:
 1. Numbered/bracketed in-text citation markers (e.g. "[12]", "[3,4]") do NOT correspond to the
    numbering of the candidate list below — that numbering is arbitrary. Do not use it to infer a
    match. Rely on author names and/or publication years mentioned in or near the sentence.
-2. If the sentence names an author and year that clearly matches exactly one candidate, that's a
-   confident match.
-3. If the sentence has no identifiable citation, or names an author/year that doesn't match any
-   candidate, or could plausibly match several candidates equally, set confident to false and
-   omit candidate_index (or leave it accurate but low-confidence — a human will review either way).
-4. Never guess just to produce an answer. An honest "no confident match" is more useful than a
-   wrong one.
+2. If the sentence names an author and year that clearly matches exactly one candidate, mark
+   that one confident: true.
+3. Include every candidate worth showing a human reviewer, not just your single best guess — but
+   mark confident: false for any whose match is uncertain or could plausibly be one of several
+   candidates equally.
+4. If nothing in the sentence plausibly matches any candidate, return an empty list rather than
+   guessing just to produce an answer.
 """
 
 # ── Tool schemas ───────────────────────────────────────────────────────────────
@@ -281,33 +283,42 @@ SELECT_RELEVANT_ITEMS_TOOL: dict = {
     },
 }
 
-IDENTIFY_CITED_WORK_TOOL: dict = {
-    "name": "identify_cited_work",
+RANK_REFERENCES_TOOL: dict = {
+    "name": "rank_cited_works",
     "description": (
-        "Identify which single reference (by index) a citing sentence most likely invokes, if any."
+        "Rank which candidate references (by index) a citing sentence could plausibly invoke, "
+        "most to least likely."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "candidate_index": {
-                "type": "integer",
-                "description": (
-                    "0-based index of the best-matching reference. Omit entirely if none "
-                    "confidently match."
-                ),
-            },
-            "reasoning": {
-                "type": "string",
-                "description": "Brief explanation of the match, or of why no candidate matched.",
-            },
-            "confident": {
-                "type": "boolean",
-                "description": (
-                    "True only if author/year or another clear textual signal strongly aligns "
-                    "with the chosen candidate."
-                ),
+            "matches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_index": {
+                            "type": "integer",
+                            "description": "0-based index of the candidate in the provided list.",
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": (
+                                "Brief explanation of the match, or of why it's uncertain."
+                            ),
+                        },
+                        "confident": {
+                            "type": "boolean",
+                            "description": (
+                                "True only if author/year or another clear textual signal "
+                                "strongly aligns with this candidate."
+                            ),
+                        },
+                    },
+                    "required": ["candidate_index", "reasoning", "confident"],
+                },
             },
         },
-        "required": ["reasoning", "confident"],
+        "required": ["matches"],
     },
 }

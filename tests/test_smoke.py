@@ -253,24 +253,27 @@ def test_backtrace_start_requires_auth() -> None:
     assert resp.status_code == 401
 
 
-def test_backtrace_continue_requires_auth() -> None:
+def test_backtrace_rank_requires_auth() -> None:
     with TestClient(app) as client:
-        resp = client.post("/backtrace/chains/00000000-0000-0000-0000-000000000000/continue")
+        resp = client.post("/backtrace/chains/00000000-0000-0000-0000-000000000000/rank", json={})
     assert resp.status_code == 401
 
 
-def test_backtrace_pick_requires_auth() -> None:
+def test_backtrace_commit_hop_requires_auth() -> None:
     with TestClient(app) as client:
         resp = client.post(
-            "/backtrace/chains/00000000-0000-0000-0000-000000000000/pick",
+            "/backtrace/chains/00000000-0000-0000-0000-000000000000/hops",
             json={"openalex_id": "W1"},
         )
     assert resp.status_code == 401
 
 
-def test_backtrace_stop_requires_auth() -> None:
+def test_backtrace_stop_hop_requires_auth() -> None:
     with TestClient(app) as client:
-        resp = client.post("/backtrace/chains/00000000-0000-0000-0000-000000000000/stop")
+        resp = client.post(
+            "/backtrace/chains/00000000-0000-0000-0000-000000000000/hops/"
+            "00000000-0000-0000-0000-000000000000/stop"
+        )
     assert resp.status_code == 401
 
 

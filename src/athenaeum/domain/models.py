@@ -610,8 +610,20 @@ class BacktraceStartRequest(BaseModel):
     claim_text: str = Field(min_length=3, max_length=2000)
 
 
-class BacktracePickRequest(BaseModel):
+class BacktraceRankRequest(BaseModel):
+    """None means rank against the chain's origin paper; otherwise rank the
+    references of whatever paper `parent_hop_id` resolved to."""
+
+    parent_hop_id: UUID | None = None
+
+
+class BacktraceCommitRequest(BaseModel):
+    parent_hop_id: UUID | None = None
     openalex_id: str = Field(min_length=1, max_length=100)
+    # Carried over from the /rank candidate the client picked this from, so
+    # the reasoning behind the pick survives onto the committed hop without
+    # re-invoking the LLM just to reproduce it.
+    reasoning: str | None = None
 
 
 class BacktraceCandidateOut(BaseModel):
@@ -621,6 +633,10 @@ class BacktraceCandidateOut(BaseModel):
     year: int | None
     doi: str | None
     venue: str | None
+    # The ranking model's own stated confidence/reasoning for this specific
+    # candidate — a human still picks, this only narrows the options.
+    reasoning: str
+    confident: bool
 
 
 class BacktraceHopOut(BaseModel):
@@ -628,6 +644,8 @@ class BacktraceHopOut(BaseModel):
 
     id: UUID
     chain_id: UUID
+    # NULL means this hop branches directly off the chain's origin paper.
+    parent_hop_id: UUID | None
     hop_index: int
     to_openalex_id: str
     to_doi: str | None
@@ -660,8 +678,14 @@ class BacktraceChainOut(BaseModel):
 class BacktraceChainSummaryOut(BaseModel):
     id: UUID
     origin_paper_id: UUID
+    origin_sentence_id: UUID | None
     origin_text: str
     hop_count: int
+    # Tree-shape summary for the history browser — all cheap flat
+    # GROUP BY aggregates, since hop_index already *is* depth from origin.
+    max_depth: int
+    leaf_count: int
+    has_pending: bool
     created_at: datetime
 
 
@@ -670,19 +694,23 @@ class BacktraceChainDetailOut(BaseModel):
     hops: list[BacktraceHopOut]
 
 
-class BacktraceStepResult(BaseModel):
-    """Response for start/continue/pick: either a resolved (or in-progress)
-    hop, or — when the LLM couldn't confidently identify a reference — a list
-    of candidates for the user to manually choose from instead."""
+class BacktraceRankResult(BaseModel):
+    """Response for /rank — advisory only, never creates a BacktraceHop.
+    `message` is set only when there's nothing to rank (no references at
+    all, or none left unvisited); `model` attributes each candidate's
+    `reasoning` to the model that produced it."""
 
-    chain: BacktraceChainOut
-    hop: BacktraceHopOut | None = None
-    candidates: list[BacktraceCandidateOut] | None = None
+    candidates: list[BacktraceCandidateOut]
     message: str | None = None
-    # Set only when `message` is itself LLM-authored (the identification
-    # step's stated reasoning) — None for static system messages ("no
-    # references to trace", etc.), so the UI knows whether to attribute it.
     model: str | None = None
+
+
+class BacktraceHopResult(BaseModel):
+    """Response for /recheck — a hop plus an optional status note (e.g. the
+    paper it's waiting on still isn't ingested)."""
+
+    hop: BacktraceHopOut
+    message: str | None = None
 
 
 class ZoteroLocalStatus(BaseModel):

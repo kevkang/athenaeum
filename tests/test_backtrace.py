@@ -49,18 +49,21 @@ async def test_resolve_reference_candidates_empty_when_no_references(monkeypatch
 
 
 # ── identify_cited_work ──────────────────────────────────────────────────────────
+#
+# identify_cited_work ranks *several* plausible candidates rather than
+# auto-committing to one — a human picks (possibly several, to open as
+# parallel branches) from the result. See api/backtrace.py's /rank endpoint.
 
-async def test_identify_cited_work_no_candidates_returns_unconfident() -> None:
+async def test_identify_cited_work_no_candidates_returns_empty() -> None:
     provider = _FakeProvider(None)
 
     result = await backtrace.identify_cited_work(provider, "some sentence", [])
 
-    assert result.candidate is None
-    assert result.confident is False
+    assert result.candidates == []
     assert provider.last_messages is None  # never called the LLM
 
 
-async def test_identify_cited_work_confident_match() -> None:
+async def test_identify_cited_work_ranks_matches() -> None:
     candidates = [
         backtrace.ReferenceCandidate(
             openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
@@ -70,60 +73,63 @@ async def test_identify_cited_work_confident_match() -> None:
         ),
     ]
     provider = _FakeProvider(
-        {"name": "identify_cited_work", "input": {
-            "candidate_index": 0, "reasoning": "Author/year match Smith 2020.", "confident": True,
-        }}
+        {"name": "rank_cited_works", "input": {"matches": [
+            {"candidate_index": 0, "reasoning": "Author/year match Smith 2020.", "confident": True},
+        ]}}
     )
 
     result = await backtrace.identify_cited_work(
         provider, "consistent with Smith et al. 2020", candidates
     )
 
-    assert result.candidate is not None
-    assert result.candidate.openalex_id == "W1"
-    assert result.confident is True
+    assert len(result.candidates) == 1
+    assert result.candidates[0].candidate.openalex_id == "W1"
+    assert result.candidates[0].confident is True
 
 
-async def test_identify_cited_work_low_confidence_still_surfaces_guess() -> None:
-    """confident=False doesn't null the candidate — callers (e.g. api/backtrace.py's
-    _resolve_hop) use `confident` alone to decide whether to auto-proceed; the guess
-    itself is preserved for the UI/manual-pick fallback."""
+async def test_identify_cited_work_low_confidence_still_included() -> None:
+    """confident=False entries aren't dropped — a human reviews every entry
+    either way, so the UI needs to see them, not just the confident ones."""
     candidates = [
         backtrace.ReferenceCandidate(
             openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
         )
     ]
     provider = _FakeProvider(
-        {"name": "identify_cited_work", "input": {
-            "candidate_index": 0, "reasoning": "Weak signal.", "confident": False,
-        }}
+        {"name": "rank_cited_works", "input": {"matches": [
+            {"candidate_index": 0, "reasoning": "Weak signal.", "confident": False},
+        ]}}
     )
 
     result = await backtrace.identify_cited_work(provider, "some vague sentence", candidates)
 
-    assert result.candidate is not None
-    assert result.candidate.openalex_id == "W1"
-    assert result.confident is False
+    assert len(result.candidates) == 1
+    assert result.candidates[0].candidate.openalex_id == "W1"
+    assert result.candidates[0].confident is False
 
 
-async def test_identify_cited_work_out_of_range_index_ignored() -> None:
+async def test_identify_cited_work_out_of_range_index_skipped() -> None:
+    """A hallucinated index is dropped from the ranking, not fatal to the
+    whole response — the other, valid entries still come through."""
     candidates = [
         backtrace.ReferenceCandidate(
             openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
         )
     ]
     provider = _FakeProvider(
-        {"name": "identify_cited_work", "input": {
-            "candidate_index": 5, "reasoning": "hallucinated index", "confident": True,
-        }}
+        {"name": "rank_cited_works", "input": {"matches": [
+            {"candidate_index": 5, "reasoning": "hallucinated index", "confident": True},
+            {"candidate_index": 0, "reasoning": "real match", "confident": True},
+        ]}}
     )
 
     result = await backtrace.identify_cited_work(provider, "sentence", candidates)
 
-    assert result.candidate is None
+    assert len(result.candidates) == 1
+    assert result.candidates[0].candidate.openalex_id == "W1"
 
 
-async def test_identify_cited_work_no_tool_result() -> None:
+async def test_identify_cited_work_no_tool_result_returns_empty() -> None:
     candidates = [
         backtrace.ReferenceCandidate(
             openalex_id="W1", title="Paper A", authors=["Smith"], year=2020,
@@ -133,8 +139,27 @@ async def test_identify_cited_work_no_tool_result() -> None:
 
     result = await backtrace.identify_cited_work(provider, "sentence", candidates)
 
-    assert result.candidate is None
-    assert result.confident is False
+    assert result.candidates == []
+
+
+async def test_identify_cited_work_sorts_confident_first() -> None:
+    """The UI pre-checks candidates[0] as the one-click default (see
+    BacktracePanel.tsx) — that only makes sense if confident matches sort
+    ahead of unconfident ones regardless of the order the model emitted."""
+    candidates = [
+        backtrace.ReferenceCandidate(openalex_id="W1", title="A", authors=["Smith"], year=2020),
+        backtrace.ReferenceCandidate(openalex_id="W2", title="B", authors=["Jones"], year=2018),
+    ]
+    provider = _FakeProvider(
+        {"name": "rank_cited_works", "input": {"matches": [
+            {"candidate_index": 0, "reasoning": "uncertain", "confident": False},
+            {"candidate_index": 1, "reasoning": "clear match", "confident": True},
+        ]}}
+    )
+
+    result = await backtrace.identify_cited_work(provider, "sentence", candidates)
+
+    assert [r.candidate.openalex_id for r in result.candidates] == ["W2", "W1"]
 
 
 # ── extract_abstract_quote ───────────────────────────────────────────────────────

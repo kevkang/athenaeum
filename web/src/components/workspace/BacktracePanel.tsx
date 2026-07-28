@@ -4,9 +4,9 @@ import {
   backtraceApi,
   type BacktraceCandidate,
   type BacktraceHop,
-  type BacktraceStepResult,
 } from '../../api/backtrace';
 import { papersApi } from '../../api/papers';
+import { useUIStore } from '../../store/ui';
 import { trunc, formatCitation } from '../../lib/format';
 import styles from '../../pages/Workspace.module.css';
 import FindResultCard, { AiNote, type FindImportState } from './FindResultCard';
@@ -16,6 +16,28 @@ import FindResultCard, { AiNote, type FindImportState } from './FindResultCard';
 // instead each mutating call streams ephemeral progress pings over a
 // short-lived websocket keyed by a client-minted stream_id. See
 // api/backtrace.py's module docstring for the protocol.
+//
+// This panel deliberately stays a single-path stepper — it always continues
+// from whichever hop is currently the tail, one branch at a time, the way
+// backtrace behaved before it became a tree. Exploring several branches at
+// once (the tree view) lives in BacktraceTree.tsx instead; this is the
+// "quick trace while reading" tool.
+//
+// Resolving a step is two calls, not one: /rank asks which of the current
+// paper's references plausibly support the claim (no hop created yet), and
+// committing one of them via /hops actually creates it. Ranking happens
+// automatically as soon as there's something to rank, so the primary button
+// can read "Trace further (via Smith et al. 2020) →" — naming the top
+// candidate before the user even clicks — keeping the common case a single
+// click despite the two-call split underneath (see the plan's "Key design
+// decisions" for why: nothing auto-commits without the user seeing it).
+
+/** Axios's own `.message` on a failed request is a generic "Request failed
+ * with status code 503" — the backend's actual `detail` text (e.g. "LLM
+ * provider not configured") is far more actionable, so prefer that. */
+function errorDetail(err: unknown, fallback: string): string {
+  return (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? fallback;
+}
 
 const BACKTRACE_STEP_LABELS: Record<string, string> = {
   fetching_references: "fetching this paper's references",
@@ -81,64 +103,101 @@ function useBacktraceStepStream() {
 }
 
 export default function BacktracePanel({
-  chainId, initialResult, projectId,
+  chainId, projectId,
 }: {
   chainId: string;
-  initialResult: BacktraceStepResult;
   projectId: string;
 }) {
   const queryClient = useQueryClient();
-  const [manualCandidates, setManualCandidates] = useState<BacktraceCandidate[] | null>(initialResult.candidates);
-  const [stepMessage, setStepMessage] = useState<string | null>(initialResult.message);
-  const [stepMessageModel, setStepMessageModel] = useState<string | null>(initialResult.model);
-  const [expandedCandidate, setExpandedCandidate] = useState<string | null>(null);
   const [importedHopIds, setImportedHopIds] = useState<Set<string>>(new Set());
   const [importedCandidateIds, setImportedCandidateIds] = useState<Set<string>>(new Set());
+  const [recheckMessage, setRecheckMessage] = useState<string | null>(null);
   const reuploadInputRef = useRef<HTMLInputElement>(null);
   const reuploadTargetRef = useRef<string | null>(null);
 
   const { data: detail } = useQuery({
     queryKey: ['backtrace-chain', chainId],
     queryFn: () => backtraceApi.get(chainId),
-    initialData: { chain: initialResult.chain, hops: initialResult.hop ? [initialResult.hop] : [] },
     refetchInterval: (q) =>
       q.state.data?.hops.some((h) => h.resolution_status === 'ingesting') ? 3000 : false,
   });
 
   const { data: originPaper } = useQuery({
-    queryKey: ['paper', detail.chain.origin_paper_id],
-    queryFn: () => papersApi.get(detail.chain.origin_paper_id),
+    queryKey: ['paper', detail?.chain.origin_paper_id],
+    queryFn: () => papersApi.get(detail!.chain.origin_paper_id),
+    enabled: !!detail,
   });
 
   const invalidateChain = () => queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
 
   const { step: liveStep, beginStream, endStream } = useBacktraceStepStream();
 
-  const continueMutation = useMutation({
-    mutationFn: async () => backtraceApi.continueChain(chainId, await beginStream()),
+  // ── Ranking the current frontier (the tail hop, or the origin if there
+  // are no hops yet) — advisory, no hop created. Re-fires automatically
+  // whenever the frontier moves to a new decidable hop.
+  const [rankedCandidates, setRankedCandidates] = useState<BacktraceCandidate[] | null>(null);
+  const [rankMessage, setRankMessage] = useState<string | null>(null);
+  const [rankModel, setRankModel] = useState<string | null>(null);
+  const [showOtherCandidates, setShowOtherCandidates] = useState(false);
+  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
+  const lastRankedKeyRef = useRef<string | null>(null);
+
+  const rankMutation = useMutation({
+    mutationFn: async (parentHopId: string | null) =>
+      backtraceApi.rank(chainId, parentHopId, await beginStream()),
     onSettled: endStream,
     onSuccess: (result) => {
-      setManualCandidates(result.candidates);
-      setStepMessage(result.message);
-      setStepMessageModel(result.model);
+      setRankedCandidates(result.candidates);
+      setRankMessage(result.message);
+      setRankModel(result.model);
+    },
+  });
+
+  const hops = detail?.hops ?? [];
+  const last = hops[hops.length - 1] as BacktraceHop | undefined;
+  const canDecide =
+    !!last && last.user_decision === 'pending' &&
+    (last.resolution_status === 'abstract_match' || last.resolution_status === 'full_text_match');
+  const canStopOnly = !!last && last.user_decision === 'pending' && last.resolution_status === 'no_match';
+  const stopped = last?.user_decision === 'stopped_here';
+
+  // '__origin__' once loaded with zero hops, a hop id once its resolution
+  // makes it decidable, or null when there's nothing to rank right now
+  // (still resolving, a dead end, or already stopped).
+  const frontierKey = !detail ? null : hops.length === 0 ? '__origin__' : canDecide ? last!.id : null;
+
+  useEffect(() => {
+    if (!frontierKey || frontierKey === lastRankedKeyRef.current) return;
+    lastRankedKeyRef.current = frontierKey;
+    setRankedCandidates(null);
+    setRankMessage(null);
+    setRankModel(null);
+    setShowOtherCandidates(false);
+    setExpandedCandidateId(null);
+    rankMutation.mutate(frontierKey === '__origin__' ? null : frontierKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frontierKey]);
+
+  const commitMutation = useMutation({
+    mutationFn: async (
+      { parentHopId, candidate }: { parentHopId: string | null; candidate: BacktraceCandidate },
+    ) =>
+      backtraceApi.commitHop(
+        chainId, parentHopId, candidate.openalex_id, candidate.reasoning, await beginStream(),
+      ),
+    onSettled: endStream,
+    onSuccess: () => {
+      setRankedCandidates(null);
+      setRankMessage(null);
+      setRankModel(null);
+      setShowOtherCandidates(false);
+      setExpandedCandidateId(null);
       invalidateChain();
     },
   });
 
-  const pickMutation = useMutation({
-    mutationFn: async (openalexId: string) => backtraceApi.pick(chainId, openalexId, await beginStream()),
-    onSettled: endStream,
-    onSuccess: (result) => {
-      setManualCandidates(result.candidates);
-      setStepMessage(result.message);
-      setStepMessageModel(result.model);
-      setExpandedCandidate(null);
-      invalidateChain();
-    },
-  });
-
-  const stopMutation = useMutation({
-    mutationFn: () => backtraceApi.stop(chainId),
+  const stopHopMutation = useMutation({
+    mutationFn: (hopId: string) => backtraceApi.stopHop(chainId, hopId),
     onSuccess: () => invalidateChain(),
   });
 
@@ -146,8 +205,7 @@ export default function BacktracePanel({
     mutationFn: async (hopId: string) => backtraceApi.recheckHop(chainId, hopId, await beginStream()),
     onSettled: endStream,
     onSuccess: (result) => {
-      setStepMessage(result.message);
-      setStepMessageModel(result.model);
+      setRecheckMessage(result.message);
       invalidateChain();
     },
   });
@@ -177,14 +235,6 @@ export default function BacktracePanel({
     },
   });
 
-  const hops = detail.hops;
-  const last = hops[hops.length - 1] as BacktraceHop | undefined;
-  const canDecide =
-    !!last && last.user_decision === 'pending' &&
-    (last.resolution_status === 'abstract_match' || last.resolution_status === 'full_text_match');
-  const canStopOnly = !!last && last.user_decision === 'pending' && last.resolution_status === 'no_match';
-  const stopped = last?.user_decision === 'stopped_here';
-
   const hopImportState = (hop: BacktraceHop): FindImportState => {
     const imported = !!hop.to_paper_id || importedHopIds.has(hop.id);
     return imported ? 'already_in_project' : hop.to_doi ? 'importable' : 'no_doi';
@@ -198,6 +248,141 @@ export default function BacktracePanel({
       }
     },
   });
+
+  const renderFrontierActions = (parentHopId: string | null) => (
+    <div className={styles.paperActionsRow} style={{ flexWrap: 'wrap' }}>
+      {rankMutation.isPending && !rankedCandidates ? (
+        <BacktraceLoadingStep step={liveStep} />
+      ) : rankMutation.isError ? (
+        <>
+          <div className={styles.formError}>
+            {errorDetail(rankMutation.error, 'Could not rank candidates')}
+          </div>
+          <button
+            type="button"
+            className={styles.viewToggleBtn}
+            onClick={() => useUIStore.getState().openAccountModal()}
+          >
+            Configure LLM
+          </button>
+          <button
+            className={styles.retryBtn}
+            onClick={() => rankMutation.mutate(parentHopId)}
+            disabled={rankMutation.isPending}
+          >
+            Retry
+          </button>
+        </>
+      ) : rankedCandidates && rankedCandidates.length > 0 ? (
+        <>
+          <button
+            className={styles.retryBtn}
+            onClick={() => commitMutation.mutate({ parentHopId, candidate: rankedCandidates[0] })}
+            disabled={commitMutation.isPending}
+          >
+            {commitMutation.isPending
+              ? 'Tracing…'
+              : `Trace further (via ${
+                  formatCitation(rankedCandidates[0].authors[0] ?? null, rankedCandidates[0].year)
+                }) →`}
+          </button>
+          {rankedCandidates.length > 1 && (
+            <button className={styles.retryBtn} onClick={() => setShowOtherCandidates((v) => !v)}>
+              {showOtherCandidates
+                ? 'Hide others'
+                : `See ${rankedCandidates.length - 1} other candidate${rankedCandidates.length === 2 ? '' : 's'}`}
+            </button>
+          )}
+          {parentHopId && (
+            <button
+              className={styles.retryBtn}
+              onClick={() => stopHopMutation.mutate(parentHopId)}
+              disabled={stopHopMutation.isPending}
+            >
+              Stop here ✓
+            </button>
+          )}
+        </>
+      ) : rankedCandidates ? (
+        <>
+          {rankMessage && <div className={styles.searchHint}>{rankMessage}</div>}
+          {parentHopId && (
+            <button
+              className={styles.retryBtn}
+              onClick={() => stopHopMutation.mutate(parentHopId)}
+              disabled={stopHopMutation.isPending}
+            >
+              Stop here
+            </button>
+          )}
+        </>
+      ) : null}
+      {commitMutation.isPending && <BacktraceLoadingStep step={liveStep} />}
+      {commitMutation.isError && (
+        <div className={styles.formError}>
+          {errorDetail(commitMutation.error, 'Could not trace further')}
+        </div>
+      )}
+
+      {showOtherCandidates && rankedCandidates && rankedCandidates.length > 1 && (
+        <div className={styles.evidenceList} style={{ width: '100%' }}>
+          {rankedCandidates.slice(1).map((c) => {
+            const expanded = expandedCandidateId === c.openalex_id;
+            const candidateImported = importedCandidateIds.has(c.openalex_id);
+            const citation = formatCitation(c.authors[0] ?? null, c.year);
+            return (
+              <div key={c.openalex_id} className={styles.evidenceCard}>
+                <button
+                  className={styles.synthItem}
+                  onClick={() => setExpandedCandidateId(expanded ? null : c.openalex_id)}
+                >
+                  <span className={styles.synthItemClaim}>
+                    {c.title}{citation ? `, ${citation}` : ''}
+                  </span>
+                </button>
+                {expanded && (
+                  <div className={styles.candidateDetail}>
+                    <div className={styles.panelMeta}>
+                      {c.authors.join(', ') || 'Unknown authors'}{c.venue ? ` · ${c.venue}` : ''}
+                    </div>
+                    {c.doi && <div className={styles.paperDoi}>{c.doi}</div>}
+                    {c.reasoning && (
+                      rankModel
+                        ? <AiNote text={c.reasoning} model={rankModel} label="Reasoning" />
+                        : <div className={styles.searchHint}><strong>Reasoning:</strong> {c.reasoning}</div>
+                    )}
+                    <div className={styles.paperActionsRow}>
+                      {c.doi && (
+                        <a className={styles.visitBtn} href={`https://doi.org/${c.doi}`} target="_blank" rel="noreferrer">
+                          visit
+                        </a>
+                      )}
+                      <button
+                        className={styles.retryBtn}
+                        onClick={() => candidateImportMutation.mutate(c)}
+                        disabled={!c.doi || candidateImported || candidateImportMutation.isPending}
+                      >
+                        {candidateImported ? '✓ imported' : '+ import'}
+                      </button>
+                      <button
+                        className={styles.retryBtn}
+                        onClick={() => commitMutation.mutate({ parentHopId, candidate: c })}
+                        disabled={commitMutation.isPending}
+                      >
+                        {commitMutation.isPending ? 'Tracing…' : 'Continue backtrace →'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  if (!detail) return null;
 
   return (
     <div className={styles.panelContent}>
@@ -217,6 +402,8 @@ export default function BacktracePanel({
           </button>
         </div>
       )}
+
+      {hops.length === 0 && renderFrontierActions(null)}
 
       <div className={styles.evidenceList}>
         {hops.map((hop, index) => {
@@ -271,29 +458,20 @@ export default function BacktracePanel({
                       {recheckMutation.isPending ? 'Checking…' : 'Check again'}
                     </button>
                   </div>
+                  {recheckMessage && <div className={styles.searchHint}>{recheckMessage}</div>}
                   {recheckMutation.isPending && <BacktraceLoadingStep step={liveStep} />}
                 </div>
               )}
 
-              {isLast && canDecide && (
-                <div className={styles.paperActionsRow}>
-                  <button
-                    className={styles.retryBtn}
-                    onClick={() => continueMutation.mutate()}
-                    disabled={continueMutation.isPending}
-                  >
-                    {continueMutation.isPending ? 'Tracing…' : 'Trace further →'}
-                  </button>
-                  <button className={styles.retryBtn} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
-                    Stop here ✓
-                  </button>
-                  {continueMutation.isPending && <BacktraceLoadingStep step={liveStep} />}
-                </div>
-              )}
+              {isLast && canDecide && renderFrontierActions(hop.id)}
 
               {isLast && canStopOnly && (
                 <div className={styles.paperActionsRow}>
-                  <button className={styles.retryBtn} onClick={() => stopMutation.mutate()} disabled={stopMutation.isPending}>
+                  <button
+                    className={styles.retryBtn}
+                    onClick={() => stopHopMutation.mutate(hop.id)}
+                    disabled={stopHopMutation.isPending}
+                  >
                     Stop here
                   </button>
                 </div>
@@ -318,72 +496,6 @@ export default function BacktracePanel({
 
       {stopped && (
         <div className={styles.searchHint}>✓ Chain stopped — this is marked as the source.</div>
-      )}
-
-      {manualCandidates && (
-        <div className={styles.evidenceList}>
-          <div className={styles.panelSectionLabel}>Pick a reference</div>
-          {stepMessage && (
-            stepMessageModel
-              ? <AiNote text={stepMessage} model={stepMessageModel} label="Reasoning" />
-              : <div className={styles.searchHint}><strong>Reasoning:</strong> {stepMessage}</div>
-          )}
-          {manualCandidates.length === 0 ? (
-            <div className={styles.searchHint}>No unvisited references left to choose from.</div>
-          ) : (
-            manualCandidates.map((c) => {
-              const expanded = expandedCandidate === c.openalex_id;
-              const candidateImported = importedCandidateIds.has(c.openalex_id);
-              const citation = formatCitation(c.authors[0] ?? null, c.year);
-              return (
-                <div key={c.openalex_id} className={styles.evidenceCard}>
-                  <button
-                    className={styles.synthItem}
-                    onClick={() => setExpandedCandidate(expanded ? null : c.openalex_id)}
-                  >
-                    <span className={styles.synthItemClaim}>
-                      {c.title}{citation ? `, ${citation}` : ''}
-                    </span>
-                  </button>
-                  {expanded && (
-                    <div className={styles.candidateDetail}>
-                      <div className={styles.panelMeta}>
-                        {c.authors.join(', ') || 'Unknown authors'}{c.venue ? ` · ${c.venue}` : ''}
-                      </div>
-                      {c.doi && <div className={styles.paperDoi}>{c.doi}</div>}
-                      <div className={styles.paperActionsRow}>
-                        {c.doi && (
-                          <a className={styles.visitBtn} href={`https://doi.org/${c.doi}`} target="_blank" rel="noreferrer">
-                            visit
-                          </a>
-                        )}
-                        <button
-                          className={styles.retryBtn}
-                          onClick={() => candidateImportMutation.mutate(c)}
-                          disabled={!c.doi || candidateImported || candidateImportMutation.isPending}
-                        >
-                          {candidateImported ? '✓ imported' : '+ import'}
-                        </button>
-                        <button
-                          className={styles.retryBtn}
-                          onClick={() => pickMutation.mutate(c.openalex_id)}
-                          disabled={pickMutation.isPending}
-                        >
-                          {pickMutation.isPending ? 'Tracing…' : 'Continue backtrace →'}
-                        </button>
-                      </div>
-                      {pickMutation.isPending && expanded && <BacktraceLoadingStep step={liveStep} />}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {!manualCandidates && stepMessage && hops.length === 0 && (
-        <div className={styles.searchHint}>{stepMessage}</div>
       )}
     </div>
   );

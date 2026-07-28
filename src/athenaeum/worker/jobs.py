@@ -129,8 +129,18 @@ async def _resolve_backtrace_hop_after_ingest(ctx: dict, hop_id: uuid.UUID, sett
             log.warning("backtrace.hop_resolve_no_llm_key", hop_id=str(hop_id))
             return
 
+        # What this hop is meant to support is its parent's quote (or the
+        # chain's origin text at depth 0) — not always the origin text
+        # regardless of depth, which this silently did before backtrace
+        # became a tree and hops beyond depth 0 became common.
+        citing_text = chain.origin_text
+        if hop.parent_hop_id is not None:
+            parent_hop = await session.get(BacktraceHop, hop.parent_hop_id)
+            if parent_hop is not None and parent_hop.quote:
+                citing_text = parent_hop.quote
+
         passage = await search_full_text_for_claim(
-            provider, session, chain.project_id, paper.id, chain.origin_text, settings.embed_model
+            provider, session, chain.project_id, paper.id, citing_text, settings.embed_model
         )
         if passage is not None:
             hop.quote, hop.relevance_note = passage.verbatim_text, passage.rationale

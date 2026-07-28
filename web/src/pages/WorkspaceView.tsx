@@ -13,7 +13,7 @@ import {
   type Evidence,
 } from '../api/statements';
 import { papersApi, type Paper, firstAuthor } from '../api/papers';
-import { backtraceApi, type BacktraceStepResult } from '../api/backtrace';
+import { backtraceApi } from '../api/backtrace';
 import { passagesApi } from '../api/passages';
 import { historyApi, type EventOut } from '../api/history';
 import ReaderPane, { PASSAGE_MIME } from '../components/ReaderPane';
@@ -881,13 +881,13 @@ export default function WorkspaceView() {
 
   const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
   const [readerMode, setReaderMode] = useState<'read' | 'find' | 'backtrace'>('read');
-  const [activeBacktrace, setActiveBacktrace] = useState<{ chainId: string; initial: BacktraceStepResult } | null>(null);
+  const [activeBacktrace, setActiveBacktrace] = useState<{ chainId: string } | null>(null);
 
   const startBacktraceMutation = useMutation({
     mutationFn: ({ sentenceId, text }: { sentenceId: string; text: string }) =>
       backtraceApi.start(projectId, selectedPaperId!, sentenceId, text),
-    onSuccess: (result) => {
-      setActiveBacktrace({ chainId: result.chain.id, initial: result });
+    onSuccess: (chain) => {
+      setActiveBacktrace({ chainId: chain.id });
       setReaderMode('backtrace');
     },
   });
@@ -1410,7 +1410,7 @@ export default function WorkspaceView() {
           ) : readerMode === 'find' ? (
             <FindPanel projectId={projectId} onStatementCreated={handleStatementCreated} />
           ) : readerMode === 'backtrace' && activeBacktrace ? (
-            <BacktracePanel key={activeBacktrace.chainId} chainId={activeBacktrace.chainId} initialResult={activeBacktrace.initial} projectId={projectId} />
+            <BacktracePanel key={activeBacktrace.chainId} chainId={activeBacktrace.chainId} projectId={projectId} />
           ) : selectedPaperId ? (
             <ReaderPane
               paperId={selectedPaperId}
