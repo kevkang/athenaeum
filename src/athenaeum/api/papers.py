@@ -11,6 +11,7 @@ import uuid
 import structlog
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
@@ -47,6 +48,22 @@ def _normalize_doi(doi: str) -> str:
         if doi.lower().startswith(prefix):
             return doi[len(prefix):]
     return doi
+
+
+async def _assert_paper_visible(
+    session: AsyncSession, paper_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """A Paper has no single project_id of its own — it can be linked to
+    several projects via project_papers — so visibility means "member of at
+    least one project this paper is linked to", not a direct membership row."""
+    visible = await session.scalar(
+        select(ProjectPaper.paper_id)
+        .join(ProjectMember, ProjectMember.project_id == ProjectPaper.project_id)
+        .where(ProjectPaper.paper_id == paper_id, ProjectMember.user_id == user_id)
+        .limit(1)
+    )
+    if visible is None:
+        raise HTTPException(status_code=403, detail="Not authorized to access this paper")
 
 
 @router.post("", response_model=PaperOut, status_code=status.HTTP_201_CREATED)
@@ -224,6 +241,8 @@ async def update_paper(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
+
     if payload.title is not None:
         paper.title = payload.title
     if payload.abstract is not None:
@@ -332,6 +351,7 @@ async def reupload_paper(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
 
     content = await file.read()
     if len(content) > _UPLOAD_MAX_BYTES:
@@ -367,6 +387,7 @@ async def summarize_paper(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
     if paper.status != "full_text":
         raise HTTPException(status_code=400, detail="Paper must have full text before summarizing")
 
@@ -422,6 +443,7 @@ async def retry_ingest(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
 
     if paper.zotero_item_key and paper.zotero_source == "local":
         paper.status = "ghost"
@@ -517,6 +539,7 @@ async def get_paper(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
     return paper
 
 
@@ -529,6 +552,7 @@ async def list_sections(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
 
     rows = await session.scalars(
         select(PaperSection)
@@ -548,6 +572,7 @@ async def list_sentences(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
 
     stmt = (
         select(PaperSentence)
@@ -575,6 +600,7 @@ async def list_evidence_sentences(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
+    await _assert_paper_visible(session, paper_id, user.id)
 
     sentence_ids = set(
         await session.scalars(select(PaperSentence.id).where(PaperSentence.paper_id == paper_id))

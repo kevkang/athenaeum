@@ -8,6 +8,7 @@ import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
@@ -143,6 +144,19 @@ async def update_synthesis(
     return synthesis
 
 
+async def _assert_synthesis_member(
+    session: AsyncSession, project_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    membership = await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Not a project member")
+
+
 @router.get("/{synthesis_id}", response_model=SynthesisOut)
 async def get_synthesis(
     synthesis_id: uuid.UUID,
@@ -152,6 +166,7 @@ async def get_synthesis(
     synthesis = await session.get(Synthesis, synthesis_id)
     if synthesis is None:
         raise HTTPException(status_code=404, detail="Synthesis not found")
+    await _assert_synthesis_member(session, synthesis.project_id, user.id)
     return synthesis
 
 
@@ -164,6 +179,7 @@ async def get_steps(
     synthesis = await session.get(Synthesis, synthesis_id)
     if synthesis is None:
         raise HTTPException(status_code=404, detail="Synthesis not found")
+    await _assert_synthesis_member(session, synthesis.project_id, user.id)
 
     rows = await session.scalars(
         select(SynthesisStep)
@@ -182,6 +198,7 @@ async def get_evidence(
     synthesis = await session.get(Synthesis, synthesis_id)
     if synthesis is None:
         raise HTTPException(status_code=404, detail="Synthesis not found")
+    await _assert_synthesis_member(session, synthesis.project_id, user.id)
 
     rows = await session.scalars(
         select(SynthesisEvidence)
@@ -200,6 +217,7 @@ async def get_evidence_full(
     synthesis = await session.get(Synthesis, synthesis_id)
     if synthesis is None:
         raise HTTPException(status_code=404, detail="Synthesis not found")
+    await _assert_synthesis_member(session, synthesis.project_id, user.id)
 
     rows = await session.scalars(
         select(SynthesisEvidence)
@@ -207,13 +225,30 @@ async def get_evidence_full(
         .order_by(SynthesisEvidence.ord)
     )
     evidence_list = list(rows)
+    if not evidence_list:
+        return []
+
+    passages = {
+        p.id: p
+        for p in await session.scalars(
+            select(Passage).where(Passage.id.in_({ev.passage_id for ev in evidence_list}))
+        )
+    }
+    papers = {
+        p.id: p
+        for p in await session.scalars(
+            select(Paper).where(
+                Paper.id.in_({pa.paper_id for pa in passages.values()})
+            )
+        )
+    }
 
     result = []
     for ev in evidence_list:
-        passage = await session.get(Passage, ev.passage_id)
+        passage = passages.get(ev.passage_id)
         if passage is None:
             continue
-        paper = await session.get(Paper, passage.paper_id)
+        paper = papers.get(passage.paper_id)
         if paper is None:
             continue
         result.append(SynthesisEvidenceFullOut(
@@ -243,6 +278,7 @@ async def list_evaluations(
     synthesis = await session.get(Synthesis, synthesis_id)
     if synthesis is None:
         raise HTTPException(status_code=404, detail="Synthesis not found")
+    await _assert_synthesis_member(session, synthesis.project_id, user.id)
 
     rows = await session.scalars(
         select(Evaluation)

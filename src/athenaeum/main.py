@@ -11,7 +11,9 @@ from athenaeum.api import (
     archive,
     auth,
     backtrace,
+    compose,
     graph,
+    highlights,
     history,
     links,
     llm_credentials,
@@ -29,9 +31,24 @@ from athenaeum.api import (
     zotero_find,
     zotero_local,
 )
-from athenaeum.config import get_settings
+from athenaeum.config import DEFAULT_JWT_SECRET, Settings, get_settings
 
 log = structlog.get_logger()
+
+
+def _reject_insecure_defaults(settings: Settings) -> None:
+    """The dev docker-compose.yml (and a bare `pip install -e .` run with no
+    .env) both intentionally rely on the hardcoded default JWT secret — fine,
+    since it's only ever reachable at localhost. A production deployment
+    that forgets to set JWT_SECRET would otherwise boot anyway, silently
+    accepting forged session tokens signed with a secret that's public in
+    this repo. Fail fast instead of leaking that as a runtime vulnerability.
+    """
+    if settings.environment != "development" and settings.jwt_secret == DEFAULT_JWT_SECRET:
+        raise RuntimeError(
+            "Refusing to start: ENVIRONMENT is not 'development' but JWT_SECRET is "
+            "still the default value. Set a real JWT_SECRET (see .env.production.example)."
+        )
 
 
 @asynccontextmanager
@@ -67,9 +84,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.neo4j_driver.close()
 
 
+_settings = get_settings()
+_reject_insecure_defaults(_settings)
+
 app = FastAPI(title="Athenaeum API", version=__version__, lifespan=lifespan)
 
-_settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[_settings.frontend_url],
@@ -86,6 +105,8 @@ app.include_router(search.router)
 app.include_router(syntheses.router)
 app.include_router(statements.router)
 app.include_router(annotations.router)
+app.include_router(compose.router)
+app.include_router(highlights.router)
 app.include_router(graph.router)
 app.include_router(archive.router)
 app.include_router(members.router)

@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.storage.models import (
     Annotation,
+    ComposeDocument,
     Dataset,
     Evaluation,
+    Highlight,
     Paper,
     Passage,
     Project,
@@ -83,7 +85,7 @@ async def import_project(
         # Link paper (existing or new) to the project.
         await session.execute(
             pg_insert(ProjectPaper)
-            .values(project_id=project_id, paper_id=uuid.UUID(p["id"]))
+            .values(project_id=project_id, paper_id=uuid.UUID(p["id"]), added_by=owner_id)
             .on_conflict_do_nothing()
         )
 
@@ -100,6 +102,12 @@ async def import_project(
             verified_at=_dt(pa.get("verified_at")),
             checker_model=pa.get("checker_model"),
         ))
+
+    # Flush before Syntheses: SynthesisEvidence (added below, inside that
+    # loop) has a plain FK column to Passage with no ORM relationship()
+    # linking the two — nothing tells SQLAlchemy's flush to order Passage
+    # inserts first otherwise, and it doesn't reliably infer it on its own.
+    await session.flush()
 
     # Syntheses
     for s in data.get("syntheses", []):
@@ -122,6 +130,10 @@ async def import_project(
                 role=e["role"],
                 ord=e["ord"],
             ))
+
+    # Flush before Statements: built_from_synthesis_id is the same
+    # unrelated-FK situation as above, this time Statement -> Synthesis.
+    await session.flush()
 
     # Statements (insert first, then edges that reference other statements).
     # "bricks"/"rests_on"/"builds_on" are accepted as a fallback for archives
@@ -179,6 +191,28 @@ async def import_project(
             target_kind=target_kind,
             target_id=uuid.UUID(a["target_id"]),
             body=a["body"],
+        ))
+
+    # Compose document — one per project, may be absent.
+    compose_document = data.get("compose_document")
+    if compose_document is not None:
+        session.add(ComposeDocument(
+            id=uuid.UUID(compose_document["id"]),
+            project_id=project_id,
+            content_json=compose_document["content_json"],
+            version=compose_document.get("version", 1),
+            updated_by=_u(compose_document.get("updated_by")),
+        ))
+
+    # Highlights — personal bookmarks, mirror Passage's shape.
+    for h in data.get("highlights", []):
+        session.add(Highlight(
+            id=uuid.UUID(h["id"]),
+            project_id=project_id,
+            paper_id=uuid.UUID(h["paper_id"]),
+            sentence_ids=[uuid.UUID(s) for s in h.get("sentence_ids", [])],
+            verbatim_text=h["verbatim_text"],
+            author_id=_u(h.get("author_id")),
         ))
 
     # Backward-compat: v1 archives exported questions as a separate list.

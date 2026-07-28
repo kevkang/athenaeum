@@ -18,6 +18,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,12 +32,15 @@ from athenaeum.provider.base import Message, Provider
 from athenaeum.retrieve.hybrid import search as hybrid_search
 from athenaeum.storage.models import Passage, PaperSentence
 from athenaeum.synthesize.find_ranking import FindCandidate, rank_candidates
+from athenaeum.synthesize.passage_util import is_contiguous
 from athenaeum.synthesize.prompts import (
     BACKTRACE_IDENTIFY_SYSTEM,
     EXTRACT_PASSAGES_TOOL,
     EXTRACT_SYSTEM,
     IDENTIFY_CITED_WORK_TOOL,
 )
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -192,6 +196,16 @@ async def search_full_text_for_claim(
             select(PaperSentence).where(PaperSentence.id.in_(sentence_uuids)).order_by(PaperSentence.ord)
         )
     ).all()
+    if not is_contiguous([r.ord for r in rows]):
+        # See orchestrator.py's identical check: a non-contiguous selection
+        # would still join into what reads as one continuous quote, silently
+        # skipping over whatever sentence(s) sit in the gap.
+        log.warning(
+            "backtrace.non_contiguous_sentences",
+            sentence_ids=sids,
+            ords=[r.ord for r in rows],
+        )
+        return None
     verbatim = " ".join(r.text for r in rows)
     if not verbatim:
         return None

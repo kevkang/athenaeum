@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.storage.models import (
     Annotation,
+    ComposeDocument,
     Dataset,
     Evaluation,
+    Highlight,
     Paper,
     Passage,
     Project,
@@ -86,6 +88,13 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
     ))
     datasets = list(await session.scalars(
         select(Dataset).where(Dataset.project_id == project_id)
+    ))
+    # One per project, may not exist yet (created lazily on first Compose visit).
+    compose_document = await session.scalar(
+        select(ComposeDocument).where(ComposeDocument.project_id == project_id)
+    )
+    highlights = list(await session.scalars(
+        select(Highlight).where(Highlight.project_id == project_id)
     ))
     provenance = list(await session.scalars(
         select(Event)
@@ -203,6 +212,27 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "created_at": _iso(a.created_at),
             }
             for a in annotations
+        ],
+        "compose_document": (
+            {
+                "id": str(compose_document.id),
+                "content_json": compose_document.content_json,
+                "version": compose_document.version,
+                "updated_by": _s(compose_document.updated_by),
+                "updated_at": _iso(compose_document.updated_at),
+            }
+            if compose_document is not None else None
+        ),
+        "highlights": [
+            {
+                "id": str(h.id),
+                "paper_id": str(h.paper_id),
+                "sentence_ids": [str(s) for s in h.sentence_ids],
+                "verbatim_text": h.verbatim_text,
+                "author_id": _s(h.author_id),
+                "created_at": _iso(h.created_at),
+            }
+            for h in highlights
         ],
         "evaluations": [
             {

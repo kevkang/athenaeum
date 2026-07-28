@@ -39,6 +39,14 @@ export default function AppShell() {
                 Workspace
               </Link>
               <Link
+                to="/projects/$projectId/compose"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Compose
+              </Link>
+              <Link
                 to="/projects/$projectId/export"
                 params={{ projectId }}
                 className={styles.viewBtn}

@@ -12,11 +12,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.models import PassageEvidenceOut
-from athenaeum.storage.models import Paper, PaperSentence, Passage
+from athenaeum.storage.models import Paper, PaperSentence, Passage, ProjectMember, ProjectPaper
 
 router = APIRouter(prefix="/passages", tags=["passages"])
 
@@ -43,6 +44,18 @@ async def get_passage(
     paper = await session.get(Paper, paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Source paper not found")
+
+    # A passage carries no project_id of its own — visibility follows its
+    # source paper, which can itself be linked to several projects (see the
+    # equivalent check in api/papers.py).
+    visible = await session.scalar(
+        select(ProjectPaper.paper_id)
+        .join(ProjectMember, ProjectMember.project_id == ProjectPaper.project_id)
+        .where(ProjectPaper.paper_id == paper_id, ProjectMember.user_id == user.id)
+        .limit(1)
+    )
+    if visible is None:
+        raise HTTPException(status_code=403, detail="Not authorized to access this passage")
 
     return PassageEvidenceOut(
         id=passage_id,

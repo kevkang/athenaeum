@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
 import WorkspaceView from './pages/WorkspaceView';
+import ComposeView from './pages/ComposeView';
 import ExportView from './pages/ExportView';
 import AppShell from './components/AppShell';
 
@@ -58,6 +59,12 @@ const workspaceRoute = createRoute({
   component: WorkspaceView,
 });
 
+const composeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/compose',
+  component: ComposeView,
+});
+
 const exportRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/export',
@@ -81,6 +88,7 @@ const routeTree = rootRoute.addChildren([
     projectsRoute,
     projectRoute,
     workspaceRoute,
+    composeRoute,
     exportRoute,
   ]),
 ]);
