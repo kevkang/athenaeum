@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, useEditorState, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { composeApi } from '../api/compose';
 import { StatementLink } from '../extensions/StatementLink';
 import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
+import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
 import SourcesPanel from '../components/SourcesPanel';
 import { PASSAGE_MIME } from '../components/ReaderPane';
@@ -87,6 +88,47 @@ export default function ComposeView() {
     },
   });
 
+  // Toolbar active-states (bold/italic/heading) read via this selector
+  // instead of calling `editor.isActive(...)` directly in JSX. Tiptap
+  // transactions (e.g. Cmd+B) don't by themselves re-render this component
+  // — the toolbar was only catching up whenever *some other* state change
+  // happened to force a re-render, e.g. the debounced autosave flipping to
+  // 'saving'. Worse, `onUpdate` below calls `setSaveState('unsaved')` on
+  // every keystroke, but once saveState is already 'unsaved' that's a
+  // same-value setState, which React skips — so toggling bold while
+  // mid-typing produced no re-render at all until the next state change
+  // landed, up to ~1.5s later. `useEditorState` subscribes to the editor's
+  // own transactions directly, independent of this component's state.
+  const toolbarState = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return null;
+      return {
+        activeHeadingLevel: HEADING_LEVELS.find((level) => editor.isActive('heading', { level })) ?? null,
+        isParagraph: editor.isActive('paragraph'),
+        isBold: editor.isActive('bold'),
+        isItalic: editor.isActive('italic'),
+      };
+    },
+  });
+
+  const [hoveredMark, setHoveredMark] = useState<{ statementId: string; x: number; y: number } | null>(null);
+
+  const handleEditorMouseOver = (e: React.MouseEvent) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-statement-id]');
+    if (!target) return;
+    const statementId = target.getAttribute('data-statement-id');
+    if (!statementId) return;
+    const rect = target.getBoundingClientRect();
+    setHoveredMark({ statementId, x: rect.left, y: rect.bottom + 6 });
+  };
+
+  const handleEditorMouseOut = (e: React.MouseEvent) => {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.closest('[data-statement-id]')) return;
+    setHoveredMark(null);
+  };
+
   // Load the fetched document into the editor exactly once — TipTap's
   // `content` option only seeds the editor on creation, and re-applying it
   // on every refetch would clobber in-progress edits.
@@ -101,6 +143,16 @@ export default function ComposeView() {
     mutationFn: (json: Record<string, unknown>) => composeApi.save(projectId, json, versionRef.current),
     onSuccess: (saved) => {
       versionRef.current = saved.version;
+      // Keep the query cache in sync with what was just persisted. Without
+      // this, switching away and back within the SPA (no full page reload)
+      // re-mounts ComposeView, and the `loadedRef` effect below seeds the
+      // editor from whatever `doc` the cache still holds — which, absent
+      // this line, is the document as it was when this component first
+      // mounted, not the version that was just saved. That reads as "my
+      // saved edits vanished," even though they were genuinely persisted
+      // (a hard reload, which fetches fresh from the server instead of
+      // using the cache, would show them again).
+      queryClient.setQueryData(['compose-document', projectId], saved);
       setSaveState('saved');
     },
     onError: (err) => {
@@ -133,6 +185,22 @@ export default function ComposeView() {
     return () => {
       editor.off('update', onUpdate);
       clearTimeout(timer);
+      // Flush any pending autosave immediately on unmount (e.g. navigating
+      // from Compose to Workspace/Export) instead of just letting the
+      // `clearTimeout` above discard it — that used to silently drop the
+      // last <1.5s of edits on quick navigation, even though the toolbar
+      // never showed anything but "Unsaved changes" in between. This must
+      // call `editor.getJSON()` directly here rather than from an
+      // `editor.on('destroy', ...)` handler: `@tiptap/react`'s `useEditor`
+      // defers its actual `editor.destroy()` call by a tick
+      // (`EditorInstanceManager.scheduleDestroy`, a `setTimeout(fn, 1)`),
+      // which runs *after* this synchronous cleanup — a 'destroy' listener
+      // registered here would already have been torn down by the time
+      // tiptap gets around to emitting it, so it would never fire at all.
+      // The editor itself, however, is still fully intact right now.
+      if (saveStateRef.current === 'unsaved') {
+        saveMutation.mutate(editor.getJSON());
+      }
     };
     // Deliberately omits saveMutation from deps: it's a fresh object most
     // renders, and depending on it would reintroduce the same
@@ -166,6 +234,7 @@ export default function ComposeView() {
       : null;
     setEvidencePopover({ from, to, x, y, text, existingStatementId });
     setSelectionToolbar(null);
+    setHoveredMark(null);
   };
 
   const handleStatementLinked = (statementId: string) => {
@@ -202,21 +271,27 @@ export default function ComposeView() {
         {HEADING_LEVELS.map((level) => (
           <button
             key={level}
-            className={`${styles.toolbarBtn} ${editor.isActive('heading', { level }) ? styles.toolbarBtnActive : ''}`}
+            className={`${styles.toolbarBtn} ${toolbarState?.activeHeadingLevel === level ? styles.toolbarBtnActive : ''}`}
             onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
           >
             H{level}
           </button>
         ))}
+        <button
+          className={`${styles.toolbarBtn} ${toolbarState?.isParagraph ? styles.toolbarBtnActive : ''}`}
+          onClick={() => editor.chain().focus().setParagraph().run()}
+        >
+          Text
+        </button>
         <div className={styles.toolbarDivider} />
         <button
-          className={`${styles.toolbarBtn} ${editor.isActive('bold') ? styles.toolbarBtnActive : ''}`}
+          className={`${styles.toolbarBtn} ${toolbarState?.isBold ? styles.toolbarBtnActive : ''}`}
           onClick={() => editor.chain().focus().toggleBold().run()}
         >
           B
         </button>
         <button
-          className={`${styles.toolbarBtn} ${editor.isActive('italic') ? styles.toolbarBtnActive : ''}`}
+          className={`${styles.toolbarBtn} ${toolbarState?.isItalic ? styles.toolbarBtnActive : ''}`}
           onClick={() => editor.chain().focus().toggleItalic().run()}
         >
           I
@@ -276,7 +351,11 @@ export default function ComposeView() {
 
       <div className={styles.body}>
         <div className={styles.editorScroll}>
-          <div className={styles.editorColumn}>
+          <div
+            className={styles.editorColumn}
+            onMouseOver={handleEditorMouseOver}
+            onMouseOut={handleEditorMouseOut}
+          >
             <EditorContent editor={editor} />
           </div>
         </div>
@@ -286,6 +365,15 @@ export default function ComposeView() {
           </div>
         )}
       </div>
+
+      {hoveredMark && (
+        <EvidenceHoverTooltip
+          projectId={projectId}
+          statementId={hoveredMark.statementId}
+          x={hoveredMark.x}
+          y={hoveredMark.y}
+        />
+      )}
 
       {selectionToolbar && (
         <button

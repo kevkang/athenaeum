@@ -20,6 +20,15 @@ declare module '@tiptap/core' {
 export const StatementLink = Mark.create({
   name: 'statementLink',
 
+  // Marks are inclusive by default: typing (or splitting a block with
+  // Enter) right at the end of a marked span carries the mark onto
+  // whatever comes next. That's fine for bold/italic, but here it means a
+  // line break inside or at the end of an evidence-linked span leaves the
+  // new paragraph "infected" with the same evidence-underline, even though
+  // its text was never verified against anything. Tiptap's own `Link` mark
+  // sets this false for the identical reason.
+  inclusive: false,
+
   addAttributes() {
     return {
       statementId: {

@@ -1,0 +1,43 @@
+.tooltip {
+  position: fixed;
+  z-index: 210;
+  max-width: 320px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 10px 12px;
+  font-family: 'Inter', sans-serif;
+  /* The tooltip only ever appears because the mouse is already over the
+     marked span; letting it capture events would immediately fire a
+     mouseout on that span (tooltip covers it) and make itself flicker
+     shut the moment it renders. */
+  pointer-events: none;
+}
+
+.assertion {
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 5px;
+}
+
+.quote {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.cite {
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.empty {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+}
