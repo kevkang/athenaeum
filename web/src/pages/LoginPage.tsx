@@ -17,7 +17,16 @@ export default function LoginPage() {
           Every claim. Every source. Every step.
         </p>
 
-        <a href={`${API_URL}/auth/orcid/login`} className={styles.loginBtn}>
+        {/* Tells the backend which frontend to send the user back to after
+            ORCID auth completes — without this, every login (including on
+            a PR preview) redirects back to the single, fixed production
+            frontend URL instead of wherever the user actually started
+            from. Validated server-side against an allowlist, so this is
+            just a hint, not something this origin can abuse. */}
+        <a
+          href={`${API_URL}/auth/orcid/login?origin=${encodeURIComponent(window.location.origin)}`}
+          className={styles.loginBtn}
+        >
           <span className={styles.orcidLogo}>iD</span>
           Log in with ORCID
         </a>
