@@ -1,8 +1,9 @@
+import re
 import secrets
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
@@ -13,18 +14,39 @@ from athenaeum.storage.models import User
 
 router = APIRouter(prefix="/auth/orcid", tags=["auth"])
 
-_state_store: set[str] = set()
+# ORCID's own redirect_uri (backend callback) must stay fixed — it's
+# pre-registered with ORCID and can't vary per-request. But every PR preview
+# shares the single production API (see .github/workflows/preview.yml), so
+# without this, the *frontend* redirect at the end of login always landed on
+# settings.frontend_url regardless of which frontend actually started the
+# flow — previews could never complete login, always bouncing back to
+# production. Only production, pr-N previews, and local dev ever legitimately
+# initiate login, so validating against this pattern before ever trusting an
+# origin closes the obvious open-redirect risk of just honoring whatever the
+# query string says.
+_ALLOWED_FRONTEND_ORIGIN_RE = re.compile(
+    r"^https://(pr-\d+\.)?athenaindex\.app$|^http://localhost:\d+$"
+)
+
+# state -> the frontend origin to send the user back to, validated at
+# /login time so an attacker can't inject an arbitrary redirect target by
+# forging a state value — state itself is an unguessable token ORCID round-
+# trips back exactly, so this binding can't be tampered with in between.
+_state_store: dict[str, str] = {}
 
 
 @router.get("/login")
-async def login() -> RedirectResponse:
+async def login(origin: str | None = Query(default=None)) -> RedirectResponse:
     settings = get_settings()
     if not settings.orcid_client_id:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "ORCID OAuth not configured"
         )
+    resolved_origin = (
+        origin if origin and _ALLOWED_FRONTEND_ORIGIN_RE.match(origin) else settings.frontend_url
+    )
     state = secrets.token_urlsafe(32)
-    _state_store.add(state)
+    _state_store[state] = resolved_origin
     params = {
         "client_id": settings.orcid_client_id,
         "response_type": "code",
@@ -40,7 +62,7 @@ async def callback(code: str, state: str, session: SessionDep) -> RedirectRespon
     settings = get_settings()
     if state not in _state_store:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid state")
-    _state_store.discard(state)
+    frontend_origin = _state_store.pop(state)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -77,4 +99,4 @@ async def callback(code: str, state: str, session: SessionDep) -> RedirectRespon
         "name": display_name or "",
         "user_id": str(user.id),
     })
-    return RedirectResponse(f"{settings.frontend_url}/auth/callback?{params}")
+    return RedirectResponse(f"{frontend_origin}/auth/callback?{params}")
