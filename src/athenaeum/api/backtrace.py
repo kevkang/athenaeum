@@ -28,11 +28,24 @@ import uuid
 
 import redis.asyncio as aioredis
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import StreamingResponse
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import func, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
+from athenaeum.archive import athbacktrace as arc_athbacktrace
+from athenaeum.archive.export import dumps as ath_dumps
+from athenaeum.archive.export import loads as ath_loads
 from athenaeum.config import get_settings
 from athenaeum.domain.models import (
     BacktraceCandidateOut,
@@ -557,20 +570,79 @@ async def list_chains(
     ).all()
     leaf_counts = {chain_id: count for chain_id, count in leaf_rows}
 
-    return [
-        BacktraceChainSummaryOut(
+    def _summary(c: BacktraceChain) -> BacktraceChainSummaryOut:
+        count, max_index, has_pending = stats.get(c.id, (0, None, False))
+        # max_index is the deepest hop's hop_index (0 for "every hop is a
+        # direct child of the origin"), not a truthy/falsy flag — `or`
+        # would wrongly treat a real 0 the same as "no hops at all" here.
+        max_depth = (max_index + 1) if max_index is not None else 0
+        return BacktraceChainSummaryOut(
             id=c.id,
             origin_paper_id=c.origin_paper_id,
             origin_sentence_id=c.origin_sentence_id,
             origin_text=c.origin_text,
-            hop_count=stats.get(c.id, (0, None, False))[0],
-            max_depth=(stats.get(c.id, (0, None, False))[1] or -1) + 1,
+            hop_count=count,
+            max_depth=max_depth,
             leaf_count=leaf_counts.get(c.id, 0),
-            has_pending=bool(stats.get(c.id, (0, None, False))[2]),
+            has_pending=bool(has_pending),
             created_at=c.created_at,
         )
-        for c in chains
-    ]
+
+    return [_summary(c) for c in chains]
+
+
+# ── .athbacktrace export/import ──────────────────────────────────────────────
+#
+# A portable, scoped-down sibling of the .ath project archive — exports one
+# tree so it can be shared, archived, or re-imported into a different
+# project. See archive/athbacktrace.py's module docstring for how this
+# differs from .ath's identity-preserving import.
+
+@router.get("/chains/{chain_id}/export")
+async def export_chain(
+    chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
+) -> StreamingResponse:
+    chain, _hops = await _load_chain_and_hops(session, chain_id, user.id)
+    data = await arc_athbacktrace.build_athbacktrace(session, chain.id)
+
+    yaml_str = ath_dumps(data)
+    safe_claim = chain.origin_text[:40].replace("/", "-").replace(" ", "_")
+
+    return StreamingResponse(
+        iter([yaml_str.encode()]),
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{safe_claim}.athbacktrace"'},
+    )
+
+
+@router.post("/import", status_code=201)
+async def import_chain(
+    session: SessionDep,
+    user: CurrentUserDep,
+    file: UploadFile,
+    project_id: uuid.UUID = Form(...),
+) -> dict:
+    await _require_member(session, project_id, user.id)
+
+    raw = await file.read()
+    try:
+        data = ath_loads(raw.decode())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot parse archive: {exc}") from exc
+
+    expected_version = arc_athbacktrace.ATHBACKTRACE_VERSION
+    if not isinstance(data, dict) or data.get("athbacktrace_version") != expected_version:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported or missing athbacktrace_version (expected {expected_version})",
+        )
+
+    try:
+        chain_id = await arc_athbacktrace.import_athbacktrace(session, data, project_id, user.id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Malformed archive: {exc}") from exc
+
+    return {"chain_id": str(chain_id)}
 
 
 # ── WebSocket — live step stream ─────────────────────────────────────────────

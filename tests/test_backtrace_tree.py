@@ -15,7 +15,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from athenaeum.api.backtrace import _commit_hop, _load_chain_and_hops, _rank
+from athenaeum.api.backtrace import _commit_hop, _load_chain_and_hops, _rank, list_chains
 from athenaeum.config import get_settings
 from athenaeum.ingest.openalex import OpenAlexMeta
 from athenaeum.provider.base import Message
@@ -338,3 +338,52 @@ async def test_commit_hop_two_children_from_same_parent(db_session, monkeypatch)
     assert child_b.parent_hop_id == parent_hop.id
     assert child_a.hop_index == child_b.hop_index == 1
     assert child_a.to_openalex_id != child_b.to_openalex_id
+
+
+# ── list_chains ──────────────────────────────────────────────────────────────
+
+async def test_list_chains_max_depth_when_every_hop_is_a_root(db_session) -> None:
+    """Regression test: max_depth used to compute via `(max_index or -1) + 1`,
+    which treats a real hop_index of 0 the same as "no hops at all" (0 is
+    falsy in Python) and silently reports depth 0 instead of 1 — exactly the
+    all-siblings-under-origin shape this whole feature exists to support."""
+    owner, project, chain = await _seed_chain(db_session)
+    for openalex_id in ("W1", "W2"):
+        db_session.add(BacktraceHop(
+            id=uuid.uuid4(), chain_id=chain.id, parent_hop_id=None, hop_index=0,
+            to_openalex_id=openalex_id, to_title=f"Root hop {openalex_id}",
+            resolution_status="abstract_match", user_decision="pending",
+        ))
+    await db_session.flush()
+
+    summaries = await list_chains(db_session, owner, project.id, None)
+
+    assert len(summaries) == 1
+    assert summaries[0].hop_count == 2
+    assert summaries[0].max_depth == 1
+    assert summaries[0].leaf_count == 2
+    assert summaries[0].has_pending is False
+
+
+async def test_list_chains_max_depth_with_a_real_branch(db_session) -> None:
+    owner, project, chain = await _seed_chain(db_session)
+    root = BacktraceHop(
+        id=uuid.uuid4(), chain_id=chain.id, parent_hop_id=None, hop_index=0,
+        to_openalex_id="W1", to_title="Root", quote="q", quote_source="abstract",
+        resolution_status="abstract_match", user_decision="continued",
+    )
+    db_session.add(root)
+    await db_session.flush()
+    db_session.add(BacktraceHop(
+        id=uuid.uuid4(), chain_id=chain.id, parent_hop_id=root.id, hop_index=1,
+        to_openalex_id="W2", to_title="Child", resolution_status="ingesting",
+        user_decision="pending",
+    ))
+    await db_session.flush()
+
+    summaries = await list_chains(db_session, owner, project.id, None)
+
+    assert summaries[0].hop_count == 2
+    assert summaries[0].max_depth == 2
+    assert summaries[0].leaf_count == 1  # only the child is nobody's parent
+    assert summaries[0].has_pending is True  # the child is still "ingesting"

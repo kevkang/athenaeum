@@ -68,6 +68,38 @@
 }
 .toolbarBtn:hover { border-color: var(--border-strong); color: var(--text-muted); }
 
+/* ── Right-pane view switch (knowledge graph / backtrace tree) — a pill
+   group, mirroring AppShell's .viewSwitcher (segmented-control look) rather
+   than the reader pane's .readerModeToggle (individually-bordered tab
+   strip), since this is a top-level mode switch for the whole canvas, not a
+   contextual tab within one panel. ── */
+.graphModeToggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.graphModeBtn {
+  padding: 3px 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.graphModeBtn:hover { color: var(--text-muted); }
+
+.graphModeBtnActive {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .countBadge {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
@@ -375,6 +407,14 @@
   flex: 1;
   position: relative;
   overflow: hidden;
+}
+
+/* One of these per right-pane view (knowledge graph / backtrace tree) —
+   both stay mounted, toggled via inline display so neither's Cytoscape
+   instance ever needs to tear down and re-initialize on switch. */
+.canvasLayer {
+  position: absolute;
+  inset: 0;
 }
 
 .cytoscapeContainer {

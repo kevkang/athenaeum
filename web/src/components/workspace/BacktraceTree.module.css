@@ -1,0 +1,298 @@
+.wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Header: history / save / load ── */
+
+.header {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.header > * { pointer-events: auto; }
+
+.headerSpacer {
+  flex: 1;
+}
+
+.headerBtn {
+  padding: 4px 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.headerBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.headerBtn:disabled { opacity: 0.5; cursor: default; }
+
+.headerError {
+  position: absolute;
+  top: 42px;
+  left: 10px;
+  right: 10px;
+  z-index: 200;
+  background: var(--bg-elevated);
+  border: 1px solid var(--tension);
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--tension);
+}
+
+.historyPanel {
+  position: absolute;
+  top: 42px;
+  left: 10px;
+  z-index: 200;
+  width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.historyRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.historyRow:hover { background: var(--bg-hover); }
+
+.historyClaim {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.historyMeta {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.emptyState {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  max-width: 320px;
+  pointer-events: none;
+}
+
+.emptyTitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.emptyDesc {
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+/* ── Year axis ── */
+
+.yearAxis {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  pointer-events: none;
+  border-left: 1px solid var(--border);
+}
+
+.yearTick {
+  position: absolute;
+  right: 0;
+  width: 100%;
+  border-top: 1px dashed var(--border);
+}
+
+.yearTickLabel {
+  position: absolute;
+  right: 6px;
+  top: 2px;
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+/* ── Hover tooltip ── */
+
+.hoverTooltip {
+  position: fixed;
+  z-index: 210;
+  max-width: 280px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 8px 10px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.hoverTooltipText {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--link);
+  font-style: italic;
+  line-height: 1.45;
+}
+
+/* ── Detail popover ── */
+
+.detailPopover {
+  position: fixed;
+  z-index: 220;
+  width: 320px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+.detailKind {
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.detailTitle {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.detailMeta {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.detailQuote {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
+.detailHint {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.detailActionsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.detailBtn {
+  padding: 4px 9px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.detailBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.detailBtn:disabled { opacity: 0.5; cursor: default; }
+
+.detailLinkBtn {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+}
+.detailLinkBtn:hover { color: var(--text-muted); }
+
+.exploreSection {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.candidateRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.candidateLabel {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.candidateUnsure {
+  color: var(--text-faint);
+  font-style: italic;
+}
