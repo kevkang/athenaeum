@@ -572,7 +572,23 @@ export default function BacktraceTree({
 
       {/* ── Detail popover ── */}
       {detailTarget && detailPos && (
-        <div className={styles.detailPopover} style={{ left: detailPos.x, top: detailPos.y + 34 }}>
+        <div
+          className={styles.detailPopover}
+          style={{
+            left: detailPos.x,
+            top: detailPos.y + 34,
+            // The X/Y clamp in toViewportPos only keeps the popover's
+            // *origin point* on-screen — content-rich popovers (full
+            // quote + two AiNotes + a candidate checklist) can still run
+            // past the viewport bottom for nodes anywhere but the very
+            // top, silently pushing action buttons out of reach with no
+            // way to scroll to them. Capping maxHeight to whatever space
+            // actually remains below the popover forces its own existing
+            // overflow-y:auto to kick in instead, the same pattern
+            // EvidenceLinkPopover already uses for the same reason.
+            maxHeight: Math.max(160, window.innerHeight - (detailPos.y + 34) - 16),
+          }}
+        >
           {detailTarget.kind === 'origin' ? (
             <>
               <div className={styles.detailKind}>origin claim</div>
