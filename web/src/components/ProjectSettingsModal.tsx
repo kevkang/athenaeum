@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectsApi } from '../api/projects';
 import { membersApi } from '../api/members';
@@ -19,6 +20,7 @@ export default function ProjectSettingsModal({
   const [tab, setTab] = useState<Tab>('general');
   const currentUserId = useAuthStore((s) => s.user?.id);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // ── General tab state ──────────────────────────────────────────────────────
 
@@ -63,6 +65,22 @@ export default function ProjectSettingsModal({
   });
 
   const isOwner = project?.owner_id === currentUserId;
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+  const deleteMutation = useMutation({
+    mutationFn: () => projectsApi.delete(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      onClose();
+      // Always land back on the list, whether this modal was opened from
+      // inside the project being deleted (whose routes would otherwise
+      // 404 on the next query) or from the list itself (a harmless no-op
+      // navigation in that case).
+      navigate({ to: '/projects' });
+    },
+  });
 
   // ── Members tab state ──────────────────────────────────────────────────────
 
@@ -165,6 +183,56 @@ export default function ProjectSettingsModal({
                 <p style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, color: 'var(--text-faint)', marginTop: 4 }}>
                   Only the project owner can edit settings.
                 </p>
+              )}
+
+              {isOwner && project && (
+                <div className={styles.dangerZone}>
+                  <div className={styles.dangerZoneLabel}>Danger zone</div>
+                  {!confirmingDelete ? (
+                    <button
+                      className={styles.deleteBtn}
+                      onClick={() => setConfirmingDelete(true)}
+                    >
+                      Delete project
+                    </button>
+                  ) : (
+                    <div className={styles.deleteConfirm}>
+                      <p className={styles.deleteWarning}>
+                        This permanently deletes <strong>{project.title}</strong> and everything
+                        in it — papers linked here, statements, syntheses, backtrace traces. This
+                        can&rsquo;t be undone. Type the project title to confirm.
+                      </p>
+                      <input
+                        className={styles.input}
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder={project.title}
+                        autoFocus
+                      />
+                      <div className={styles.deleteConfirmActions}>
+                        <button
+                          className={styles.cancelDeleteBtn}
+                          onClick={() => { setConfirmingDelete(false); setDeleteConfirmText(''); }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className={styles.confirmDeleteBtn}
+                          disabled={deleteConfirmText !== project.title || deleteMutation.isPending}
+                          onClick={() => deleteMutation.mutate()}
+                        >
+                          {deleteMutation.isPending ? 'Deleting…' : 'Delete permanently'}
+                        </button>
+                      </div>
+                      {deleteMutation.error && (
+                        <div className={styles.errorMsg}>
+                          {(deleteMutation.error as { response?: { data?: { detail?: string } } })
+                            ?.response?.data?.detail ?? 'Could not delete this project.'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}

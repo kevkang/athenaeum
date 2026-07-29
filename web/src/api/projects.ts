@@ -28,6 +28,8 @@ export const projectsApi = {
   removePaper: (projectId: string, paperId: string) =>
     api.delete(`/projects/${projectId}/papers/${paperId}`),
 
+  delete: (id: string) => api.delete(`/projects/${id}`),
+
   importArchive: (file: File) => {
     const form = new FormData();
     form.append('file', file);

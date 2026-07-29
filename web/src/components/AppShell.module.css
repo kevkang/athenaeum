@@ -182,3 +182,16 @@
   flex: 1;
   overflow-y: auto;
 }
+
+.versionMarker {
+  position: fixed;
+  right: 10px;
+  bottom: 8px;
+  z-index: 50;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+}

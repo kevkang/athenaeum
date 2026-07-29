@@ -148,3 +148,29 @@ async def update_project(
     await session.commit()
     await session.refresh(project)
     return project
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: UUID, session: SessionDep, user: CurrentUserDep,
+) -> None:
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+    if project.owner_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the project owner can delete it")
+
+    # Every project-scoped table (statements, papers-in-project, syntheses,
+    # backtrace chains, compose docs, ...) cascades from projects.id at the
+    # DB level (see migration 0022 for the one table — project_members —
+    # that was missing this until now). Papers themselves are NOT deleted:
+    # they're a shared, cross-project entity (only the ProjectPaper link
+    # cascades), same as .ath export/import already treats them.
+    #
+    # Known gap: this doesn't clean up the project's nodes/edges in Neo4j
+    # (see graph/sync.py) — Postgres is the source of truth and nothing
+    # re-reads Neo4j for a project whose id no longer exists, so this is
+    # orphaned-but-harmless data rather than a correctness issue. Worth a
+    # follow-up if Neo4j storage cost ever becomes a real concern.
+    await session.delete(project)
+    await session.commit()

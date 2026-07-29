@@ -1,11 +1,21 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { zoteroApi } from '../api/zotero';
 import { llmCredentialsApi } from '../api/llmCredentials';
+import { useAuthStore } from '../store/auth';
 import styles from './AccountSettingsModal.module.css';
 
 export default function AccountSettingsModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleLogout = () => {
+    logout();
+    onClose();
+    navigate({ to: '/login' });
+  };
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -183,6 +193,7 @@ export default function AccountSettingsModal({ onClose }: { onClose: () => void 
         </div>
 
         <div className={styles.footer}>
+          <button className={styles.logoutBtn} onClick={handleLogout}>Log out</button>
           <button className={styles.closeBtn} onClick={onClose}>Close</button>
         </div>
       </div>

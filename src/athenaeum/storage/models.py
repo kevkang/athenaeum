@@ -62,7 +62,16 @@ class Project(Base):
     )
 
     owner: Mapped[User] = relationship(back_populates="projects")
-    members: Mapped[list[ProjectMember]] = relationship(back_populates="project")
+    # passive_deletes=True: without it, SQLAlchemy's default cascade tries
+    # to *disassociate* members from a deleted project by nulling out
+    # project_id — illegal here since it's part of ProjectMember's
+    # composite primary key, not just a plain FK. This tells the ORM to
+    # leave cascading to the DB's own ON DELETE CASCADE (see migration
+    # 0022) instead, the same pairing already used for e.g.
+    # BacktraceChain.hops.
+    members: Mapped[list[ProjectMember]] = relationship(
+        back_populates="project", passive_deletes=True
+    )
 
 
 class ProjectMember(Base):
@@ -75,7 +84,7 @@ class ProjectMember(Base):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id"), primary_key=True
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
