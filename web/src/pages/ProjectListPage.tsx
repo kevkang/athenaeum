@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { projectsApi, type Project } from '../api/projects';
+import ProjectSettingsModal from '../components/ProjectSettingsModal';
 import styles from './ProjectListPage.module.css';
 
 function formatDate(iso: string) {
@@ -159,6 +160,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
 export default function ProjectListPage() {
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
   const { data: projects, isLoading, error } = useQuery({
     queryKey: ['projects'],
     queryFn: projectsApi.list,
@@ -213,6 +215,17 @@ export default function ProjectListPage() {
                 params={{ projectId: p.id }}
                 className={styles.projectCard}
               >
+                <button
+                  className={styles.projectSettingsBtn}
+                  title="Project settings"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSettingsProjectId(p.id);
+                  }}
+                >
+                  ⚙
+                </button>
                 <div className={styles.projectTitle}>{p.title}</div>
                 {p.description && (
                   <div className={styles.projectDesc}>{p.description}</div>
@@ -230,6 +243,12 @@ export default function ProjectListPage() {
 
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+      {settingsProjectId && (
+        <ProjectSettingsModal
+          projectId={settingsProjectId}
+          onClose={() => setSettingsProjectId(null)}
+        />
+      )}
     </>
   );
 }

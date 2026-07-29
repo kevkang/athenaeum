@@ -460,6 +460,31 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
+.nodeGearBtn {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  /* .badgeLayer disables pointer-events for the whole overlay (so clicks
+     normally pass through to the canvas) — this is the one thing in it
+     that needs to actually be clickable, so it opts back in explicitly. */
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: color 0.12s, border-color 0.12s;
+}
+.nodeGearBtn:hover { color: var(--accent); border-color: var(--accent-dim); }
+
 /* ── Evidence-preview popover (anchored to a graph node) ── */
 .evidencePopover {
   position: absolute;
@@ -566,26 +591,49 @@
 .contextMenuItemDanger { color: #c67a5c; }
 .contextMenuItemDanger:hover { background: rgba(198, 122, 92, 0.12); color: #c67a5c; }
 
-/* ── W/E/R relation-key legend ── */
-.relationLegend {
+/* ── W/E/R relation-key legend — overlay in the knowledge-graph pane's own
+   top-left corner (top-right used to collide with the statement-details
+   drawer, which slides in from the right), not the shared toolbar, since
+   it's only meaningful while actually looking at the graph. Each key is
+   also a clickable toggle: arms drag-to-connect for that relation without
+   needing to hold the keyboard key. ── */
+.relationLegendCorner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 15;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 5px 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   font-size: 10px;
   color: var(--text-faint);
 }
 .relationLegendKey {
   font-family: 'JetBrains Mono', monospace;
+  font-size: inherit;
+  color: var(--text-faint);
+  background: none;
   padding: 1px 5px;
   border-radius: 3px;
   border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.1s;
 }
-.relationLegendKeyActive {
+.relationLegendKey:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.relationLegendKeyActive,
+.relationLegendKeyActive:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(201, 168, 118, 0.1);
 }
-.relationLegendHint { font-style: italic; }
 
 /* ── Right panel ── */
 .rightPanel {

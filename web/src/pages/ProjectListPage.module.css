@@ -71,6 +71,7 @@
 }
 
 .projectCard {
+  position: relative;
   padding: 20px 22px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -86,6 +87,26 @@
   background: var(--bg-hover);
   text-decoration: none;
 }
+
+.projectSettingsBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-canvas);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.projectSettingsBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
 
 .projectTitle {
   font-family: 'Lora', serif;

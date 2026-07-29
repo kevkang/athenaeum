@@ -102,6 +102,11 @@ export default function AppShell() {
       {accountModalOpen && (
         <AccountSettingsModal onClose={closeAccountModal} />
       )}
+
+      {/* No release/version-tagging process exists yet, so the build's own
+          commit is the only meaningful version identifier — see
+          vite.config.ts for how it's injected. */}
+      <div className={styles.versionMarker}>Ath · {import.meta.env.VITE_GIT_SHA ?? 'dev'}</div>
     </div>
   );
 }

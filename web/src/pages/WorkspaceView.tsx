@@ -916,6 +916,7 @@ export default function WorkspaceView() {
   // ── Graph canvas interaction state ──────────────────────────────────────────
   const [renderTick, setRenderTick] = useState(0);
   const [badgePositions, setBadgePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [gearPositions, setGearPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [evidencePopover, setEvidencePopover] = useState<{ statementId: string; x: number; y: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<
     | { x: number; y: number; kind: 'background' }
@@ -927,6 +928,26 @@ export default function WorkspaceView() {
   const [heldRelationKey, setHeldRelationKey] = useState<StatementRelation | null>(null);
   const heldRelationKeyRef = useRef<StatementRelation | null>(null);
   const edgeDragSourceRef = useRef<{ id: string; relation: StatementRelation } | null>(null);
+  // Tracks whether the current arm came from clicking a legend button (in
+  // which case it should auto-release after one edge, since there's no
+  // "release" gesture the way there is for a held key) vs. an actual
+  // keyboard hold (which already releases naturally on keyup).
+  const relationArmedViaClickRef = useRef(false);
+
+  const armRelation = useCallback((relation: StatementRelation, viaClick: boolean) => {
+    heldRelationKeyRef.current = relation;
+    relationArmedViaClickRef.current = viaClick;
+    setHeldRelationKey(relation);
+    cyRef.current?.autoungrabify(true);
+  }, []);
+  const disarmRelation = useCallback(() => {
+    heldRelationKeyRef.current = null;
+    relationArmedViaClickRef.current = false;
+    setHeldRelationKey(null);
+    cyRef.current?.autoungrabify(false);
+    cyRef.current?.nodes().removeClass('edge-drag-source');
+    edgeDragSourceRef.current = null;
+  }, []);
 
   const { data: papers = [], isLoading: papersLoading } = useQuery({
     queryKey: ['papers', projectId],
@@ -946,9 +967,12 @@ export default function WorkspaceView() {
     queryFn: () => api.get<StatementGraph>(`/projects/${projectId}/graph`).then((r) => r.data),
   });
 
+  // Selects/fits the new node in the graph as a lightweight acknowledgment
+  // that creation succeeded, but deliberately does not open the statement
+  // detail drawer — same reasoning as a plain node click: opening the full
+  // panel is only ever an explicit action via the gear icon.
   const handleStatementCreated = useCallback((id: string) => {
     pendingSelectRef.current = id;
-    setPanelMode({ kind: 'statement', id });
   }, []);
 
   const createFromPassageMutation = useMutation({
@@ -1155,9 +1179,7 @@ export default function WorkspaceView() {
       if (isTypingTarget(e.target)) return;
       const relation = RELATION_KEYS[e.key.toLowerCase()];
       if (relation && !heldRelationKeyRef.current) {
-        heldRelationKeyRef.current = relation;
-        setHeldRelationKey(relation);
-        cyRef.current?.autoungrabify(true);
+        armRelation(relation, false);
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !heldRelationKeyRef.current) {
         deleteSelectedElements();
@@ -1165,12 +1187,11 @@ export default function WorkspaceView() {
     }
     function onKeyUp(e: KeyboardEvent) {
       const relation = RELATION_KEYS[e.key.toLowerCase()];
-      if (relation && heldRelationKeyRef.current === relation) {
-        heldRelationKeyRef.current = null;
-        setHeldRelationKey(null);
-        cyRef.current?.autoungrabify(false);
-        cyRef.current?.nodes().removeClass('edge-drag-source');
-        edgeDragSourceRef.current = null;
+      // A click-armed relation only releases via another click or after
+      // completing an edge (see the cytoscape mouseup handler) — a stray
+      // keyup for the same letter shouldn't cancel it.
+      if (relation && heldRelationKeyRef.current === relation && !relationArmedViaClickRef.current) {
+        disarmRelation();
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -1198,7 +1219,10 @@ export default function WorkspaceView() {
     cy.on('tap', 'node', (e: cytoscape.EventObject) => {
       const { id, kind } = e.target.data() as { id: string; kind: string };
       if (kind !== 'statement') return;
-      setPanelMode({ kind: 'statement', id });
+      // Deliberately does NOT open the statement-detail right panel — that
+      // used to happen on every click, which was disruptive for something
+      // as casual as "let me see this node's evidence." Opening the full
+      // panel is now an explicit action via the gear icon overlay.
       setContextMenu(null);
       const rp = e.target.renderedPosition();
       setEvidencePopover({ statementId: id, x: rp.x, y: rp.y });
@@ -1245,6 +1269,9 @@ export default function WorkspaceView() {
       if (target?.isNode?.() && target.data('kind') === 'statement' && target.id() !== source.id) {
         addEdgeFromCanvasMutation.mutate({ from: source.id, to: target.id(), relation: source.relation });
       }
+      // Button-armed relations have no "release" gesture the way a held
+      // key does, so treat one completed drag (successful or not) as done.
+      if (relationArmedViaClickRef.current) disarmRelation();
     });
     cy.on('render', () => setRenderTick((t) => t + 1));
     cyRef.current = cy;
@@ -1312,6 +1339,22 @@ export default function WorkspaceView() {
     setBadgePositions(positions);
   }, [graph, renderTick]);
 
+  // Per-node "open details" gear — bottom-right corner, so it doesn't
+  // collide with the evidence-count badge (top-right). Every statement node
+  // gets one, unlike the badge which only shows where there's evidence.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !graph) { setGearPositions({}); return; }
+    const positions: Record<string, { x: number; y: number }> = {};
+    graph.nodes.forEach((n) => {
+      const el = cy.$id(n.id);
+      if (!el.length) return;
+      const bb = el.renderedBoundingBox();
+      positions[n.id] = { x: bb.x2 - 8, y: bb.y2 - 6 };
+    });
+    setGearPositions(positions);
+  }, [graph, renderTick]);
+
   const nodeCount = graph
     ? { all: graph.nodes.length, questions: graph.nodes.filter((n) => n.type === 'question').length, statements: graph.nodes.filter((n) => n.type !== 'question').length }
     : null;
@@ -1366,20 +1409,6 @@ export default function WorkspaceView() {
         </div>
 
         <span className={styles.countBadge}>{edgeCount} edge{edgeCount !== 1 ? 's' : ''}</span>
-
-        <div className={styles.toolbarSep} />
-
-        <span className={styles.relationLegend}>
-          {(['w', 'e', 'r'] as const).map((k) => (
-            <span
-              key={k}
-              className={`${styles.relationLegendKey} ${heldRelationKey === RELATION_KEYS[k] ? styles.relationLegendKeyActive : ''}`}
-            >
-              {k.toUpperCase()} {relationLabel(RELATION_KEYS[k])}
-            </span>
-          ))}
-          <span className={styles.relationLegendHint}>hold + drag between statements</span>
-        </span>
 
         <div style={{ marginLeft: 'auto' }} />
         <button
@@ -1485,6 +1514,28 @@ export default function WorkspaceView() {
           <div className={styles.canvasLayer} style={{ display: graphViewMode === 'graph' ? 'block' : 'none' }}>
           <div ref={containerRef} className={styles.cytoscapeContainer} />
 
+          {/* Relation-key hints — only meaningful while looking at the
+              knowledge graph itself (hold+drag, or click to arm then drag,
+              between statement nodes), so they live here rather than the
+              shared toolbar. */}
+          <span className={styles.relationLegendCorner}>
+            {(['w', 'e', 'r'] as const).map((k) => {
+              const relation = RELATION_KEYS[k];
+              const active = heldRelationKey === relation;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  className={`${styles.relationLegendKey} ${active ? styles.relationLegendKeyActive : ''}`}
+                  onClick={() => (active ? disarmRelation() : armRelation(relation, true))}
+                  title={`Click, then drag between statements to draw a "${relationLabel(relation)}" link`}
+                >
+                  {k.toUpperCase()} {relationLabel(relation)}
+                </button>
+              );
+            })}
+          </span>
+
           {/* Evidence-count badges — corner overlay per node, repositioned on every cytoscape render tick */}
           <div className={styles.badgeLayer}>
             {graph && graph.nodes
@@ -1498,6 +1549,27 @@ export default function WorkspaceView() {
                 >
                   {n.evidence_count}
                 </div>
+              ))}
+          </div>
+
+          {/* Opens the statement-detail right panel — the explicit action
+              that a plain click on the node itself no longer performs. */}
+          <div className={styles.badgeLayer}>
+            {graph && graph.nodes
+              .filter((n) => gearPositions[n.id])
+              .map((n) => (
+                <button
+                  key={`gear-${n.id}`}
+                  className={styles.nodeGearBtn}
+                  style={{ left: gearPositions[n.id].x, top: gearPositions[n.id].y }}
+                  title="Open statement details"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPanelMode({ kind: 'statement', id: n.id });
+                  }}
+                >
+                  ⚙
+                </button>
               ))}
           </div>
 
