@@ -3,8 +3,8 @@ import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEditor, useEditorState, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { composeApi } from '../api/compose';
-import { StatementLink } from '../extensions/StatementLink';
+import { composeApi, type CitationNumbering } from '../api/compose';
+import { StatementLink, statementMarkersRef } from '../extensions/StatementLink';
 import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
 import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
@@ -19,6 +19,14 @@ const AUTOSAVE_DELAY_MS = 1500;
 
 const HEADING_LEVELS = [1, 2, 3, 4] as const;
 
+function findEvidenceBySubId(numbering: CitationNumbering, subId: string) {
+  for (const reference of numbering.references) {
+    const evidence = reference.evidence.find((e) => e.sub_id === subId);
+    if (evidence) return { reference, evidence };
+  }
+  return null;
+}
+
 export default function ComposeView() {
   const { projectId } = useParams({ from: '/app/projects/$projectId/compose' });
   const queryClient = useQueryClient();
@@ -26,6 +34,11 @@ export default function ComposeView() {
   const { data: doc } = useQuery({
     queryKey: ['compose-document', projectId],
     queryFn: () => composeApi.get(projectId),
+  });
+
+  const { data: citations } = useQuery({
+    queryKey: ['compose-citations', projectId],
+    queryFn: () => composeApi.citations(projectId),
   });
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -112,21 +125,26 @@ export default function ComposeView() {
     },
   });
 
-  const [hoveredMark, setHoveredMark] = useState<{ statementId: string; x: number; y: number } | null>(null);
+  // Only an individual citation marker (the small <sup>, one per evidence
+  // sub-id) triggers the tooltip — hovering the statement span itself just
+  // gets the plain CSS :hover background wash in ComposeEditor.css, no
+  // React state involved.
+  const [hoveredMarker, setHoveredMarker] = useState<{ statementId: string; subId: string; x: number; y: number } | null>(null);
 
   const handleEditorMouseOver = (e: React.MouseEvent) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-statement-id]');
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-citation-subid]');
     if (!target) return;
     const statementId = target.getAttribute('data-statement-id');
-    if (!statementId) return;
+    const subId = target.getAttribute('data-citation-subid');
+    if (!statementId || !subId) return;
     const rect = target.getBoundingClientRect();
-    setHoveredMark({ statementId, x: rect.left, y: rect.bottom + 6 });
+    setHoveredMarker({ statementId, subId, x: rect.left, y: rect.bottom + 6 });
   };
 
   const handleEditorMouseOut = (e: React.MouseEvent) => {
     const related = e.relatedTarget as HTMLElement | null;
-    if (related?.closest('[data-statement-id]')) return;
-    setHoveredMark(null);
+    if (related?.closest('[data-citation-subid]')) return;
+    setHoveredMarker(null);
   };
 
   // Load the fetched document into the editor exactly once — TipTap's
@@ -138,6 +156,19 @@ export default function ComposeView() {
     versionRef.current = doc.version;
     loadedRef.current = true;
   }, [editor, doc]);
+
+  // StatementLink.ts's decoration plugin reads citation markers from a
+  // mutable ref (Tiptap extension options are fixed at construction, but
+  // markers change as evidence is attached/detached) — this effect is the
+  // only place that ref gets written, and dispatching a no-op transaction
+  // is what makes ProseMirror actually recompute decorations against the
+  // fresh value; nothing else would trigger a redraw on its own since the
+  // document itself hasn't changed.
+  useEffect(() => {
+    if (!editor || !citations) return;
+    statementMarkersRef.current = citations.statement_markers;
+    editor.view.dispatch(editor.state.tr);
+  }, [editor, citations]);
 
   const saveMutation = useMutation({
     mutationFn: (json: Record<string, unknown>) => composeApi.save(projectId, json, versionRef.current),
@@ -153,6 +184,7 @@ export default function ComposeView() {
       // (a hard reload, which fetches fresh from the server instead of
       // using the cache, would show them again).
       queryClient.setQueryData(['compose-document', projectId], saved);
+      queryClient.invalidateQueries({ queryKey: ['compose-citations', projectId] });
       setSaveState('saved');
     },
     onError: (err) => {
@@ -249,7 +281,7 @@ export default function ComposeView() {
       : null;
     setEvidencePopover({ from, to, x, y, text, existingStatementId });
     setSelectionToolbar(null);
-    setHoveredMark(null);
+    setHoveredMarker(null);
   };
 
   const handleStatementLinked = (statementId: string) => {
@@ -268,6 +300,7 @@ export default function ComposeView() {
     editor?.commands.setContent(fresh.content_json, { emitUpdate: false });
     versionRef.current = fresh.version;
     queryClient.setQueryData(['compose-document', projectId], fresh);
+    queryClient.invalidateQueries({ queryKey: ['compose-citations', projectId] });
     setSaveState('saved');
   };
 
@@ -389,14 +422,18 @@ export default function ComposeView() {
         )}
       </div>
 
-      {hoveredMark && (
-        <EvidenceHoverTooltip
-          projectId={projectId}
-          statementId={hoveredMark.statementId}
-          x={hoveredMark.x}
-          y={hoveredMark.y}
-        />
-      )}
+      {hoveredMarker && citations && (() => {
+        const match = findEvidenceBySubId(citations, hoveredMarker.subId);
+        if (!match) return null;
+        return (
+          <EvidenceHoverTooltip
+            reference={match.reference}
+            evidence={match.evidence}
+            x={hoveredMarker.x}
+            y={hoveredMarker.y}
+          />
+        );
+      })()}
 
       {selectionToolbar && (
         <button

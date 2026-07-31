@@ -1,52 +1,43 @@
-import { useQuery } from '@tanstack/react-query';
-import { statementsApi } from '../api/statements';
-import { passagesApi } from '../api/passages';
+import type { CitationEvidence, CitationReference } from '../api/compose';
 import { trunc, formatCitation } from '../lib/format';
 import styles from './EvidenceHoverTooltip.module.css';
 
-/** Hovering a `statementLink`-marked span shows what it's actually backed
- * by, without requiring a click — the citation + verbatim quote for its
- * first passage-kind evidence, the same fields `EvidenceLinkPopover`'s
- * `EvidenceRow` shows once you've already opened that popover. */
+/** Hovering an individual citation marker (the small superscript sub-id
+ * injected right after a statementLink span) shows exactly the one piece
+ * of evidence that marker addresses — not the statement's evidence as a
+ * whole, since a statement can carry more than one independent citation
+ * (see domain/citations.py). `reference`/`evidence` come straight out of
+ * the citations numbering ComposeView.tsx already has loaded, so this
+ * component does no fetching of its own. */
 export default function EvidenceHoverTooltip({
-  projectId,
-  statementId,
+  reference,
+  evidence,
   x,
   y,
 }: {
-  projectId: string;
-  statementId: string;
+  reference: CitationReference;
+  evidence: CitationEvidence;
   x: number;
   y: number;
 }) {
-  const { data: statements } = useQuery({
-    queryKey: ['statements', projectId],
-    queryFn: () => statementsApi.list(projectId),
-  });
-  const statement = statements?.find((s) => s.id === statementId);
-
-  const { data: evidence } = useQuery({
-    queryKey: ['evidence', statementId],
-    queryFn: () => statementsApi.evidence(statementId),
-  });
-  const passageEvidence = evidence?.find((e) => e.target_kind === 'passage');
-
-  const { data: passage } = useQuery({
-    queryKey: ['passage-evidence', passageEvidence?.target_id],
-    queryFn: () => passagesApi.get(passageEvidence!.target_id),
-    enabled: !!passageEvidence,
-  });
-
   return (
     <div className={styles.tooltip} style={{ left: x, top: y }}>
-      {statement && <div className={styles.assertion}>{trunc(statement.assertion, 90)}</div>}
-      {passage && (
-        <>
-          <div className={styles.quote}>&ldquo;{trunc(passage.verbatim_text, 220)}&rdquo;</div>
-          <div className={styles.cite}>{formatCitation(passage.paper_first_author, passage.paper_year)}</div>
-        </>
+      {evidence.quote ? (
+        <div className={styles.quote}>&ldquo;{trunc(evidence.quote, 220)}&rdquo;</div>
+      ) : (
+        <div className={styles.empty}>General citation — no specific passage</div>
       )}
-      {evidence?.length === 0 && <div className={styles.empty}>No evidence linked yet</div>}
+      <div className={styles.cite}>{referenceShortCite(reference)}</div>
     </div>
   );
+}
+
+function referenceShortCite(reference: CitationReference): string {
+  if (reference.kind === 'paper') {
+    return formatCitation(reference.paper_first_author, reference.paper_year);
+  }
+  if (reference.kind === 'dataset') {
+    return reference.dataset_title ?? 'Dataset';
+  }
+  return reference.statement_assertion ? trunc(reference.statement_assertion, 60) : 'Statement';
 }

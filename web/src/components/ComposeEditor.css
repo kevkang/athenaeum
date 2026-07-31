@@ -40,13 +40,30 @@
 .compose-prose em { color: var(--text); }
 
 /* A span of prose linked to a real graph Statement (via the statementLink
-   mark). Dotted underline in --link (blue) rather than a background wash,
-   so it reads as "this text is wired to something" without competing with
-   the yellow/gold highlight colors used in the reader pane. */
+   mark). No always-on affordance — the small superscript citation
+   marker(s) after it are what's visible at rest; hovering the span itself
+   just gives a mild background wash so you can see its extent. */
 .statement-link-mark {
-  border-bottom: 2px dotted var(--link);
   cursor: pointer;
+  border-radius: 2px;
 }
 .statement-link-mark:hover {
-  background: rgba(137, 165, 196, 0.12);
+  background: var(--bg-hover);
+}
+
+/* One or more <sup> markers injected right after a statementLink span by
+   StatementLink.ts's decoration plugin — see domain/citations.py for what
+   the numbers mean. Each is independently hoverable, showing just that
+   one piece of evidence (ComposeView.tsx's hover handlers). */
+.statement-citation-markers {
+  font-size: 0.7em;
+  color: var(--text-faint);
+  margin-left: 1px;
+  user-select: none;
+}
+.statement-citation-marker {
+  cursor: pointer;
+}
+.statement-citation-marker:hover {
+  color: var(--link);
 }
