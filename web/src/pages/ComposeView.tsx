@@ -161,6 +161,21 @@ export default function ComposeView() {
     },
   });
 
+  const exportAthmdMutation = useMutation({
+    mutationFn: () => composeApi.export(projectId),
+    onSuccess: (text) => {
+      const blob = new Blob([text], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'compose.athmd';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
+  });
+
   useEffect(() => {
     if (!editor) return;
     // Deliberately depends on [editor] only, not [saveState]: re-running
@@ -330,6 +345,14 @@ export default function ComposeView() {
           onClick={() => setSourcesOpen((v) => !v)}
         >
           Sources
+        </button>
+
+        <button
+          className={styles.toolbarBtn}
+          onClick={() => exportAthmdMutation.mutate()}
+          disabled={exportAthmdMutation.isPending}
+        >
+          {exportAthmdMutation.isPending ? 'Exporting…' : '↓ Export .athmd'}
         </button>
 
         <span className={`${styles.saveIndicator} ${saveState === 'error' ? styles.saveIndicatorError : ''}`}>

@@ -780,6 +780,41 @@ class ComposeDocumentUpdate(BaseModel):
     version: int = Field(description="Client's last-known version, for optimistic concurrency")
 
 
+# ── Citation numbering ───────────────────────────────────────────────────────
+# See domain/citations.py's module docstring — the single shared numbering
+# both the live Compose editor's hover UI and the .athmd exporter draw from.
+
+class CitationEvidenceOut(BaseModel):
+    sub_id: str = Field(description='e.g. "1.2"')
+    target_kind: str
+    target_id: UUID
+    quote: str | None = Field(
+        description="None for a general/paper-level citation with no specific passage"
+    )
+    role: str
+
+
+class CitationReferenceOut(BaseModel):
+    number: int
+    kind: str = Field(description='"paper" | "dataset" | "statement"')
+    id: UUID
+    paper_title: str | None = None
+    paper_year: int | None = None
+    paper_first_author: str | None = None
+    paper_doi: str | None = None
+    dataset_title: str | None = None
+    dataset_kind: str | None = None
+    statement_assertion: str | None = None
+    evidence: list[CitationEvidenceOut]
+
+
+class CitationNumberingOut(BaseModel):
+    references: list[CitationReferenceOut]
+    statement_markers: dict[UUID, list[str]] = Field(
+        description="statement_id -> the sub-ids that statement's own evidence resolves to"
+    )
+
+
 # ── Highlights ────────────────────────────────────────────────────────────────
 
 class HighlightCreate(BaseModel):

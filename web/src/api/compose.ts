@@ -19,4 +19,11 @@ export const composeApi = {
         version,
       })
       .then((r) => r.data),
+  /** Raw .athmd markdown text — download it client-side (see ExportView's
+   * `downloadNow` for the established blob-download pattern) rather than
+   * following a browser navigation, since the request needs an auth header. */
+  export: (projectId: string) =>
+    api
+      .get<string>(`/projects/${projectId}/compose-document/export`, { responseType: 'text' })
+      .then((r) => r.data),
 };
