@@ -1,4 +1,4 @@
-"""Export/import a single backtrace tree as a portable `.athbacktrace` file —
+"""Export/import a single backtrace tree as a portable `.athtrace` file —
 a scoped-down sibling of the `.ath` project archive, meant to leave the
 project entirely: shared with a colleague, archived independently, or
 re-imported into a different project.
@@ -32,14 +32,14 @@ from athenaeum.ingest.openalex import OpenAlexMeta
 from athenaeum.ingest.pipeline import find_or_create_target_paper
 from athenaeum.storage.models import BacktraceChain, BacktraceHop, Paper
 
-ATHBACKTRACE_VERSION = 1
+ATHTRACE_VERSION = 1
 
 
 def _s(v: uuid.UUID | None) -> str | None:
     return str(v) if v is not None else None
 
 
-async def build_athbacktrace(session: AsyncSession, chain_id: uuid.UUID) -> dict[str, Any]:
+async def build_athtrace(session: AsyncSession, chain_id: uuid.UUID) -> dict[str, Any]:
     chain = await session.get(BacktraceChain, chain_id)
     if chain is None:
         raise ValueError(f"Chain {chain_id} not found")
@@ -54,7 +54,7 @@ async def build_athbacktrace(session: AsyncSession, chain_id: uuid.UUID) -> dict
     )
 
     return {
-        "athbacktrace_version": ATHBACKTRACE_VERSION,
+        "athtrace_version": ATHTRACE_VERSION,
         "exported_at": datetime.now(UTC).isoformat(),
         "origin_paper": {
             "doi": origin_paper.doi if origin_paper else None,
@@ -115,7 +115,7 @@ def _meta_from_dict(d: dict[str, Any], *, title_key: str, doi_key: str, openalex
     )
 
 
-async def import_athbacktrace(
+async def import_athtrace(
     session: AsyncSession, data: dict[str, Any], project_id: uuid.UUID, user_id: uuid.UUID
 ) -> uuid.UUID:
     origin_paper_data = data.get("origin_paper") or {}

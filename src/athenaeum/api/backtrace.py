@@ -43,7 +43,7 @@ from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import func, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
-from athenaeum.archive import athbacktrace as arc_athbacktrace
+from athenaeum.archive import athtrace as arc_athtrace
 from athenaeum.archive.export import dumps as ath_dumps
 from athenaeum.archive.export import loads as ath_loads
 from athenaeum.config import get_settings
@@ -591,11 +591,11 @@ async def list_chains(
     return [_summary(c) for c in chains]
 
 
-# ── .athbacktrace export/import ──────────────────────────────────────────────
+# ── .athtrace export/import ───────────────────────────────────────────────────
 #
 # A portable, scoped-down sibling of the .ath project archive — exports one
 # tree so it can be shared, archived, or re-imported into a different
-# project. See archive/athbacktrace.py's module docstring for how this
+# project. See archive/athtrace.py's module docstring for how this
 # differs from .ath's identity-preserving import.
 
 @router.get("/chains/{chain_id}/export")
@@ -603,7 +603,7 @@ async def export_chain(
     chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
 ) -> StreamingResponse:
     chain, _hops = await _load_chain_and_hops(session, chain_id, user.id)
-    data = await arc_athbacktrace.build_athbacktrace(session, chain.id)
+    data = await arc_athtrace.build_athtrace(session, chain.id)
 
     yaml_str = ath_dumps(data)
     safe_claim = chain.origin_text[:40].replace("/", "-").replace(" ", "_")
@@ -611,7 +611,7 @@ async def export_chain(
     return StreamingResponse(
         iter([yaml_str.encode()]),
         media_type="application/x-yaml",
-        headers={"Content-Disposition": f'attachment; filename="{safe_claim}.athbacktrace"'},
+        headers={"Content-Disposition": f'attachment; filename="{safe_claim}.athtrace"'},
     )
 
 
@@ -630,15 +630,15 @@ async def import_chain(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Cannot parse archive: {exc}") from exc
 
-    expected_version = arc_athbacktrace.ATHBACKTRACE_VERSION
-    if not isinstance(data, dict) or data.get("athbacktrace_version") != expected_version:
+    expected_version = arc_athtrace.ATHTRACE_VERSION
+    if not isinstance(data, dict) or data.get("athtrace_version") != expected_version:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported or missing athbacktrace_version (expected {expected_version})",
+            detail=f"Unsupported or missing athtrace_version (expected {expected_version})",
         )
 
     try:
-        chain_id = await arc_athbacktrace.import_athbacktrace(session, data, project_id, user.id)
+        chain_id = await arc_athtrace.import_athtrace(session, data, project_id, user.id)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Malformed archive: {exc}") from exc
 

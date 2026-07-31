@@ -135,7 +135,7 @@ export const backtraceApi = {
   get: (chainId: string) =>
     api.get<BacktraceChainDetail>(`/backtrace/chains/${chainId}`).then((r) => r.data),
 
-  /** Raw .athbacktrace YAML text — download it client-side (see ExportView's
+  /** Raw .athtrace YAML text — download it client-side (see ExportView's
    * `downloadNow` for the established blob-download pattern) rather than
    * following a browser navigation, since the request needs an auth header. */
   exportChain: (chainId: string) =>

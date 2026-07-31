@@ -1,11 +1,11 @@
-"""DB-backed round-trip test for the `.athbacktrace` format — mirrors
+"""DB-backed round-trip test for the `.athtrace` format — mirrors
 test_archive_db_roundtrip.py's pattern for `.ath`: build a real branching
 tree, export it, import it into a *different* project (simulating the
 actual use case — sharing a trace with someone else's Athenaeum), and
 assert the tree's structure survives.
 
-Unlike `.ath`, `.athbacktrace` import is NOT identity-preserving (see
-archive/athbacktrace.py's module docstring) — the chain and every hop get
+Unlike `.ath`, `.athtrace` import is NOT identity-preserving (see
+archive/athtrace.py's module docstring) — the chain and every hop get
 fresh ids, so this compares by relative structure (parent/child
 relationships via to_openalex_id, since that's stable across the export)
 rather than by literal id equality.
@@ -17,7 +17,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from athenaeum.archive.athbacktrace import build_athbacktrace, import_athbacktrace
+from athenaeum.archive.athtrace import build_athtrace, import_athtrace
 from athenaeum.storage.models import (
     BacktraceChain,
     BacktraceHop,
@@ -36,7 +36,7 @@ async def _seed_branching_tree(session: AsyncSession) -> tuple[User, Project, Ba
     session.add(owner)
     await session.flush()
 
-    project = Project(id=uuid.uuid4(), title="athbacktrace Source Project", owner_id=owner.id)
+    project = Project(id=uuid.uuid4(), title="athtrace Source Project", owner_id=owner.id)
     session.add(project)
     await session.flush()
     session.add(ProjectMember(project_id=project.id, user_id=owner.id, role="owner"))
@@ -104,24 +104,24 @@ async def _seed_branching_tree(session: AsyncSession) -> tuple[User, Project, Ba
     return owner, project, chain
 
 
-async def test_athbacktrace_survives_export_then_import_into_different_project(db_session) -> None:
+async def test_athtrace_survives_export_then_import_into_different_project(db_session) -> None:
     owner, _source_project, chain = await _seed_branching_tree(db_session)
 
-    exported = await build_athbacktrace(db_session, chain.id)
+    exported = await build_athtrace(db_session, chain.id)
 
-    assert exported["athbacktrace_version"] == 1
+    assert exported["athtrace_version"] == 1
     assert exported["chain"]["origin_text"] == chain.origin_text
     assert len(exported["hops"]) == 3
 
     dest_project = Project(
-        id=uuid.uuid4(), title="athbacktrace Destination Project", owner_id=owner.id
+        id=uuid.uuid4(), title="athtrace Destination Project", owner_id=owner.id
     )
     db_session.add(dest_project)
     await db_session.flush()
     db_session.add(ProjectMember(project_id=dest_project.id, user_id=owner.id, role="owner"))
     await db_session.flush()
 
-    new_chain_id = await import_athbacktrace(db_session, exported, dest_project.id, owner.id)
+    new_chain_id = await import_athtrace(db_session, exported, dest_project.id, owner.id)
     assert new_chain_id != chain.id  # fresh id, not identity-preserving
 
     new_chain = await db_session.get(BacktraceChain, new_chain_id)
@@ -186,14 +186,14 @@ async def test_athbacktrace_survives_export_then_import_into_different_project(d
     assert target_link is not None
 
 
-async def test_athbacktrace_reimport_reuses_existing_paper_by_doi(db_session) -> None:
+async def test_athtrace_reimport_reuses_existing_paper_by_doi(db_session) -> None:
     """Paper.doi is globally unique — the same paper is shared across
     projects via ProjectPaper, never duplicated. Importing the origin
     paper's DOI into a second project must reuse that one global Paper row
     (and add a fresh ProjectPaper link for the new project), not insert a
     second row with the same DOI, which the DB would reject outright."""
     owner, _source_project, chain = await _seed_branching_tree(db_session)
-    exported = await build_athbacktrace(db_session, chain.id)
+    exported = await build_athtrace(db_session, chain.id)
 
     dest_project = Project(
         id=uuid.uuid4(), title="Dest, Paper Not Yet Linked Here", owner_id=owner.id
@@ -203,7 +203,7 @@ async def test_athbacktrace_reimport_reuses_existing_paper_by_doi(db_session) ->
     db_session.add(ProjectMember(project_id=dest_project.id, user_id=owner.id, role="owner"))
     await db_session.flush()
 
-    new_chain_id = await import_athbacktrace(db_session, exported, dest_project.id, owner.id)
+    new_chain_id = await import_athtrace(db_session, exported, dest_project.id, owner.id)
     new_chain = await db_session.get(BacktraceChain, new_chain_id)
 
     assert new_chain is not None

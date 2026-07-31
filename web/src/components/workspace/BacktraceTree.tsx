@@ -197,7 +197,7 @@ export default function BacktraceTree({
   projectId: string;
   visible: boolean;
   /** Called when the user picks a chain from history or successfully
-   * imports a .athbacktrace file — chainId itself is owned by the parent
+   * imports a .athtrace file — chainId itself is owned by the parent
    * (WorkspaceView), since it's independent of whatever the left panel's
    * linear stepper is doing with its own activeBacktrace chain. */
   onChainLoaded?: (chainId: string) => void;
@@ -226,7 +226,7 @@ export default function BacktraceTree({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `backtrace-${chainId}.athbacktrace`;
+      a.download = `backtrace-${chainId}.athtrace`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -486,7 +486,7 @@ export default function BacktraceTree({
             onClick={() => exportMutation.mutate()}
             disabled={exportMutation.isPending}
           >
-            {exportMutation.isPending ? 'Saving…' : '↓ Save .athbacktrace'}
+            {exportMutation.isPending ? 'Saving…' : '↓ Save .athtrace'}
           </button>
         )}
         <button
@@ -494,12 +494,12 @@ export default function BacktraceTree({
           onClick={() => importFileInputRef.current?.click()}
           disabled={importFileMutation.isPending}
         >
-          {importFileMutation.isPending ? 'Loading…' : '↑ Load .athbacktrace'}
+          {importFileMutation.isPending ? 'Loading…' : '↑ Load .athtrace'}
         </button>
         <input
           ref={importFileInputRef}
           type="file"
-          accept=".athbacktrace"
+          accept=".athtrace"
           style={{ display: 'none' }}
           onChange={(e) => {
             const f = e.target.files?.[0];

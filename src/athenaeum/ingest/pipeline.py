@@ -246,7 +246,7 @@ async def find_or_create_target_paper(
     existing paper (matched by DOI, then OpenAlex id) if one already exists
     anywhere in the DB, linking it into the project if it isn't already, or
     else creating a new ghost (not-yet-ingested) Paper. Shared by live
-    backtrace hop resolution and .athbacktrace import, both of which need to
+    backtrace hop resolution and .athtrace import, both of which need to
     point a hop at whatever UUID a cited paper already has in *this*
     database rather than assuming a fresh id."""
     existing = None
