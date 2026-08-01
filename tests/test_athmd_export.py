@@ -235,7 +235,11 @@ async def test_build_athmd_raises_on_unsupported_block_content(db_session) -> No
     _owner, project = await _seed_project(db_session)
     doc = ComposeDocument(
         id=uuid.uuid4(), project_id=project.id, version=1,
-        content_json={"type": "doc", "content": [{"type": "codeBlock", "content": []}]},
+        # blockquote isn't part of Compose's enabled node set (see
+        # ComposeView.tsx's StarterKit.configure) even after Phase 7 added
+        # codeBlock/table/link/code — a genuinely unsupported type to prove
+        # export still fails loudly rather than silently dropping content.
+        content_json={"type": "doc", "content": [{"type": "blockquote", "content": []}]},
     )
     db_session.add(doc)
     await db_session.flush()

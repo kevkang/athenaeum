@@ -284,3 +284,82 @@ async def test_build_then_import_figure_roundtrip(db_session) -> None:
         "type": "image",
         "attrs": {"datasetId": str(dataset_id), "alt": "A plot"},
     }
+
+
+async def test_import_athmd_parses_code_link_and_table(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    text = (
+        "See [a link](https://example.com) and `inline code`.\n\n"
+        "```python\n"
+        "def foo():\n"
+        "    return 1\n"
+        "```\n\n"
+        "| A | B |\n"
+        "| --- | --- |\n"
+        "| 1 | 2 |\n"
+    )
+
+    result = await import_athmd(db_session, text, project.id)
+    content = result["content_json"]["content"]
+
+    para_nodes = content[0]["content"]
+    link_node = next(n for n in para_nodes if n["text"] == "a link")
+    assert link_node["marks"] == [{"type": "link", "attrs": {"href": "https://example.com"}}]
+    code_node = next(n for n in para_nodes if n["text"] == "inline code")
+    assert code_node["marks"] == [{"type": "code"}]
+
+    assert content[1] == {
+        "type": "codeBlock",
+        "attrs": {"language": "python"},
+        "content": [{"type": "text", "text": "def foo():\n    return 1"}],
+    }
+
+    table = content[2]
+    assert table["type"] == "table"
+    header_row, body_row = table["content"]
+    assert [c["type"] for c in header_row["content"]] == ["tableHeader", "tableHeader"]
+    assert [c["type"] for c in body_row["content"]] == ["tableCell", "tableCell"]
+    assert header_row["content"][0]["content"][0]["content"][0]["text"] == "A"
+    assert body_row["content"][1]["content"][0]["content"][0]["text"] == "2"
+
+
+async def test_build_then_import_code_link_table_roundtrip(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    original_content = {
+        "type": "doc",
+        "content": [
+            {"type": "paragraph", "content": [
+                {"type": "text", "text": "A "},
+                {"type": "text", "text": "link", "marks": [
+                    {"type": "link", "attrs": {"href": "https://example.com"}}
+                ]},
+                {"type": "text", "text": " and "},
+                {"type": "text", "text": "code", "marks": [{"type": "code"}]},
+                {"type": "text", "text": "."},
+            ]},
+            {"type": "codeBlock", "attrs": {"language": "python"},
+             "content": [{"type": "text", "text": "x = 1"}]},
+            {"type": "table", "content": [
+                {"type": "tableRow", "content": [
+                    {"type": "tableHeader", "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": "A"}]},
+                    ]},
+                ]},
+                {"type": "tableRow", "content": [
+                    {"type": "tableCell", "content": [
+                        {"type": "paragraph", "content": [{"type": "text", "text": "1"}]},
+                    ]},
+                ]},
+            ]},
+        ],
+    }
+    doc = ComposeDocument(id=uuid.uuid4(), project_id=project.id, version=1,
+                           content_json=original_content)
+    db_session.add(doc)
+    await db_session.flush()
+
+    exported_text = await build_athmd(db_session, doc.id)
+    result = await import_athmd(db_session, exported_text, project.id)
+
+    assert result["warnings"] == []
+    assert result["content_json"]["content"] == original_content["content"]

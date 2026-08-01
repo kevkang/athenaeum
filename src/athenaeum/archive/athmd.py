@@ -6,10 +6,11 @@ module docstring for why a statement can carry more than one citation
 number).
 
 Any ProseMirror content outside what Compose's editor currently allows
-(paragraphs, headings, bold, italic, statementLink, inline/block math)
-makes export fail loudly rather than silently dropping it — the whole
-point of `.athmd` is that what you see on export is everything that was
-actually written.
+(paragraphs, headings, bold, italic, statementLink, inline/block math,
+inline code, code blocks, external links, images, tables) makes export
+fail loudly rather than silently dropping it — the whole point of
+`.athmd` is that what you see on export is everything that was actually
+written.
 
 Import is scoped to same-project reconciliation, not the `.athtrace`-style
 portable cross-project share: every `athm:statement/<uuid>` found in the
@@ -44,7 +45,7 @@ from athenaeum.storage.models import ComposeDocument, Statement
 
 ATHMD_VERSION = 1
 
-_SUPPORTED_MARKS = {"bold", "italic", "statementLink"}
+_SUPPORTED_MARKS = {"bold", "italic", "statementLink", "code", "link"}
 _SUPPORTED_INLINE_TYPES = {"text", "inlineMath"}
 
 _ATHM_STATEMENT_HREF_RE = re.compile(r"^athm:statement/([0-9a-fA-F-]{36})$")
@@ -62,7 +63,7 @@ _MARKER_PREFIX_RE = re.compile(r"^\[\^\d+\.\d+\](?:, \[\^\d+\.\d+\])*")
 
 _REFERENCES_HEADING_RE = re.compile(r"^## References\s*$", re.MULTILINE)
 
-_md = MarkdownIt().use(dollarmath_plugin)
+_md = MarkdownIt().use(dollarmath_plugin).enable("table")
 
 
 async def build_athmd(session: AsyncSession, compose_document_id: uuid.UUID) -> str:
@@ -98,6 +99,14 @@ def _render_blocks(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
             dataset_id = attrs.get("datasetId")
             alt = attrs.get("alt") or ""
             blocks.append(f"![{alt}](athm:dataset/{dataset_id})")
+        elif node_type == "codeBlock":
+            language = (node.get("attrs") or {}).get("language") or ""
+            # Code content is opaque text, never markdown-interpreted or
+            # citation-linked — no _render_inline here on purpose.
+            code_text = "".join(n.get("text", "") for n in (node.get("content") or []))
+            blocks.append(f"```{language}\n{code_text}\n```")
+        elif node_type == "table":
+            blocks.append(_render_table(node, numbering))
         else:
             raise ValueError(f"Unsupported .athmd block content: {node_type!r}")
     return "\n\n".join(blocks)
@@ -146,14 +155,42 @@ def _render_inline_node(node: dict[str, Any]) -> str:
 
 def _render_text_node(node: dict[str, Any]) -> str:
     text = node.get("text", "")
-    marks = {m.get("type") for m in (node.get("marks") or [])}
-    if "bold" in marks and "italic" in marks:
-        return f"***{text}***"
-    if "bold" in marks:
-        return f"**{text}**"
-    if "italic" in marks:
-        return f"*{text}*"
+    marks_list = node.get("marks") or []
+    mark_types = {m.get("type") for m in marks_list}
+    if "code" in mark_types:
+        return f"`{text}`"
+    if "bold" in mark_types and "italic" in mark_types:
+        text = f"***{text}***"
+    elif "bold" in mark_types:
+        text = f"**{text}**"
+    elif "italic" in mark_types:
+        text = f"*{text}*"
+    if "link" in mark_types:
+        href = next((m["attrs"]["href"] for m in marks_list if m.get("type") == "link"), "")
+        text = f"[{text}]({href})"
     return text
+
+
+def _render_table(node: dict[str, Any], numbering: CitationNumbering) -> str:
+    rows = node.get("content") or []
+    lines: list[str] = []
+    for i, row in enumerate(rows):
+        cells = row.get("content") or []
+        cell_texts = [_render_table_cell(c, numbering) for c in cells]
+        lines.append("| " + " | ".join(cell_texts) + " |")
+        if i == 0:
+            lines.append("| " + " | ".join("---" for _ in cells) + " |")
+    return "\n".join(lines)
+
+
+def _render_table_cell(cell: dict[str, Any], numbering: CitationNumbering) -> str:
+    content = cell.get("content") or []
+    if len(content) != 1 or content[0].get("type") != "paragraph":
+        raise ValueError(
+            "Unsupported .athmd table cell content (expected exactly one paragraph)"
+        )
+    text = _render_inline(content[0].get("content") or [], numbering)
+    return text.replace("|", "\\|")
 
 
 def _format_authors_list(authors_json: Any) -> str:
@@ -271,6 +308,18 @@ async def import_athmd(
         elif token.type == "math_block":
             content.append({"type": "blockMath", "attrs": {"latex": token.content.strip()}})
             i += 1
+        elif token.type == "fence":
+            language = token.info.strip() if token.info else None
+            code_text = token.content.rstrip("\n")
+            content.append({
+                "type": "codeBlock",
+                "attrs": {"language": language},
+                "content": [{"type": "text", "text": code_text}] if code_text else [],
+            })
+            i += 1
+        elif token.type == "table_open":
+            table_node, i = _import_table(tokens, i, known_ids, warnings)
+            content.append(table_node)
         else:
             raise ValueError(f"Unsupported .athmd content on import: {token.type!r}")
 
@@ -307,13 +356,48 @@ async def _known_statement_ids(session: AsyncSession, project_id: uuid.UUID) -> 
     return set(ids)
 
 
+def _import_table(
+    tokens: list[Token], i: int, known_ids: set[uuid.UUID], warnings: list[dict[str, str]]
+) -> tuple[dict[str, Any], int]:
+    """Walks a `table_open ... table_close` token run into Tiptap's table
+    shape — tableRow > (tableHeader | tableCell) > paragraph, per its own
+    schema (`content: "block+"` on each cell, confirmed against the
+    installed @tiptap/extension-table version)."""
+    i += 1  # skip table_open
+    rows: list[dict[str, Any]] = []
+    while tokens[i].type != "table_close":
+        if tokens[i].type in ("thead_open", "thead_close", "tbody_open", "tbody_close"):
+            i += 1
+            continue
+        if tokens[i].type == "tr_open":
+            i += 1
+            cells: list[dict[str, Any]] = []
+            while tokens[i].type != "tr_close":
+                cell_type = "tableHeader" if tokens[i].type == "th_open" else "tableCell"
+                inline_children = tokens[i + 1].children or []
+                rendered = _import_inline_tokens(inline_children, known_ids, warnings)
+                cells.append({
+                    "type": cell_type,
+                    "content": [{"type": "paragraph", "content": rendered} if rendered
+                                else {"type": "paragraph"}],
+                })
+                i += 3  # th_open/td_open, inline, th_close/td_close
+            i += 1  # skip tr_close
+            rows.append({"type": "tableRow", "content": cells})
+            continue
+        raise ValueError(f"Unsupported .athmd table content on import: {tokens[i].type!r}")
+    i += 1  # skip table_close
+    return {"type": "table", "content": rows}, i
+
+
 def _import_inline_tokens(
     children: list[Token], known_ids: set[uuid.UUID], warnings: list[dict[str, str]]
 ) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     active_marks: list[str] = []
     current_statement_id: str | None = None
-    just_closed_link = False
+    current_link_href: str | None = None
+    just_closed_statement_link = False
 
     for child in children:
         if child.type == "strong_open":
@@ -326,33 +410,46 @@ def _import_inline_tokens(
         elif child.type == "em_close":
             if "italic" in active_marks:
                 active_marks.remove("italic")
+        elif child.type == "code_inline":
+            # A single self-contained token, not an open/close pair.
+            text = child.content
+            marks = _resolve_span_marks(
+                active_marks, current_statement_id, current_link_href, text, known_ids, warnings
+            )
+            marks.append({"type": "code"})
+            nodes.append({"type": "text", "text": text, "marks": marks})
         elif child.type == "link_open":
             href = (child.attrs or {}).get("href", "")
             match = _ATHM_STATEMENT_HREF_RE.match(str(href))
-            if match is None:
-                raise ValueError(f"Unsupported .athmd link target on import: {href!r}")
-            current_statement_id = match.group(1)
+            if match is not None:
+                current_statement_id = match.group(1)
+            else:
+                current_link_href = str(href)
         elif child.type == "link_close":
-            current_statement_id = None
-            just_closed_link = True
+            if current_statement_id is not None:
+                current_statement_id = None
+                just_closed_statement_link = True
+            else:
+                current_link_href = None
         elif child.type == "text":
             text = child.content
-            if just_closed_link:
+            if just_closed_statement_link:
                 text = _MARKER_PREFIX_RE.sub("", text, count=1)
-            just_closed_link = False
+            just_closed_statement_link = False
             if not text:
                 continue
             marks = _resolve_span_marks(
-                active_marks, current_statement_id, text, known_ids, warnings
+                active_marks, current_statement_id, current_link_href, text, known_ids, warnings
             )
             node: dict[str, Any] = {"type": "text", "text": text}
             if marks:
                 node["marks"] = marks
             nodes.append(node)
         elif child.type == "math_inline":
-            just_closed_link = False
+            just_closed_statement_link = False
             marks = _resolve_span_marks(
-                active_marks, current_statement_id, child.content, known_ids, warnings
+                active_marks, current_statement_id, current_link_href, child.content,
+                known_ids, warnings,
             )
             node = {"type": "inlineMath", "attrs": {"latex": child.content}}
             if marks:
@@ -367,11 +464,14 @@ def _import_inline_tokens(
 def _resolve_span_marks(
     active_marks: list[str],
     current_statement_id: str | None,
+    current_link_href: str | None,
     span_text: str,
     known_ids: set[uuid.UUID],
     warnings: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
     marks: list[dict[str, Any]] = [{"type": m} for m in active_marks]
+    if current_link_href is not None:
+        marks.append({"type": "link", "attrs": {"href": current_link_href}})
     if current_statement_id is not None:
         if uuid.UUID(current_statement_id) in known_ids:
             marks.append({"type": "statementLink", "attrs": {"statementId": current_statement_id}})

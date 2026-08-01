@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Mathematics } from '@tiptap/extension-mathematics';
+import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
+import { TableKit } from '@tiptap/extension-table';
+import { createLowlight, common } from 'lowlight';
 import { composeApi, type CitationNumbering, type ComposeImportWarning } from '../api/compose';
 import { figuresApi } from '../api/figures';
 import { StatementLink, statementMarkersRef } from '../extensions/StatementLink';
@@ -22,6 +25,8 @@ type SaveState = 'idle' | 'unsaved' | 'saving' | 'saved' | 'conflict' | 'error';
 const AUTOSAVE_DELAY_MS = 1500;
 
 const HEADING_LEVELS = [1, 2, 3, 4] as const;
+
+const lowlight = createLowlight(common);
 
 // Mathematics.configure's onClick options only receive (node, pos), not the
 // editor — extensions are handed to useEditor once at construction, before
@@ -83,14 +88,15 @@ export default function ComposeView() {
         orderedList: false,
         listItem: false,
         listKeymap: false,
-        codeBlock: false,
-        code: false,
+        codeBlock: false, // CodeBlockLowlight below replaces it, for real syntax highlighting
         horizontalRule: false,
         strike: false,
         underline: false,
-        link: false,
         heading: { levels: [...HEADING_LEVELS] },
+        link: { openOnClick: false }, // editing, not browsing — don't navigate away on click
       }),
+      CodeBlockLowlight.configure({ lowlight }),
+      TableKit.configure({ table: { resizable: false } }),
       StatementLink,
       Mathematics.configure({
         inlineOptions: {
@@ -161,6 +167,9 @@ export default function ComposeView() {
         isParagraph: editor.isActive('paragraph'),
         isBold: editor.isActive('bold'),
         isItalic: editor.isActive('italic'),
+        isCode: editor.isActive('code'),
+        isCodeBlock: editor.isActive('codeBlock'),
+        isLink: editor.isActive('link'),
       };
     },
   });
@@ -406,6 +415,41 @@ export default function ComposeView() {
           onClick={() => editor.chain().focus().toggleItalic().run()}
         >
           I
+        </button>
+        <button
+          className={`${styles.toolbarBtn} ${toolbarState?.isCode ? styles.toolbarBtnActive : ''}`}
+          title="Inline code"
+          onClick={() => editor.chain().focus().toggleCode().run()}
+        >
+          Code
+        </button>
+        <button
+          className={`${styles.toolbarBtn} ${toolbarState?.isCodeBlock ? styles.toolbarBtnActive : ''}`}
+          title="Code block"
+          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        >
+          Code block
+        </button>
+        <button
+          className={`${styles.toolbarBtn} ${toolbarState?.isLink ? styles.toolbarBtnActive : ''}`}
+          title="Link selected text to a URL"
+          onClick={() => {
+            if (toolbarState?.isLink) {
+              editor.chain().focus().unsetLink().run();
+              return;
+            }
+            const url = window.prompt('Link URL:', 'https://');
+            if (url && url.trim()) editor.chain().focus().setLink({ href: url.trim() }).run();
+          }}
+        >
+          Link
+        </button>
+        <button
+          className={styles.toolbarBtn}
+          title="Insert a table"
+          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+        >
+          Table
         </button>
         <div className={styles.toolbarDivider} />
         <button
