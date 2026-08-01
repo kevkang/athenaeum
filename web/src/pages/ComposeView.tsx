@@ -15,6 +15,7 @@ import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
 import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
 import SourcesPanel from '../components/SourcesPanel';
+import AuditPanel from '../components/AuditPanel';
 import { PASSAGE_MIME } from '../components/ReaderPane';
 import '../components/ComposeEditor.css';
 import 'katex/dist/katex.min.css';
@@ -73,7 +74,7 @@ export default function ComposeView() {
   }, [saveState]);
   const versionRef = useRef(1);
   const loadedRef = useRef(false);
-  const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [rightPanel, setRightPanel] = useState<'sources' | 'audit' | null>('sources');
   const [evidencePopover, setEvidencePopover] = useState<{
     from: number; to: number; x: number; y: number; text: string; existingStatementId: string | null;
     pendingEvidence?: { targetKind: string; targetId: string } | null;
@@ -521,10 +522,17 @@ export default function ComposeView() {
         </div>
 
         <button
-          className={`${styles.toolbarBtn} ${sourcesOpen ? styles.toolbarBtnActive : ''} ${styles.sourcesToggle}`}
-          onClick={() => setSourcesOpen((v) => !v)}
+          className={`${styles.toolbarBtn} ${rightPanel === 'sources' ? styles.toolbarBtnActive : ''} ${styles.sourcesToggle}`}
+          onClick={() => setRightPanel((v) => (v === 'sources' ? null : 'sources'))}
         >
           Sources
+        </button>
+
+        <button
+          className={`${styles.toolbarBtn} ${rightPanel === 'audit' ? styles.toolbarBtnActive : ''}`}
+          onClick={() => setRightPanel((v) => (v === 'audit' ? null : 'audit'))}
+        >
+          Audit
         </button>
 
         <button
@@ -601,9 +609,14 @@ export default function ComposeView() {
             <EditorContent editor={editor} />
           </div>
         </div>
-        {sourcesOpen && (
+        {rightPanel === 'sources' && (
           <div className={styles.sourcesPanelWrap}>
             <SourcesPanel projectId={projectId} />
+          </div>
+        )}
+        {rightPanel === 'audit' && (
+          <div className={styles.sourcesPanelWrap}>
+            <AuditPanel projectId={projectId} />
           </div>
         )}
       </div>

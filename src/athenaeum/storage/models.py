@@ -756,3 +756,75 @@ class Highlight(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AuditRun(Base):
+    """One run of Audit mode over a compose document — for each statement's
+    evidence, an independent checker model judges whether the verbatim quote
+    actually supports the claim (see synthesize/audit.py, which reuses the
+    same independent-checker pattern as Synthesis's verifier.py). Unlike
+    Synthesis there's no separate step-log table: each AuditFinding row IS
+    the progress unit, published over Redis as it's created and persisted
+    at the same time — nothing ephemeral to separately replay."""
+    __tablename__ = "audit_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'done', 'failed')", name="audit_runs_status_chk"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    compose_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("compose_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    model: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    findings: Mapped[list[AuditFinding]] = relationship(
+        back_populates="audit_run", order_by="AuditFinding.ord", passive_deletes=True
+    )
+
+
+class AuditFinding(Base):
+    """One checked piece of evidence: does `quote` actually support the
+    statement it's attached to? `sub_id` (e.g. "1.2") is a snapshot of
+    domain/citations.py's numbering *as it was when the audit ran* — like
+    everywhere else that numbering is used, it's never trusted as a live
+    value later, just a convenient label for what this finding was about at
+    the time. `target_kind`/`target_id` mirror StatementEvidence's own
+    identity columns so a finding always traces back to a real evidence
+    row, even after later edits change the numbering."""
+    __tablename__ = "audit_findings"
+    __table_args__ = (
+        CheckConstraint(
+            "target_kind IN ('paper','passage','dataset','statement')",
+            name="audit_findings_target_kind_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    audit_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    statement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), nullable=False
+    )
+    sub_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    quote: Mapped[str | None] = mapped_column(Text)
+    supported: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    audit_run: Mapped[AuditRun] = relationship(back_populates="findings")

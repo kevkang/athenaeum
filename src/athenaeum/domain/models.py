@@ -267,6 +267,48 @@ class SynthesisOut(BaseModel):
     run_at: datetime
 
 
+# ── Audit mode ───────────────────────────────────────────────────────────────
+# See storage/models.py's AuditRun/AuditFinding docstrings and
+# synthesize/audit.py's module docstring for the design this mirrors
+# (Synthesis's independent-checker pattern, applied to authoring instead of
+# hallucination-detection).
+
+class AuditRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    compose_document_id: UUID
+    created_by: UUID | None
+    model: str | None
+    status: str
+    created_at: datetime
+
+
+class AuditFindingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ord: int
+    statement_id: UUID
+    sub_id: str
+    target_kind: str
+    target_id: UUID
+    quote: str | None
+    supported: bool
+    rationale: str
+    created_at: datetime
+
+
+class AuditRunDetailOut(BaseModel):
+    run: AuditRunOut
+    findings: list[AuditFindingOut]
+    statements_with_no_evidence: list[UUID] = Field(
+        description="Statements with zero attached evidence — computed fresh from "
+        "domain/citations.py at read time, not persisted as findings"
+    )
+
+
 class EvaluationCreate(BaseModel):
     passage_id: UUID
     stance: str = Field(pattern="^(agree|partial|disagree)$")

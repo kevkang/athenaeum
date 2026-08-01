@@ -25,6 +25,7 @@ from athenaeum.storage.models import (
     Paper,
     ZoteroCredentials,
 )
+from athenaeum.synthesize.audit import run_audit
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
 from athenaeum.synthesize.orchestrator import run_synthesis
 
@@ -300,6 +301,25 @@ async def run_synthesis_job(
         requesting_user_id=uuid.UUID(requesting_user_id),
     )
     log.info("job.synthesis.done", synthesis_id=synthesis_id)
+
+
+# ── Audit mode ─────────────────────────────────────────────────────────────────
+
+async def run_audit_job(
+    ctx: dict,
+    audit_run_id: str,
+    requesting_user_id: str,
+) -> None:
+    settings = get_settings()
+    log.info("job.audit.start", audit_run_id=audit_run_id)
+    await run_audit(
+        audit_run_id=uuid.UUID(audit_run_id),
+        engine=ctx["engine"],
+        redis=ctx["redis"],
+        settings=settings,
+        requesting_user_id=uuid.UUID(requesting_user_id),
+    )
+    log.info("job.audit.done", audit_run_id=audit_run_id)
 
 
 # ── Graph sync ─────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ from athenaeum import __version__
 from athenaeum.api import (
     annotations,
     archive,
+    audit,
     auth,
     backtrace,
     compose,
@@ -120,6 +121,7 @@ app.include_router(openalex_find.router)
 app.include_router(websearch_find.router)
 app.include_router(llm_credentials.router)
 app.include_router(backtrace.router)
+app.include_router(audit.router)
 
 
 @app.get("/health")

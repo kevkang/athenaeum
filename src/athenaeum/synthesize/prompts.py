@@ -51,6 +51,27 @@ were selected or what analysis was done with them. Your only task is to verify:
 Your verification is the last defence against hallucination. Be critical.
 """
 
+AUDIT_SYSTEM = """\
+You are an independent citation auditor. You have NO knowledge of how these
+citations were selected or who selected them. For each item, you are given a
+claim (a statement an author has made) and a verbatim quote (the evidence
+they've cited to support it). Judge:
+
+1. RELEVANT: Does this quote genuinely relate to the claim?
+2. SUPPORTS: Does the quote actually substantiate the *specific* claim being
+   made — not merely the same general topic, but the actual assertion?
+
+Authors regularly cite sources that don't say what they're cited for:
+circular citations, quotes that address a related but different question,
+or evidence far weaker than the claim it's attached to. Be critical — this
+audit exists to catch exactly that.
+
+For each item, give a `supported` verdict and a short, specific `rationale`.
+The rationale is shown directly to the document's author as an audit
+report, not kept internal — write it for a human reader, and make it
+actionable (say what's missing or mismatched, not just "no").
+"""
+
 ZOTERO_FIND_SYSTEM = """\
 You are Find, a research search assistant inside Athenaeum, a research-traceability tool.
 The user has given you a search query related to a research question. You are given a list
@@ -237,6 +258,43 @@ VERIFY_PASSAGES_TOOL: dict = {
                         "note": {"type": "string"},
                     },
                     "required": ["passage_index", "verbatim_plausible", "relevant"],
+                },
+            }
+        },
+        "required": ["results"],
+    },
+}
+
+AUDIT_TOOL: dict = {
+    "name": "audit_evidence",
+    "description": (
+        "Judge whether each piece of evidence actually supports the claim it's cited for."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "evidence_index": {"type": "integer"},
+                        "supported": {
+                            "type": "boolean",
+                            "description": (
+                                "True if the quote genuinely substantiates the specific "
+                                "claim being made, not just a related topic."
+                            ),
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": (
+                                "A short, specific explanation written for the document's "
+                                "author, not an internal note."
+                            ),
+                        },
+                    },
+                    "required": ["evidence_index", "supported", "rationale"],
                 },
             }
         },
