@@ -1,5 +1,40 @@
 # Next session — what's left
 
+## Update 2026-08-01 — `.athtrace` rename, `.athmd` format, and Audit mode (all on `main`, committed)
+
+**Everything in the plan is built, tested, and committed** (commits `397703c` through `c654c32`):
+
+1. **`.athbacktrace` → `.athtrace` rename** — scoped to just the exportable file-format token, not
+   the "Backtrace" feature itself (tables/routes/UI/persona all keep their name).
+2. **`.athmd` format** (7 phases) — a human-readable, git-diffable export/import layer over
+   Compose's TipTap `content_json`. New `domain/citations.py` is the single shared
+   reference/evidence-numbering pass (never persisted, recomputed on every call) used by both the
+   live editor's hover UI and the exporter. Citation grammar: `[^N.k]` decimal markers (reference
+   number + per-evidence sub-id) nested directly under one `## References` section — deliberately
+   not real footnote syntax, not a split Evidence/References layout (both were explicit user
+   corrections mid-plan). Supports inline/block LaTeX (KaTeX + `dollarmath`), figures (new S3
+   presigned-URL read-back path, incl. a `s3_public_endpoint_url` setting so local MinIO dev URLs
+   are actually browser-reachable), and generic markdown parity (code/code-block/link/table). Every
+   authoring feature has a dedicated toolbar button (per explicit user request), not just
+   markdown-syntax entry.
+3. **Audit mode** — reuses Synthesis's independent-checker pattern (`verify_passages`) to judge
+   whether each piece of cited evidence actually supports the statement it's attached to. New
+   `AuditRun`/`AuditFinding` tables (migration `0023`), `synthesize/audit.py`, `api/audit.py`
+   (POST to enqueue, GET to poll, WS to stream — mirrors `api/syntheses.py`'s shape exactly), and a
+   new `AuditPanel.tsx` side panel in Compose (toggled via a toolbar button, sharing the
+   Sources/Audit sidebar slot). Statements with zero evidence get no LLM call — flagged separately,
+   computed live from `domain/citations.py`, same as citation numbering everywhere else.
+
+**Verification**: full backend suite (214 tests, ruff, mypy) and frontend (`tsc`, `eslint`,
+`vite build`) all clean. Live-browser-verified end to end for every phase via Playwright against a
+locally-seeded project (bypassing ORCID OAuth) — including Audit mode's three distinct outcomes
+(supported / not-supported-with-specific-rationale / no-evidence-cited) against a real
+`ANTHROPIC_API_KEY` call.
+
+**Explicitly deferred** (per the user's own phasing, not forgotten): missing-citation detection
+against the ingested corpus, and circular-citation detection — both are "audits of ingested
+papers," the deliberate next stage after this "audits of `.athmd` files" pass.
+
 ## Update 2026-07-24 — Compose Pane (new feature, on `compose` branch, not merged)
 
 **Built and live-browser-verified end to end**, all 7 phases: a new "Compose" nav tab (between
