@@ -37,6 +37,16 @@ export interface CitationNumbering {
   statement_markers: Record<string, string[]>;
 }
 
+export interface ComposeImportWarning {
+  span_text: string;
+  missing_statement_id: string;
+}
+
+export interface ComposeImportResult {
+  document: ComposeDocument;
+  warnings: ComposeImportWarning[];
+}
+
 export const composeApi = {
   get: (projectId: string) =>
     api.get<ComposeDocument>(`/projects/${projectId}/compose-document`).then((r) => r.data),
@@ -60,4 +70,16 @@ export const composeApi = {
     api
       .get<string>(`/projects/${projectId}/compose-document/export`, { responseType: 'text' })
       .then((r) => r.data),
+  /** Replaces the document's prose from an uploaded .athmd file — see
+   * archive/athmd.py's module docstring for what does/doesn't survive the
+   * round trip. Always overwrites (no version check, unlike `save`), since
+   * there's no meaningful "client's last-known version" for a file picked
+   * from disk. */
+  importFile: (projectId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api
+      .post<ComposeImportResult>(`/projects/${projectId}/compose-document/import`, form)
+      .then((r) => r.data);
+  },
 };

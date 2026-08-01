@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
-from athenaeum.archive.athmd import build_athmd
+from athenaeum.archive.athmd import build_athmd, import_athmd
 from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.citations import build_reference_numbering, iter_statement_ids_in_order
 from athenaeum.domain.models import (
@@ -18,6 +18,8 @@ from athenaeum.domain.models import (
     CitationReferenceOut,
     ComposeDocumentOut,
     ComposeDocumentUpdate,
+    ComposeImportResultOut,
+    ComposeImportWarningOut,
 )
 from athenaeum.storage.models import ComposeDocument, Project, ProjectMember
 
@@ -126,8 +128,7 @@ async def export_compose_document(
     project_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
 ) -> StreamingResponse:
     """Download the compose document as a `.athmd` file — see
-    archive/athmd.py's module docstring. Export-only for now; import is a
-    later phase."""
+    archive/athmd.py's module docstring."""
     await _assert_member(session, project_id, user.id)
     doc = await _get_or_create(session, project_id)
     project = await session.get(Project, project_id)
@@ -139,4 +140,41 @@ async def export_compose_document(
         iter([text.encode()]),
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{safe_title}.athmd"'},
+    )
+
+
+@router.post("/import", response_model=ComposeImportResultOut)
+async def import_compose_document(
+    project_id: uuid.UUID, session: SessionDep, user: CurrentUserDep, file: UploadFile,
+) -> ComposeImportResultOut:
+    """Replace the compose document's prose from an uploaded `.athmd` file —
+    see archive/athmd.py's module docstring for what does and doesn't
+    survive the round trip. Reuses the same persistence mechanics as
+    `save_compose_document` (fetch-or-create, bump version, commit) rather
+    than a second path; there's no meaningful "client's last-known version"
+    for a freshly uploaded external file, so this always overwrites the
+    current document rather than checking it."""
+    await _assert_member(session, project_id, user.id)
+
+    raw = await file.read()
+    try:
+        text = raw.decode()
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Not valid text: {exc}") from exc
+
+    try:
+        result = await import_athmd(session, text, project_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cannot parse .athmd: {exc}") from exc
+
+    doc = await _get_or_create(session, project_id)
+    doc.content_json = result["content_json"]
+    doc.version += 1
+    doc.updated_by = user.id
+    await session.commit()
+    await session.refresh(doc)
+
+    return ComposeImportResultOut(
+        document=ComposeDocumentOut.model_validate(doc),
+        warnings=[ComposeImportWarningOut(**w) for w in result["warnings"]],
     )

@@ -3,7 +3,7 @@ import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEditor, useEditorState, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { composeApi, type CitationNumbering } from '../api/compose';
+import { composeApi, type CitationNumbering, type ComposeImportWarning } from '../api/compose';
 import { StatementLink, statementMarkersRef } from '../extensions/StatementLink';
 import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
 import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
@@ -42,6 +42,8 @@ export default function ComposeView() {
   });
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [importWarnings, setImportWarnings] = useState<ComposeImportWarning[]>([]);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
   // Mirrors `saveState` for the autosave effect below, which intentionally
   // does NOT depend on `saveState` (see that effect's comment) but still
   // needs the current value inside its stable `onUpdate` closure.
@@ -205,6 +207,18 @@ export default function ComposeView() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    },
+  });
+
+  const importAthmdMutation = useMutation({
+    mutationFn: (file: File) => composeApi.importFile(projectId, file),
+    onSuccess: (result) => {
+      editor?.commands.setContent(result.document.content_json, { emitUpdate: false });
+      versionRef.current = result.document.version;
+      queryClient.setQueryData(['compose-document', projectId], result.document);
+      queryClient.invalidateQueries({ queryKey: ['compose-citations', projectId] });
+      setImportWarnings(result.warnings);
+      setSaveState('saved');
     },
   });
 
@@ -388,6 +402,25 @@ export default function ComposeView() {
           {exportAthmdMutation.isPending ? 'Exporting…' : '↓ Export .athmd'}
         </button>
 
+        <button
+          className={styles.toolbarBtn}
+          onClick={() => importFileInputRef.current?.click()}
+          disabled={importAthmdMutation.isPending}
+        >
+          {importAthmdMutation.isPending ? 'Importing…' : '↑ Import .athmd'}
+        </button>
+        <input
+          ref={importFileInputRef}
+          type="file"
+          accept=".athmd"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importAthmdMutation.mutate(f);
+            e.target.value = '';
+          }}
+        />
+
         <span className={`${styles.saveIndicator} ${saveState === 'error' ? styles.saveIndicatorError : ''}`}>
           {saveState === 'saving' && 'Saving…'}
           {saveState === 'saved' && 'Saved'}
@@ -402,6 +435,26 @@ export default function ComposeView() {
           <span>This document was edited elsewhere since you loaded it.</span>
           <button className={styles.conflictBtn} onClick={reloadLatest}>Reload latest</button>
           <button className={styles.conflictBtn} onClick={overwriteAnyway}>Overwrite anyway</button>
+        </div>
+      )}
+
+      {importWarnings.length > 0 && (
+        <div className={styles.importWarningBanner}>
+          <div>
+            <div>
+              {importWarnings.length === 1
+                ? "1 citation link couldn't be resolved and was imported as plain text:"
+                : `${importWarnings.length} citation links couldn't be resolved and were imported as plain text:`}
+            </div>
+            <ul className={styles.importWarningList}>
+              {importWarnings.map((w, i) => (
+                <li key={i}>&ldquo;{w.span_text}&rdquo;</li>
+              ))}
+            </ul>
+          </div>
+          <button className={styles.importWarningDismiss} onClick={() => setImportWarnings([])}>
+            Dismiss
+          </button>
         </div>
       )}
 

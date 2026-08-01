@@ -815,6 +815,16 @@ class CitationNumberingOut(BaseModel):
     )
 
 
+class ComposeImportWarningOut(BaseModel):
+    span_text: str
+    missing_statement_id: str
+
+
+class ComposeImportResultOut(BaseModel):
+    document: ComposeDocumentOut
+    warnings: list[ComposeImportWarningOut]
+
+
 # ── Highlights ────────────────────────────────────────────────────────────────
 
 class HighlightCreate(BaseModel):
