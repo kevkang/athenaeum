@@ -38,6 +38,7 @@ dependencies = [
     "cryptography>=43.0",
     # .athmd import
     "markdown-it-py>=3.0",
+    "mdit-py-plugins>=0.4",
 ]
 
 [project.optional-dependencies]

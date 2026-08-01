@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEditor, useEditorState, EditorContent } from '@tiptap/react';
+import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { Mathematics } from '@tiptap/extension-mathematics';
 import { composeApi, type CitationNumbering, type ComposeImportWarning } from '../api/compose';
 import { StatementLink, statementMarkersRef } from '../extensions/StatementLink';
 import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
@@ -11,6 +12,7 @@ import StatementPicker from '../components/StatementPicker';
 import SourcesPanel from '../components/SourcesPanel';
 import { PASSAGE_MIME } from '../components/ReaderPane';
 import '../components/ComposeEditor.css';
+import 'katex/dist/katex.min.css';
 import styles from './ComposeView.module.css';
 
 type SaveState = 'idle' | 'unsaved' | 'saving' | 'saved' | 'conflict' | 'error';
@@ -18,6 +20,16 @@ type SaveState = 'idle' | 'unsaved' | 'saving' | 'saved' | 'conflict' | 'error';
 const AUTOSAVE_DELAY_MS = 1500;
 
 const HEADING_LEVELS = [1, 2, 3, 4] as const;
+
+// Mathematics.configure's onClick options only receive (node, pos), not the
+// editor — extensions are handed to useEditor once at construction, before
+// the editor exists, so a closure over a component-local variable would be
+// permanently stale. A plain module-level object (not `useRef`, which
+// React's stricter hooks lint forbids mutating once it's flowed into a
+// hook's config) is the bridge instead — same technique as this file's own
+// `statementMarkersRef` import. Safe as a singleton since only one
+// ComposeView is ever mounted at a time.
+const composeEditorRef: { current: Editor | null } = { current: null };
 
 function findEvidenceBySubId(numbering: CitationNumbering, subId: string) {
   for (const reference of numbering.references) {
@@ -77,6 +89,24 @@ export default function ComposeView() {
         heading: { levels: [...HEADING_LEVELS] },
       }),
       StatementLink,
+      Mathematics.configure({
+        inlineOptions: {
+          onClick: (node, pos) => {
+            const latex = window.prompt('Edit inline LaTeX:', node.attrs.latex as string);
+            if (latex === null) return;
+            if (latex.trim() === '') composeEditorRef.current?.commands.deleteInlineMath({ pos });
+            else composeEditorRef.current?.commands.updateInlineMath({ latex, pos });
+          },
+        },
+        blockOptions: {
+          onClick: (node, pos) => {
+            const latex = window.prompt('Edit LaTeX block:', node.attrs.latex as string);
+            if (latex === null) return;
+            if (latex.trim() === '') composeEditorRef.current?.commands.deleteBlockMath({ pos });
+            else composeEditorRef.current?.commands.updateBlockMath({ latex, pos });
+          },
+        },
+      }),
     ],
     editorProps: {
       attributes: { class: 'compose-prose' },
@@ -102,6 +132,10 @@ export default function ComposeView() {
       },
     },
   });
+
+  useEffect(() => {
+    composeEditorRef.current = editor;
+  }, [editor]);
 
   // Toolbar active-states (bold/italic/heading) read via this selector
   // instead of calling `editor.isActive(...)` directly in JSX. Tiptap
@@ -357,6 +391,27 @@ export default function ComposeView() {
           onClick={() => editor.chain().focus().toggleItalic().run()}
         >
           I
+        </button>
+        <div className={styles.toolbarDivider} />
+        <button
+          className={styles.toolbarBtn}
+          title="Insert inline LaTeX (e.g. E = mc^2)"
+          onClick={() => {
+            const latex = window.prompt('Inline LaTeX:', '');
+            if (latex && latex.trim()) editor.chain().focus().insertInlineMath({ latex }).run();
+          }}
+        >
+          Math
+        </button>
+        <button
+          className={styles.toolbarBtn}
+          title="Insert a block LaTeX equation"
+          onClick={() => {
+            const latex = window.prompt('Block LaTeX:', '');
+            if (latex && latex.trim()) editor.chain().focus().insertBlockMath({ latex }).run();
+          }}
+        >
+          Math block
         </button>
         <div className={styles.toolbarDivider} />
         <div className={styles.insertWrap}>

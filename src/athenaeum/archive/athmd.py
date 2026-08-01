@@ -6,9 +6,10 @@ module docstring for why a statement can carry more than one citation
 number).
 
 Any ProseMirror content outside what Compose's editor currently allows
-(paragraphs, headings, bold, italic, statementLink) makes export fail
-loudly rather than silently dropping it — the whole point of `.athmd` is
-that what you see on export is everything that was actually written.
+(paragraphs, headings, bold, italic, statementLink, inline/block math)
+makes export fail loudly rather than silently dropping it — the whole
+point of `.athmd` is that what you see on export is everything that was
+actually written.
 
 Import is scoped to same-project reconciliation, not the `.athtrace`-style
 portable cross-project share: every `athm:statement/<uuid>` found in the
@@ -29,6 +30,7 @@ from typing import Any
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +45,7 @@ from athenaeum.storage.models import ComposeDocument, Statement
 ATHMD_VERSION = 1
 
 _SUPPORTED_MARKS = {"bold", "italic", "statementLink"}
+_SUPPORTED_INLINE_TYPES = {"text", "inlineMath"}
 
 _ATHM_STATEMENT_HREF_RE = re.compile(r"^athm:statement/([0-9a-fA-F-]{36})$")
 # The literal `[^N.k]` citation markers export appends right after a
@@ -58,7 +61,7 @@ _MARKER_PREFIX_RE = re.compile(r"^\[\^\d+\.\d+\](?:, \[\^\d+\.\d+\])*")
 
 _REFERENCES_HEADING_RE = re.compile(r"^## References\s*$", re.MULTILINE)
 
-_md = MarkdownIt()
+_md = MarkdownIt().use(dollarmath_plugin)
 
 
 async def build_athmd(session: AsyncSession, compose_document_id: uuid.UUID) -> str:
@@ -86,6 +89,9 @@ def _render_blocks(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
             level = (node.get("attrs") or {}).get("level", 1)
             text = _render_inline(node.get("content") or [], numbering)
             blocks.append(f"{'#' * level} {text}")
+        elif node_type == "blockMath":
+            latex = (node.get("attrs") or {}).get("latex", "")
+            blocks.append(f"$$\n{latex}\n$$")
         else:
             raise ValueError(f"Unsupported .athmd block content: {node_type!r}")
     return "\n\n".join(blocks)
@@ -98,8 +104,9 @@ def _render_inline(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
     # and only close the citation-link wrapper when the id actually changes.
     segments: list[tuple[str | None, list[dict[str, Any]]]] = []
     for node in nodes:
-        if node.get("type") != "text":
-            raise ValueError(f"Unsupported .athmd inline content: {node.get('type')!r}")
+        node_type = node.get("type")
+        if node_type not in _SUPPORTED_INLINE_TYPES:
+            raise ValueError(f"Unsupported .athmd inline content: {node_type!r}")
         marks = node.get("marks") or []
         unsupported = {m.get("type") for m in marks} - _SUPPORTED_MARKS
         if unsupported:
@@ -114,7 +121,7 @@ def _render_inline(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
 
     rendered: list[str] = []
     for statement_id, seg_nodes in segments:
-        text = "".join(_render_text_node(n) for n in seg_nodes)
+        text = "".join(_render_inline_node(n) for n in seg_nodes)
         if statement_id is None:
             rendered.append(text)
             continue
@@ -122,6 +129,13 @@ def _render_inline(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
         suffix = ", ".join(f"[^{m}]" for m in markers)
         rendered.append(f"[{text}](athm:statement/{statement_id})" + suffix)
     return "".join(rendered)
+
+
+def _render_inline_node(node: dict[str, Any]) -> str:
+    if node.get("type") == "inlineMath":
+        latex = (node.get("attrs") or {}).get("latex", "")
+        return f"${latex}$"
+    return _render_text_node(node)
 
 
 def _render_text_node(node: dict[str, Any]) -> str:
@@ -238,6 +252,9 @@ async def import_athmd(
             content.append({"type": "paragraph", "content": rendered} if rendered
                             else {"type": "paragraph"})
             i += 3  # paragraph_open, inline, paragraph_close
+        elif token.type == "math_block":
+            content.append({"type": "blockMath", "attrs": {"latex": token.content.strip()}})
+            i += 1
         else:
             raise ValueError(f"Unsupported .athmd content on import: {token.type!r}")
 
@@ -292,17 +309,19 @@ def _import_inline_tokens(
             just_closed_link = False
             if not text:
                 continue
-            marks: list[dict[str, Any]] = [{"type": m} for m in active_marks]
-            if current_statement_id is not None:
-                if uuid.UUID(current_statement_id) in known_ids:
-                    marks.append(
-                        {"type": "statementLink", "attrs": {"statementId": current_statement_id}}
-                    )
-                else:
-                    warnings.append(
-                        {"span_text": text, "missing_statement_id": current_statement_id}
-                    )
+            marks = _resolve_span_marks(
+                active_marks, current_statement_id, text, known_ids, warnings
+            )
             node: dict[str, Any] = {"type": "text", "text": text}
+            if marks:
+                node["marks"] = marks
+            nodes.append(node)
+        elif child.type == "math_inline":
+            just_closed_link = False
+            marks = _resolve_span_marks(
+                active_marks, current_statement_id, child.content, known_ids, warnings
+            )
+            node = {"type": "inlineMath", "attrs": {"latex": child.content}}
             if marks:
                 node["marks"] = marks
             nodes.append(node)
@@ -310,3 +329,19 @@ def _import_inline_tokens(
             raise ValueError(f"Unsupported .athmd inline content on import: {child.type!r}")
 
     return nodes
+
+
+def _resolve_span_marks(
+    active_marks: list[str],
+    current_statement_id: str | None,
+    span_text: str,
+    known_ids: set[uuid.UUID],
+    warnings: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    marks: list[dict[str, Any]] = [{"type": m} for m in active_marks]
+    if current_statement_id is not None:
+        if uuid.UUID(current_statement_id) in known_ids:
+            marks.append({"type": "statementLink", "attrs": {"statementId": current_statement_id}})
+        else:
+            warnings.append({"span_text": span_text, "missing_statement_id": current_statement_id})
+    return marks

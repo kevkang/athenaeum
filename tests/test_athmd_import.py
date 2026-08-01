@@ -103,6 +103,26 @@ async def test_import_athmd_preserves_bold_and_italic(db_session) -> None:
     assert ("both", ["bold", "italic"]) in runs
 
 
+async def test_import_athmd_parses_inline_and_block_math(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    text = (
+        "Inline math: $E = mc^2$.\n\n"
+        "$$\n"
+        r"\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}"
+        "\n$$\n"
+    )
+
+    result = await import_athmd(db_session, text, project.id)
+
+    content = result["content_json"]["content"]
+    assert content[0]["type"] == "paragraph"
+    inline_math = next(n for n in content[0]["content"] if n["type"] == "inlineMath")
+    assert inline_math["attrs"]["latex"] == "E = mc^2"
+
+    assert content[1]["type"] == "blockMath"
+    assert content[1]["attrs"]["latex"] == r"\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}"
+
+
 async def test_import_athmd_ignores_references_section(db_session) -> None:
     _owner, project = await _seed_project(db_session)
     text = (
@@ -161,6 +181,34 @@ async def test_build_then_import_roundtrip(db_session) -> None:
 
     assert result["warnings"] == []
     assert _flatten(result["content_json"]) == _flatten(original_content)
+
+
+async def test_build_then_import_math_roundtrip(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    original_content = {
+        "type": "doc",
+        "content": [
+            {"type": "paragraph", "content": [
+                {"type": "text", "text": "Inline math: "},
+                {"type": "inlineMath", "attrs": {"latex": "E = mc^2"}},
+                {"type": "text", "text": "."},
+            ]},
+            {"type": "blockMath", "attrs": {"latex": r"\frac{\sqrt{\pi}}{2}"}},
+        ],
+    }
+    doc = ComposeDocument(id=uuid.uuid4(), project_id=project.id, version=1,
+                           content_json=original_content)
+    db_session.add(doc)
+    await db_session.flush()
+
+    exported_text = await build_athmd(db_session, doc.id)
+    result = await import_athmd(db_session, exported_text, project.id)
+
+    assert result["warnings"] == []
+    content = result["content_json"]["content"]
+    inline_math = next(n for n in content[0]["content"] if n["type"] == "inlineMath")
+    assert inline_math["attrs"]["latex"] == "E = mc^2"
+    assert content[1] == {"type": "blockMath", "attrs": {"latex": r"\frac{\sqrt{\pi}}{2}"}}
 
 
 async def test_import_compose_document_endpoint_persists_and_reports_warnings(
