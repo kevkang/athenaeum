@@ -47,6 +47,9 @@ services:
       dockerfile: nginx/Dockerfile
       args:
         VITE_API_URL: https://api.athenaindex.app
+        # Passed through from the host shell (deploy.sh exports it after
+        # `git pull`, since the build container itself has no `.git`).
+        VITE_GIT_SHA: ${VITE_GIT_SHA:-unknown}
     ports:
       - "80:80"
       - "443:443"

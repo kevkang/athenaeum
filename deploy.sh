@@ -6,6 +6,11 @@ COMPOSE="docker compose --env-file .env.production -f docker-compose.yml -f dock
 echo "==> Pulling latest..."
 git pull
 
+# The nginx build container has no `.git` of its own (only `web/` is copied
+# in), so the sha has to be computed here, on the host, and threaded through
+# as a build arg — see nginx/Dockerfile and docker-compose.prod.yml.
+export VITE_GIT_SHA="$(git rev-parse --short HEAD)"
+
 echo "==> Building images..."
 $COMPOSE build
 
