@@ -243,3 +243,44 @@ async def test_import_compose_document_endpoint_persists_and_reports_warnings(
     texts = [n["text"] for n in para["content"]]
     assert "a resolvable claim" in texts
     assert "an orphaned one" in texts
+
+
+async def test_import_athmd_parses_standalone_figure(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    dataset_id = uuid.uuid4()
+    text = f"Before.\n\n![Figure 1: a plot](athm:dataset/{dataset_id})\n\nAfter.\n"
+
+    result = await import_athmd(db_session, text, project.id)
+
+    content = result["content_json"]["content"]
+    assert content[0]["content"][0]["text"] == "Before."
+    assert content[1] == {
+        "type": "image",
+        "attrs": {"datasetId": str(dataset_id), "alt": "Figure 1: a plot"},
+    }
+    assert content[2]["content"][0]["text"] == "After."
+
+
+async def test_build_then_import_figure_roundtrip(db_session) -> None:
+    _owner, project = await _seed_project(db_session)
+    dataset_id = uuid.uuid4()
+    original_content = {
+        "type": "doc",
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "Before."}]},
+            {"type": "image", "attrs": {"datasetId": str(dataset_id), "alt": "A plot"}},
+        ],
+    }
+    doc = ComposeDocument(id=uuid.uuid4(), project_id=project.id, version=1,
+                           content_json=original_content)
+    db_session.add(doc)
+    await db_session.flush()
+
+    exported_text = await build_athmd(db_session, doc.id)
+    result = await import_athmd(db_session, exported_text, project.id)
+
+    assert result["warnings"] == []
+    assert result["content_json"]["content"][1] == {
+        "type": "image",
+        "attrs": {"datasetId": str(dataset_id), "alt": "A plot"},
+    }

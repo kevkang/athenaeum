@@ -67,3 +67,11 @@
 .statement-citation-marker:hover {
   color: var(--link);
 }
+
+.compose-figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2em auto;
+  border-radius: 4px;
+}

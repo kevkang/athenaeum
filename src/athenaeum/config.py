@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     aws_region: str = "us-east-1"
     s3_endpoint_url: str | None = None  # set only for local MinIO; unset hits real AWS
+    # Presigned figure URLs are handed to a browser, not called server-side —
+    # in local dev s3_endpoint_url is the docker-compose-internal
+    # `http://minio:9000`, which a browser outside that network can't
+    # resolve. This is the browser-reachable equivalent (e.g.
+    # `http://localhost:9000`); unset in production, where s3_endpoint_url
+    # is also unset and both cases hit real, already-public AWS.
+    s3_public_endpoint_url: str | None = None
 
     secret_encryption_key: str | None = None
     zotero_api_base: str = "https://api.zotero.org"

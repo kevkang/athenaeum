@@ -43,3 +43,26 @@ async def delete_object(
     loop = asyncio.get_running_loop()
     client = _client(region, endpoint_url)
     await loop.run_in_executor(None, lambda: client.delete_object(Bucket=bucket, Key=key))
+
+
+async def generate_presigned_url(
+    bucket: str,
+    key: str,
+    expires_in: int = 3600,
+    region: str = "us-east-1",
+    endpoint_url: str | None = None,
+) -> str:
+    """A browser-fetchable, time-limited URL for a private object — used to
+    serve figures back to an `<img>` tag without proxying the bytes through
+    our own API. Note for local dev: this signs against `endpoint_url`
+    (typically the docker-compose-internal `minio:9000` host), which may not
+    be reachable from a browser outside that network — verify this actually
+    resolves in your dev environment, not just that the call succeeds."""
+    loop = asyncio.get_running_loop()
+    client = _client(region, endpoint_url)
+    return await loop.run_in_executor(
+        None,
+        lambda: client.generate_presigned_url(
+            "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=expires_in
+        ),
+    )

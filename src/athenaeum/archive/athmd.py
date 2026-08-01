@@ -48,6 +48,7 @@ _SUPPORTED_MARKS = {"bold", "italic", "statementLink"}
 _SUPPORTED_INLINE_TYPES = {"text", "inlineMath"}
 
 _ATHM_STATEMENT_HREF_RE = re.compile(r"^athm:statement/([0-9a-fA-F-]{36})$")
+_ATHM_DATASET_HREF_RE = re.compile(r"^athm:dataset/([0-9a-fA-F-]{36})$")
 # The literal `[^N.k]` citation markers export appends right after a
 # statement link (comma-space joined) aren't real footnote syntax — nothing
 # defines them — so on import they show up as ordinary leading text right
@@ -92,6 +93,11 @@ def _render_blocks(nodes: list[dict[str, Any]], numbering: CitationNumbering) ->
         elif node_type == "blockMath":
             latex = (node.get("attrs") or {}).get("latex", "")
             blocks.append(f"$$\n{latex}\n$$")
+        elif node_type == "image":
+            attrs = node.get("attrs") or {}
+            dataset_id = attrs.get("datasetId")
+            alt = attrs.get("alt") or ""
+            blocks.append(f"![{alt}](athm:dataset/{dataset_id})")
         else:
             raise ValueError(f"Unsupported .athmd block content: {node_type!r}")
     return "\n\n".join(blocks)
@@ -248,9 +254,19 @@ async def import_athmd(
             i += 3  # heading_open, inline, heading_close
         elif token.type == "paragraph_open":
             inline_children = tokens[i + 1].children or []
-            rendered = _import_inline_tokens(inline_children, known_ids, warnings)
-            content.append({"type": "paragraph", "content": rendered} if rendered
-                            else {"type": "paragraph"})
+            image_node = _image_block_from_paragraph(inline_children)
+            if image_node is not None:
+                # Tiptap's Image node is block-level (a sibling of
+                # paragraph/heading, never nested inside one) — but plain
+                # CommonMark only has an *inline* image token, always
+                # wrapped in a paragraph. A paragraph containing nothing
+                # but one image is what export produces for a figure, so
+                # unwrap it back to a bare block on import.
+                content.append(image_node)
+            else:
+                rendered = _import_inline_tokens(inline_children, known_ids, warnings)
+                content.append({"type": "paragraph", "content": rendered} if rendered
+                                else {"type": "paragraph"})
             i += 3  # paragraph_open, inline, paragraph_close
         elif token.type == "math_block":
             content.append({"type": "blockMath", "attrs": {"latex": token.content.strip()}})
@@ -267,6 +283,23 @@ async def import_athmd(
 def _strip_references_section(text: str) -> str:
     match = _REFERENCES_HEADING_RE.search(text)
     return text if match is None else text[: match.start()]
+
+
+def _image_block_from_paragraph(children: list[Token]) -> dict[str, Any] | None:
+    """If a paragraph's inline content is nothing but a single
+    `![alt](athm:dataset/<uuid>)`, return the top-level `image` block it
+    round-trips to; otherwise None (an ordinary paragraph, or an
+    `athm:dataset` link mixed with other content, which `_import_inline_tokens`
+    will reject — figures are standalone blocks in v1, matching the
+    always-block-level `image` node Compose's editor actually produces)."""
+    if len(children) != 1 or children[0].type != "image":
+        return None
+    token = children[0]
+    href = (token.attrs or {}).get("src", "")
+    match = _ATHM_DATASET_HREF_RE.match(str(href))
+    if match is None:
+        return None
+    return {"type": "image", "attrs": {"datasetId": match.group(1), "alt": token.content or ""}}
 
 
 async def _known_statement_ids(session: AsyncSession, project_id: uuid.UUID) -> set[uuid.UUID]:

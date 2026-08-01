@@ -5,7 +5,9 @@ import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/r
 import StarterKit from '@tiptap/starter-kit';
 import { Mathematics } from '@tiptap/extension-mathematics';
 import { composeApi, type CitationNumbering, type ComposeImportWarning } from '../api/compose';
+import { figuresApi } from '../api/figures';
 import { StatementLink, statementMarkersRef } from '../extensions/StatementLink';
+import { Figure } from '../extensions/Figure';
 import EvidenceLinkPopover from '../components/EvidenceLinkPopover';
 import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
@@ -56,6 +58,7 @@ export default function ComposeView() {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [importWarnings, setImportWarnings] = useState<ComposeImportWarning[]>([]);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+  const figureFileInputRef = useRef<HTMLInputElement>(null);
   // Mirrors `saveState` for the autosave effect below, which intentionally
   // does NOT depend on `saveState` (see that effect's comment) but still
   // needs the current value inside its stable `onUpdate` closure.
@@ -107,6 +110,7 @@ export default function ComposeView() {
           },
         },
       }),
+      Figure,
     ],
     editorProps: {
       attributes: { class: 'compose-prose' },
@@ -253,6 +257,17 @@ export default function ComposeView() {
       queryClient.invalidateQueries({ queryKey: ['compose-citations', projectId] });
       setImportWarnings(result.warnings);
       setSaveState('saved');
+    },
+  });
+
+  const insertFigureMutation = useMutation({
+    mutationFn: (file: File) => figuresApi.upload(file, projectId),
+    onSuccess: (dataset) => {
+      editor
+        ?.chain()
+        .focus()
+        .insertContent({ type: 'image', attrs: { datasetId: dataset.id, alt: dataset.title } })
+        .run();
     },
   });
 
@@ -413,6 +428,25 @@ export default function ComposeView() {
         >
           Math block
         </button>
+        <button
+          className={styles.toolbarBtn}
+          title="Insert a figure (PNG, JPEG, GIF, SVG, WebP)"
+          disabled={insertFigureMutation.isPending}
+          onClick={() => figureFileInputRef.current?.click()}
+        >
+          {insertFigureMutation.isPending ? 'Uploading…' : 'Figure'}
+        </button>
+        <input
+          ref={figureFileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) insertFigureMutation.mutate(f);
+            e.target.value = '';
+          }}
+        />
         <div className={styles.toolbarDivider} />
         <div className={styles.insertWrap}>
           <button
