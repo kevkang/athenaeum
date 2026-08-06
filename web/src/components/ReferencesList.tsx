@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { composeApi, type CitationReference } from '../api/compose';
 import { formatCitation } from '../lib/format';
-import styles from './CitedRefsPanel.module.css';
+import styles from './ReferencesList.module.css';
 
 function referenceHeading(ref: CitationReference): string {
   if (ref.kind === 'paper') {
@@ -14,7 +14,17 @@ function referenceHeading(ref: CitationReference): string {
   return ref.statement_assertion ?? 'Linked statement';
 }
 
-export default function CitedRefsPanel({ projectId }: { projectId: string }) {
+/** The reference-list content shared by the Sources panel's "References" tab
+ * and the inline, auto-generated References section at the end of a Compose
+ * document — `variant` swaps typography only (sidebar UI chrome vs.
+ * document-prose styling); the data and structure are identical either way. */
+export default function ReferencesList({
+  projectId,
+  variant = 'sidebar',
+}: {
+  projectId: string;
+  variant?: 'sidebar' | 'prose';
+}) {
   const { data: citations } = useQuery({
     queryKey: ['compose-citations', projectId],
     queryFn: () => composeApi.citations(projectId),
@@ -23,11 +33,7 @@ export default function CitedRefsPanel({ projectId }: { projectId: string }) {
   const references = citations?.references ?? [];
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <span className={styles.title}>Cited Refs</span>
-      </div>
-
+    <div className={`${styles.root} ${variant === 'prose' ? styles.prose : styles.sidebar}`}>
       {references.length === 0 && (
         <div className={styles.empty}>
           No references cited yet — link a piece of evidence to a statement in the document to see

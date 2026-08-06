@@ -1,6 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import cytoscape from 'cytoscape';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  Handle,
+  Position,
+  MarkerType,
+  useReactFlow,
+  useViewport,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import {
   backtraceApi,
   type BacktraceCandidate,
@@ -8,8 +22,9 @@ import {
   type BacktraceHop,
 } from '../../api/backtrace';
 import { papersApi } from '../../api/papers';
-import { formatCitation, trunc } from '../../lib/format';
-import { AiNote, type FindImportState } from './FindResultCard';
+import { trunc } from '../../lib/format';
+import FindResultCard, { AiNote, type FindImportState } from './FindResultCard';
+import BacktraceCandidateCard from './BacktraceCandidateCard';
 import styles from './BacktraceTree.module.css';
 
 // A phylogenetic-tree-style view of one backtrace chain: the origin claim at
@@ -18,28 +33,32 @@ import styles from './BacktraceTree.module.css';
 // overlapping"), and Y position mapped to publication year — so tracing a
 // claim backward through the literature visibly moves down through time.
 //
-// Deliberately a *second*, independent Cytoscape instance rather than
-// reusing the knowledge-graph's — different data, different interaction
-// model (this is a strict tree with a year-pinned layout; the graph is a
-// general force/dagre-laid-out statement network). Both use Cytoscape's
-// default 2D-canvas renderer (not WebGL), so running two side by side has
-// no context-limit concern. This component's own container is meant to
-// stay mounted at all times (see WorkspaceView's graphViewMode toggle) —
-// Cytoscape's creation effect only runs once, tied to the container
-// existing at mount, so conditionally unmounting it would prevent
-// re-initialization on toggle. Visibility is a CSS concern of the parent;
-// this component just needs an explicit `visible` prop so it can call
-// `resize()`/`fit()` itself once, the moment it actually becomes visible —
-// resize doesn't happen automatically for a canvas that started at 0×0.
+// Every node is a full, always-visible card (title/authors/year/venue/quote/
+// relevance/match-reasoning) rather than a small labeled dot with a
+// click-triggered popover — ranking a frontier (the origin, or any resolved
+// hop) happens automatically and its results render as their own "pending"
+// leaf cards in the tree immediately, before the user spends the cost of
+// actually resolving a verbatim quote for any of them (per-card "Continue
+// backtrace →", or "Backtrace all" for the whole batch at once).
 
 const ORIGIN_NODE_ID = '__origin__';
-const X_SPACING = 170;
-const Y_PER_YEAR = 60;
-const MIN_Y_SPAN = 240;
-const ORIGIN_Y_GAP = 110;
-const MIN_PARENT_CHILD_GAP = 70;
+const EDGE_COLOR = '#8a7a5c';
+const X_SPACING = 340;
+// Real citation chains can span many decades (a recent paper citing 1960s
+// work) — cards are now full-size content, not small dots, so a naive
+// linear year mapping with the old dot-sized constants would force fitView
+// to zoom out so far that cards (and their buttons) render at a handful of
+// screen pixels. A low per-year rate plus a hard cap keeps "further back in
+// time sits lower" as a visual trend without letting one old outlier
+// citation blow up the whole canvas.
+const Y_PER_YEAR = 16;
+const MAX_Y_SPAN = 900;
+const MIN_Y_SPAN = 320;
+const ORIGIN_Y_GAP = 260;
+const MIN_PARENT_CHILD_GAP = 260;
 
 interface TreePosition { x: number; y: number }
+interface LayoutInput { id: string; parentId: string | null; year: number | null }
 
 interface TreeLayout {
   positions: Map<string, TreePosition>;
@@ -51,26 +70,29 @@ interface TreeLayout {
 
 /** X: leaves get sequential slots, internal nodes get the mean of their
  * children's X (a minimal Reingold–Tilford-style tree layout). Y: a linear
- * mapping from `to_year`, newest at the top — nodes with an unknown year
- * fall back to the tree's most recent known year rather than collapsing to
- * a single point. The origin sits above the newest hop by a fixed gap. */
-function computeTreeLayout(hops: BacktraceHop[]): TreeLayout {
-  const childrenOf = new Map<string, BacktraceHop[]>();
-  const roots: BacktraceHop[] = [];
-  for (const h of hops) {
-    if (h.parent_hop_id) {
-      const list = childrenOf.get(h.parent_hop_id) ?? [];
-      list.push(h);
-      childrenOf.set(h.parent_hop_id, list);
+ * mapping from `year`, newest at the top — items with an unknown year fall
+ * back to the tree's most recent known year rather than collapsing to a
+ * single point. The origin sits above the newest item by a fixed gap.
+ * Generalized over plain `{id, parentId, year}` rather than `BacktraceHop`
+ * directly so ephemeral (not-yet-committed) pending candidates can be laid
+ * out in the same pass as real hops. */
+function computeTreeLayout(items: LayoutInput[]): TreeLayout {
+  const childrenOf = new Map<string, LayoutInput[]>();
+  const roots: LayoutInput[] = [];
+  for (const item of items) {
+    if (item.parentId) {
+      const list = childrenOf.get(item.parentId) ?? [];
+      list.push(item);
+      childrenOf.set(item.parentId, list);
     } else {
-      roots.push(h);
+      roots.push(item);
     }
   }
 
   const xById = new Map<string, number>();
   let nextLeafSlot = 0;
-  function assignX(hop: BacktraceHop): number {
-    const kids = childrenOf.get(hop.id) ?? [];
+  function assignX(item: LayoutInput): number {
+    const kids = childrenOf.get(item.id) ?? [];
     let x: number;
     if (kids.length === 0) {
       x = nextLeafSlot;
@@ -79,47 +101,34 @@ function computeTreeLayout(hops: BacktraceHop[]): TreeLayout {
       const childXs = kids.map(assignX);
       x = childXs.reduce((a, b) => a + b, 0) / childXs.length;
     }
-    xById.set(hop.id, x);
+    xById.set(item.id, x);
     return x;
   }
   roots.forEach(assignX);
 
-  const knownYears = hops.map((h) => h.to_year).filter((y): y is number => y != null);
+  const knownYears = items.map((item) => item.year).filter((y): y is number => y != null);
   const thisYear = new Date().getFullYear();
   const maxYear = knownYears.length ? Math.max(...knownYears) : thisYear;
   const minYear = knownYears.length ? Math.min(...knownYears) : thisYear - 1;
   const yearSpan = Math.max(1, maxYear - minYear);
-  const ySpan = Math.max(MIN_Y_SPAN, yearSpan * Y_PER_YEAR);
+  const ySpan = Math.min(MAX_Y_SPAN, Math.max(MIN_Y_SPAN, yearSpan * Y_PER_YEAR));
   const originY = -ORIGIN_Y_GAP;
 
-  // Year alone can't be trusted to keep nodes apart — two hops at different
-  // tree depths (e.g. a dataset paper and its companion task paper,
-  // published the same year) would otherwise land on the exact same Y and
-  // silently hide one behind the other. Walking parent-before-child and
-  // enforcing a minimum gap from each node's *final* (already-clamped)
-  // parent Y guarantees separation regardless of how years repeat, while
-  // still preferring the year-derived Y whenever it's already far enough
-  // down to satisfy that gap on its own.
   const positions = new Map<string, TreePosition>();
-  function assignY(hop: BacktraceHop, parentY: number): void {
-    const x = (xById.get(hop.id) ?? 0) * X_SPACING;
-    const year = hop.to_year ?? maxYear;
+  function assignY(item: LayoutInput, parentY: number): void {
+    const x = (xById.get(item.id) ?? 0) * X_SPACING;
+    const year = item.year ?? maxYear;
     const yearY = ((maxYear - year) / yearSpan) * ySpan;
     const y = Math.max(yearY, parentY + MIN_PARENT_CHILD_GAP);
-    positions.set(hop.id, { x, y });
-    for (const child of childrenOf.get(hop.id) ?? []) assignY(child, y);
+    positions.set(item.id, { x, y });
+    for (const child of childrenOf.get(item.id) ?? []) assignY(child, y);
   }
-  roots.forEach((h) => assignY(h, originY));
+  roots.forEach((item) => assignY(item, originY));
 
-  const rootXs = roots.map((h) => xById.get(h.id) ?? 0);
+  const rootXs = roots.map((item) => xById.get(item.id) ?? 0);
   const originX = (rootXs.length ? rootXs.reduce((a, b) => a + b, 0) / rootXs.length : 0) * X_SPACING;
 
   return { positions, originPosition: { x: originX, y: originY }, minYear, maxYear, ySpan };
-}
-
-function nodeLabel(hop: BacktraceHop): string {
-  const citation = formatCitation(hop.to_authors_json?.[0] ?? null, hop.to_year);
-  return trunc(hop.to_title, 34) + (citation !== 'Unknown source' ? `\n${citation}` : '');
 }
 
 function descendantCount(hopId: string, hops: BacktraceHop[]): number {
@@ -141,58 +150,141 @@ function descendantCount(hopId: string, hops: BacktraceHop[]): number {
   return count;
 }
 
-const TREE_CY_STYLE: cytoscape.StylesheetStyle[] = [
-  {
-    selector: 'node',
-    style: {
-      label: 'data(label)', color: '#e6e1d6', 'font-family': 'Inter, sans-serif',
-      'font-size': '9px', 'text-wrap': 'wrap', 'text-valign': 'center', 'text-halign': 'center',
-      shape: 'roundrectangle', width: '152px', height: '46px', padding: '6px',
-      'text-max-width': '138px', 'border-width': 1.5, 'border-color': '#8a7a5c',
-      'background-color': '#1f1d18',
-    },
-  },
-  {
-    selector: 'node[kind = "origin"]',
-    style: {
-      'background-color': '#1a1a26', 'border-color': '#89a5c4', 'border-width': 2,
-      'font-style': 'italic', height: '54px',
-    },
-  },
-  {
-    selector: 'node[status = "abstract_match"], node[status = "full_text_match"]',
-    style: { 'background-color': '#1a231a', 'border-color': '#8aa57c' },
-  },
-  {
-    selector: 'node[status = "no_match"], node[status = "awaiting_manual_import"]',
-    style: { 'background-color': '#231a1a', 'border-color': '#c67a5c', 'border-style': 'dashed' },
-  },
-  {
-    selector: 'node[status = "pending"], node[status = "ingesting"]',
-    style: { 'border-style': 'dotted' },
-  },
-  {
-    selector: 'node[?collapsed]',
-    style: { 'border-style': 'double', 'border-width': 3 },
-  },
-  {
-    selector: 'node:selected',
-    style: { 'border-color': '#c9a876', 'border-width': 2.5 },
-  },
-  {
-    selector: 'edge',
-    style: {
-      width: 1.5, 'curve-style': 'bezier', 'line-color': '#8a7a5c',
-      'target-arrow-color': '#8a7a5c', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.75,
-    },
-  },
-];
+// ── Node content ─────────────────────────────────────────────────────────
 
-type DetailTarget = { kind: 'origin' } | { kind: 'hop'; hopId: string };
+/** Per-frontier (origin or a resolved hop) state: is it currently being
+ * ranked, what pending candidates has ranking surfaced so far, and the
+ * actions for acting on them. Shared shape between the origin and hop node
+ * components so `FrontierBar` doesn't need to know which one it's on. */
+interface FrontierState {
+  ranking: boolean;
+  pending: BacktraceCandidate[];
+  rankModel: string | null;
+  onContinueOne: (candidate: BacktraceCandidate) => void;
+  onContinueAll: () => void;
+  committingIds: Set<string>;
+  backtracingAll: boolean;
+}
 
-export default function BacktraceTree({
-  chainId, projectId, visible, onChainLoaded,
-}: {
+function FrontierBar({ frontier }: { frontier: FrontierState }) {
+  if (frontier.pending.length === 0) {
+    return frontier.ranking ? <div className={styles.frontierStatus}>finding citations…</div> : null;
+  }
+  return (
+    <div className={styles.frontierRow}>
+      <button
+        className={styles.detailBtn}
+        onClick={frontier.onContinueAll}
+        disabled={frontier.backtracingAll}
+      >
+        {frontier.backtracingAll ? 'Backtracing all…' : `Backtrace all (${frontier.pending.length})`}
+      </button>
+    </div>
+  );
+}
+
+interface OriginNodeData extends Record<string, unknown> {
+  originText: string;
+  originPaperTitle: string | null;
+  frontier: FrontierState;
+}
+
+function OriginNodeView({ data }: NodeProps<Node<OriginNodeData, 'origin'>>) {
+  return (
+    <div className={`${styles.nodeCardWrap} nodrag nopan`}>
+      <div className={styles.originCard}>
+        <div className={styles.detailKind}>origin claim</div>
+        <div className={styles.detailQuote}>&ldquo;{data.originText}&rdquo;</div>
+        {data.originPaperTitle && (
+          <div className={styles.detailMeta}>from &ldquo;{trunc(data.originPaperTitle, 60)}&rdquo;</div>
+        )}
+      </div>
+      <FrontierBar frontier={data.frontier} />
+      <Handle type="source" position={Position.Bottom} className={styles.rfHandle} />
+    </div>
+  );
+}
+
+interface HopNodeData extends Record<string, unknown> {
+  hop: BacktraceHop;
+  importState: FindImportState;
+  onImport: () => void;
+  importing: boolean;
+  hasChildren: boolean;
+  descendantCount: number;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  frontier: FrontierState;
+}
+
+function HopNodeView({ data }: NodeProps<Node<HopNodeData, 'hop'>>) {
+  const { hop } = data;
+  const placeholderQuote =
+    hop.resolution_status === 'ingesting' ? 'Fetching full text…'
+    : hop.resolution_status === 'awaiting_manual_import' ? 'No open-access version found automatically.'
+    : hop.resolution_status === 'no_match' ? 'No supporting text found in this paper.'
+    : 'Resolving…';
+
+  return (
+    <div className={`${styles.nodeCardWrap} nodrag nopan`}>
+      <Handle type="target" position={Position.Top} className={styles.rfHandle} />
+      <FindResultCard
+        title={hop.to_title}
+        authors={hop.to_authors_json ?? []}
+        year={hop.to_year}
+        venue={hop.to_venue}
+        visitUrl={hop.to_doi ? `https://doi.org/${hop.to_doi}` : null}
+        quote={hop.quote ?? placeholderQuote}
+        relevanceNote={hop.relevance_note}
+        model={hop.model}
+        importState={data.importState}
+        onImport={data.onImport}
+        importing={data.importing}
+      />
+      {hop.match_reasoning && (
+        hop.model
+          ? <AiNote text={hop.match_reasoning} model={hop.model} label="Match reasoning" />
+          : <div className={styles.detailHint}><strong>Match reasoning:</strong> {hop.match_reasoning}</div>
+      )}
+      {data.hasChildren && (
+        <div className={styles.detailActionsRow}>
+          <button className={styles.detailBtn} onClick={data.onToggleCollapse}>
+            {data.isCollapsed ? `Expand (${data.descendantCount})` : 'Collapse subtree'}
+          </button>
+        </div>
+      )}
+      <FrontierBar frontier={data.frontier} />
+      <Handle type="source" position={Position.Bottom} className={styles.rfHandle} />
+    </div>
+  );
+}
+
+interface PendingNodeData extends Record<string, unknown> {
+  candidate: BacktraceCandidate;
+  rankModel: string | null;
+  committing: boolean;
+  onContinue: () => void;
+}
+
+function PendingNodeView({ data }: NodeProps<Node<PendingNodeData, 'pending'>>) {
+  return (
+    <div className={`${styles.nodeCardWrap} nodrag nopan`}>
+      <Handle type="target" position={Position.Top} className={styles.rfHandle} />
+      <BacktraceCandidateCard
+        candidate={data.candidate}
+        rankModel={data.rankModel}
+        committing={data.committing}
+        onContinue={data.onContinue}
+      />
+    </div>
+  );
+}
+
+const nodeTypes = { origin: OriginNodeView, hop: HopNodeView, pending: PendingNodeView };
+
+// ── Main component ──────────────────────────────────────────────────────
+
+export default function BacktraceTree(props: {
   chainId: string | null;
   projectId: string;
   visible: boolean;
@@ -202,16 +294,46 @@ export default function BacktraceTree({
    * linear stepper is doing with its own activeBacktrace chain. */
   onChainLoaded?: (chainId: string) => void;
 }) {
+  return (
+    <ReactFlowProvider>
+      <BacktraceTreeInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function pendingNodeId(parentKey: string, openalexId: string): string {
+  return `pending:${parentKey}:${openalexId}`;
+}
+
+function BacktraceTreeInner({
+  chainId, projectId, visible, onChainLoaded,
+}: {
+  chainId: string | null;
+  projectId: string;
+  visible: boolean;
+  onChainLoaded?: (chainId: string) => void;
+}) {
   const queryClient = useQueryClient();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef = useRef<cytoscape.Core | null>(null);
-  const [renderTick, setRenderTick] = useState(0);
+  const { fitView } = useReactFlow();
+  const viewport = useViewport();
+
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
-  const [hoveredHopId, setHoveredHopId] = useState<string | null>(null);
   const [importedHopIds, setImportedHopIds] = useState<Set<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Frontier ranking/commit state — keyed by ORIGIN_NODE_ID or a hop id.
+  // "Already started ranking" is a plain ref, not state: it's a pure
+  // dedup guard for the auto-rank effect below, never rendered directly —
+  // using state for it would mean setting it synchronously as part of the
+  // effect's own call stack, which react-hooks/set-state-in-effect flags.
+  const rankStartedRef = useRef<Set<string>>(new Set());
+  const [rankingInFlight, setRankingInFlight] = useState<Set<string>>(new Set());
+  const [pendingByParent, setPendingByParent] = useState<
+    Map<string, { candidates: BacktraceCandidate[]; model: string | null }>
+  >(new Map());
+  const [committingIds, setCommittingIds] = useState<Set<string>>(new Set());
+  const [backtracingAllKeys, setBacktracingAllKeys] = useState<Set<string>>(new Set());
 
   const { data: chainSummaries, isLoading: historyLoading } = useQuery({
     queryKey: ['backtrace-chains', projectId],
@@ -258,6 +380,25 @@ export default function BacktraceTree({
 
   const hops = useMemo(() => detail?.hops ?? [], [detail]);
 
+  // Switching chains (via History) starts every per-chain UI concern fresh —
+  // adjusted during render (React's recommended pattern for resetting state
+  // on a prop change) rather than in an effect, which would commit once
+  // with stale state and then re-render a second time.
+  const [syncedChainId, setSyncedChainId] = useState(chainId);
+  if (chainId !== syncedChainId) {
+    setSyncedChainId(chainId);
+    setRankingInFlight(new Set());
+    setPendingByParent(new Map());
+    setCommittingIds(new Set());
+    setBacktracingAllKeys(new Set());
+    setCollapsed(new Set());
+  }
+  // Refs can't be reset during render (only state can) — a plain effect,
+  // not the render-time block above, is the correct place for this one.
+  useEffect(() => {
+    rankStartedRef.current = new Set();
+  }, [chainId]);
+
   // Hops whose closest collapsed ancestor makes them hidden — collapsing a
   // node folds everything beneath it, not the node itself.
   const hiddenHopIds = useMemo(() => {
@@ -273,190 +414,90 @@ export default function BacktraceTree({
     return hidden;
   }, [hops, collapsed]);
 
-  const layout = useMemo(() => computeTreeLayout(hops), [hops]);
-
-  // ── Cytoscape lifecycle — created once, never destroyed on chain switch ──
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [],
-      style: TREE_CY_STYLE,
-      layout: { name: 'preset' },
-      wheelSensitivity: 0.3,
-      minZoom: 0.15,
-      maxZoom: 3,
-    });
-    cy.on('tap', 'node', (e) => {
-      const id = e.target.id();
-      setDetailTarget(id === ORIGIN_NODE_ID ? { kind: 'origin' } : { kind: 'hop', hopId: id });
-    });
-    cy.on('tap', (e) => {
-      if (e.target === cy) setDetailTarget(null);
-    });
-    cy.on('mouseover', 'node', (e) => {
-      const id = e.target.id();
-      if (id !== ORIGIN_NODE_ID) setHoveredHopId(id);
-    });
-    cy.on('mouseout', 'node', () => setHoveredHopId(null));
-    cy.on('render', () => setRenderTick((t) => t + 1));
-    cyRef.current = cy;
-    return () => { cy.destroy(); cyRef.current = null; };
-  }, []);
-
-  // Explicit resize/fit on becoming visible — a canvas created (or last
-  // laid out) while `display:none` doesn't pick either up automatically.
-  const wasVisibleRef = useRef(false);
-  useEffect(() => {
-    if (visible && !wasVisibleRef.current) {
-      cyRef.current?.resize();
-      cyRef.current?.fit(undefined, 60);
-    }
-    wasVisibleRef.current = visible;
-  }, [visible]);
-
-  // ── Sync elements whenever the chain/tree data or collapse state changes ──
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || !detail) return;
-
-    const elements: cytoscape.ElementDefinition[] = [
-      {
-        group: 'nodes',
-        data: { id: ORIGIN_NODE_ID, kind: 'origin', label: trunc(detail.chain.origin_text, 60) },
-        position: layout.originPosition,
-      },
-    ];
+  const childrenByParentKey = useMemo(() => {
+    const map = new Map<string, BacktraceHop[]>();
     for (const h of hops) {
-      if (hiddenHopIds.has(h.id)) continue;
-      const pos = layout.positions.get(h.id) ?? { x: 0, y: 0 };
-      elements.push({
-        group: 'nodes',
-        data: { id: h.id, kind: 'hop', status: h.resolution_status, label: nodeLabel(h), collapsed: collapsed.has(h.id) },
-        position: pos,
-      });
-      const source = h.parent_hop_id && !hiddenHopIds.has(h.parent_hop_id) ? h.parent_hop_id : ORIGIN_NODE_ID;
-      elements.push({ group: 'edges', data: { id: `e-${h.id}`, source, target: h.id } });
+      const key = h.parent_hop_id ?? ORIGIN_NODE_ID;
+      const list = map.get(key) ?? [];
+      list.push(h);
+      map.set(key, list);
     }
+    return map;
+  }, [hops]);
 
-    cy.elements().remove();
-    cy.add(elements);
-    if (visible) cy.fit(undefined, 60);
-  }, [detail, hops, layout, hiddenHopIds, collapsed, visible]);
+  // A candidate stops being "pending" the moment a real hop for the same
+  // target exists under the same parent — no separate bookkeeping needed to
+  // remove it from `pendingByParent` on commit, this just recomputes it away.
+  const visiblePendingFor = useCallback((key: string): BacktraceCandidate[] => {
+    const entry = pendingByParent.get(key);
+    if (!entry) return [];
+    const already = new Set((childrenByParentKey.get(key) ?? []).map((h) => h.to_openalex_id));
+    return entry.candidates.filter((c) => !already.has(c.openalex_id));
+  }, [pendingByParent, childrenByParentKey]);
 
-  // ── Positions derived from the live Cytoscape instance — computed in an
-  // effect and stored as real state, not read from the ref during render
-  // (a ref's `.current` can change without React knowing to re-render, so
-  // reading it inline during render risks becoming stale or inconsistent;
-  // recomputing here, keyed on renderTick, keeps it correctly reactive to
-  // every pan/zoom/layout change instead).
-  const [yearTicks, setYearTicks] = useState<{ year: number; screenY: number }[]>([]);
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy) { setYearTicks([]); return; }
-    const pan = cy.pan();
-    const zoom = cy.zoom();
-    const span = layout.maxYear - layout.minYear;
-    const step = Math.max(1, Math.ceil(span / 6));
-    const ticks: { year: number; screenY: number }[] = [];
-    for (let year = layout.maxYear; year >= layout.minYear; year -= step) {
-      const modelY = ((layout.maxYear - year) / Math.max(1, span)) * layout.ySpan;
-      ticks.push({ year, screenY: modelY * zoom + pan.y });
+  // ── Rank one frontier — advisory only, never creates a hop. The
+  // `await Promise.resolve()` defers everything past the calling effect's
+  // own synchronous execution — react-hooks/set-state-in-effect flags
+  // setState reachable synchronously from an effect body, even through a
+  // called function, so nothing here can run before that yield. The dedup
+  // guard itself (rankStartedRef) is a plain ref mutated synchronously in
+  // the effect, which is fine — only *state* updates are the concern. ──
+  const runRank = useCallback(async (key: string, parentHopId: string | null) => {
+    await Promise.resolve();
+    setRankingInFlight((prev) => new Set(prev).add(key));
+    try {
+      const result = await backtraceApi.rank(chainId!, parentHopId);
+      setPendingByParent((prev) => new Map(prev).set(key, { candidates: result.candidates, model: result.model }));
+    } catch {
+      // Advisory only — a failed rank just means no pending cards appear
+      // for this frontier; everything already in the tree is unaffected.
+    } finally {
+      setRankingInFlight((prev) => { const next = new Set(prev); next.delete(key); return next; });
     }
-    setYearTicks(ticks);
-  }, [layout, renderTick]);
+  }, [chainId]);
 
-  // ── Detail popover ──────────────────────────────────────────────────────
-  const detailHop = detailTarget?.kind === 'hop' ? hops.find((h) => h.id === detailTarget.hopId) ?? null : null;
-
-  // renderedPosition() is relative to the Cytoscape *container*, but the
-  // popover/tooltip CSS is `position: fixed` (viewport-relative) so it can
-  // escape the tree's own overflow:hidden bounds — so the container's own
-  // page offset has to be added in here, or every popover lands shifted up
-  // and left by however far the canvas sits from the viewport's origin.
-  const toViewportPos = (renderedPos: { x: number; y: number }): { x: number; y: number } => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    const x = renderedPos.x + (rect?.left ?? 0);
-    const y = renderedPos.y + (rect?.top ?? 0);
-    // Clamped so a node near the tree's own edges (common — the origin is
-    // always at the top, leaf hops are often near the bottom) can't produce
-    // a popover that renders partly or entirely outside the viewport,
-    // which `position: fixed` + no scroll makes genuinely unreachable
-    // rather than just visually clipped.
-    const clampedX = Math.min(Math.max(x, 170), window.innerWidth - 170);
-    const clampedY = Math.min(Math.max(y, 10), window.innerHeight - 220);
-    return { x: clampedX, y: clampedY };
-  };
-
-  const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
+  // Auto-rank every frontier the moment it becomes eligible: the origin as
+  // soon as the chain loads with no hops yet, and any hop the moment it
+  // resolves — no manual "Explore further" trigger, matching
+  // BacktracePanel.tsx's own auto-rank-on-frontier-change precedent.
   useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || !detailTarget) { setDetailPos(null); return; }
-    const id = detailTarget.kind === 'origin' ? ORIGIN_NODE_ID : detailTarget.hopId;
-    const el = cy.getElementById(id);
-    setDetailPos(el.nonempty() ? toViewportPos(el.renderedPosition()) : null);
-  }, [detailTarget, renderTick]);
-
-  const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy || !hoveredHopId) { setHoveredPos(null); return; }
-    const el = cy.getElementById(hoveredHopId);
-    setHoveredPos(el.nonempty() ? toViewportPos(el.renderedPosition()) : null);
-  }, [hoveredHopId, renderTick]);
-
-  const [rankState, setRankState] = useState<{
-    parentHopId: string | null;
-    candidates: BacktraceCandidate[];
-    message: string | null;
-    model: string | null;
-  } | null>(null);
-  const [checkedCandidates, setCheckedCandidates] = useState<Set<string>>(new Set());
-
-  const openBranchesMutation = useMutation({
-    mutationFn: async ({ parentHopId, candidates }: { parentHopId: string | null; candidates: BacktraceCandidate[] }) => {
-      // Genuinely parallel branch creation — safe because each commit's
-      // hop_index is derived from the already-resolved parent hop, not a
-      // shared counter, and the DB's own backtrace_hops_chain_target_uq
-      // constraint (plus each request's own fresh exclusion check) rules
-      // out duplicate targets even if two of these land concurrently.
-      await Promise.all(
-        candidates.map((c) => backtraceApi.commitHop(chainId!, parentHopId, c.openalex_id, c.reasoning)),
-      );
-    },
-    onSuccess: () => {
-      setRankState(null);
-      queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
-    },
-  });
-
-  const rankMutation = useMutation({
-    mutationFn: (parentHopId: string | null) => backtraceApi.rank(chainId!, parentHopId),
-    onSuccess: (result, parentHopId) => {
-      const confident = result.candidates.filter((c) => c.confident);
-      const uncertain = result.candidates.filter((c) => !c.confident);
-      // A citing sentence naming several distinct works (e.g. three
-      // parenthetical citations) surfaces here as several `confident: true`
-      // candidates from a single rank call — spawn all of them as sibling
-      // branches immediately rather than making the user check boxes one by
-      // one. Uncertain matches stay opt-in: auto-committing a wrong guess
-      // wastes an OpenAlex fetch and possibly a full-text ingestion for no
-      // benefit.
-      if (confident.length > 0) {
-        openBranchesMutation.mutate({ parentHopId, candidates: confident });
+    if (!chainId || !detail) return;
+    if (hops.length === 0 && !rankStartedRef.current.has(ORIGIN_NODE_ID)) {
+      rankStartedRef.current.add(ORIGIN_NODE_ID);
+      void runRank(ORIGIN_NODE_ID, null);
+    }
+    for (const h of hops) {
+      const resolved = h.resolution_status === 'abstract_match' || h.resolution_status === 'full_text_match';
+      if (resolved && !rankStartedRef.current.has(h.id)) {
+        rankStartedRef.current.add(h.id);
+        void runRank(h.id, h.id);
       }
-      // Leftover uncertain candidates (or, if nothing was confident, the
-      // full result) still go through manual review — `rankState` is left
-      // null only when every candidate was confident and got auto-opened
-      // above, so the popover falls straight back to "Explore further".
-      setRankState(
-        result.candidates.length === 0 || uncertain.length > 0
-          ? { parentHopId, candidates: uncertain, message: result.message, model: result.model }
-          : null,
-      );
-      setCheckedCandidates(new Set());
-    },
-  });
+    }
+  }, [chainId, detail, hops, runRank]);
+
+  const commitCandidate = useCallback(async (parentHopId: string | null, candidate: BacktraceCandidate) => {
+    setCommittingIds((prev) => new Set(prev).add(candidate.openalex_id));
+    try {
+      await backtraceApi.commitHop(chainId!, parentHopId, candidate.openalex_id, candidate.reasoning);
+      queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
+    } finally {
+      setCommittingIds((prev) => { const next = new Set(prev); next.delete(candidate.openalex_id); return next; });
+    }
+  }, [chainId, queryClient]);
+
+  const commitAll = useCallback(async (key: string, parentHopId: string | null) => {
+    setBacktracingAllKeys((prev) => new Set(prev).add(key));
+    try {
+      // Genuinely parallel — safe because each commit's hop_index is
+      // derived from the already-resolved parent, not a shared counter, and
+      // the DB's own backtrace_hops_chain_target_uq constraint (plus each
+      // request's own fresh exclusion check) rules out duplicate targets
+      // even if two of these land concurrently.
+      await Promise.all(visiblePendingFor(key).map((c) => commitCandidate(parentHopId, c)));
+    } finally {
+      setBacktracingAllKeys((prev) => { const next = new Set(prev); next.delete(key); return next; });
+    }
+  }, [visiblePendingFor, commitCandidate]);
 
   const importMutation = useMutation({
     mutationFn: (hop: BacktraceHop) =>
@@ -475,30 +516,177 @@ export default function BacktraceTree({
     return imported ? 'already_in_project' : hop.to_doi ? 'importable' : 'no_doi';
   };
 
-  // Reset transient popover state whenever the selected node changes —
-  // adjusted during render (React's recommended pattern for this, see
-  // ComposeView.tsx/ProjectSettingsModal.tsx for the same idiom elsewhere
-  // in this codebase) rather than in an effect, which would commit once
-  // with stale state and then re-render a second time.
-  const [syncedDetailTarget, setSyncedDetailTarget] = useState(detailTarget);
-  if (detailTarget !== syncedDetailTarget) {
-    setSyncedDetailTarget(detailTarget);
-    setRankState(null);
-    setCheckedCandidates(new Set());
-  }
+  // ── Layout: real (visible) hops plus every currently-pending candidate ──
+  const layout = useMemo(() => {
+    const items: LayoutInput[] = [];
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      items.push({ id: h.id, parentId: h.parent_hop_id, year: h.to_year });
+    }
+    for (const c of visiblePendingFor(ORIGIN_NODE_ID)) {
+      items.push({ id: pendingNodeId(ORIGIN_NODE_ID, c.openalex_id), parentId: null, year: c.year });
+    }
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      for (const c of visiblePendingFor(h.id)) {
+        items.push({ id: pendingNodeId(h.id, c.openalex_id), parentId: h.id, year: c.year });
+      }
+    }
+    return computeTreeLayout(items);
+  }, [hops, hiddenHopIds, visiblePendingFor]);
 
-  const canExploreFurther = detailTarget?.kind === 'origin'
-    ? true
-    : !!detailHop && (detailHop.resolution_status === 'abstract_match' || detailHop.resolution_status === 'full_text_match');
-  const explorableParentId = detailTarget?.kind === 'origin' ? null : (detailHop?.id ?? null);
-  const isCollapsed = detailTarget?.kind === 'hop' && collapsed.has(detailTarget.hopId);
-  const childCount = detailTarget?.kind === 'hop' ? hops.filter((h) => h.parent_hop_id === detailTarget.hopId).length : 0;
+  const makeFrontier = useCallback((key: string, parentHopId: string | null): FrontierState => ({
+    ranking: rankingInFlight.has(key),
+    pending: visiblePendingFor(key),
+    rankModel: pendingByParent.get(key)?.model ?? null,
+    onContinueOne: (c) => void commitCandidate(parentHopId, c),
+    onContinueAll: () => void commitAll(key, parentHopId),
+    committingIds,
+    backtracingAll: backtracingAllKeys.has(key),
+  }), [rankingInFlight, visiblePendingFor, pendingByParent, committingIds, backtracingAllKeys, commitCandidate, commitAll]);
 
-  const hoveredHop = hoveredHopId ? hops.find((h) => h.id === hoveredHopId) ?? null : null;
+  const nodes: Node[] = useMemo(() => {
+    if (!detail) return [];
+    const list: Node[] = [
+      {
+        id: ORIGIN_NODE_ID,
+        type: 'origin',
+        position: layout.originPosition,
+        draggable: false,
+        data: {
+          originText: detail.chain.origin_text,
+          originPaperTitle: originPaper?.title ?? null,
+          frontier: makeFrontier(ORIGIN_NODE_ID, null),
+        } satisfies OriginNodeData,
+      },
+    ];
+
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      list.push({
+        id: h.id,
+        type: 'hop',
+        position: layout.positions.get(h.id) ?? { x: 0, y: 0 },
+        draggable: false,
+        data: {
+          hop: h,
+          importState: hopImportState(h),
+          onImport: () => importMutation.mutate(h),
+          importing: importMutation.isPending,
+          hasChildren: (childrenByParentKey.get(h.id) ?? []).length > 0,
+          descendantCount: descendantCount(h.id, hops),
+          isCollapsed: collapsed.has(h.id),
+          onToggleCollapse: () => setCollapsed((prev) => {
+            const next = new Set(prev);
+            if (next.has(h.id)) next.delete(h.id); else next.add(h.id);
+            return next;
+          }),
+          frontier: makeFrontier(h.id, h.id),
+        } satisfies HopNodeData,
+      });
+    }
+
+    for (const c of visiblePendingFor(ORIGIN_NODE_ID)) {
+      list.push({
+        id: pendingNodeId(ORIGIN_NODE_ID, c.openalex_id),
+        type: 'pending',
+        position: layout.positions.get(pendingNodeId(ORIGIN_NODE_ID, c.openalex_id)) ?? { x: 0, y: 0 },
+        draggable: false,
+        data: {
+          candidate: c,
+          rankModel: pendingByParent.get(ORIGIN_NODE_ID)?.model ?? null,
+          committing: committingIds.has(c.openalex_id),
+          onContinue: () => void commitCandidate(null, c),
+        } satisfies PendingNodeData,
+      });
+    }
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      for (const c of visiblePendingFor(h.id)) {
+        list.push({
+          id: pendingNodeId(h.id, c.openalex_id),
+          type: 'pending',
+          position: layout.positions.get(pendingNodeId(h.id, c.openalex_id)) ?? { x: 0, y: 0 },
+          draggable: false,
+          data: {
+            candidate: c,
+            rankModel: pendingByParent.get(h.id)?.model ?? null,
+            committing: committingIds.has(c.openalex_id),
+            onContinue: () => void commitCandidate(h.id, c),
+          } satisfies PendingNodeData,
+        });
+      }
+    }
+
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, hops, hiddenHopIds, layout, originPaper, collapsed, childrenByParentKey, visiblePendingFor, pendingByParent, committingIds, makeFrontier, importMutation]);
+
+  const edges: Edge[] = useMemo(() => {
+    const list: Edge[] = [];
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      const source = h.parent_hop_id && !hiddenHopIds.has(h.parent_hop_id) ? h.parent_hop_id : ORIGIN_NODE_ID;
+      list.push({
+        id: `e-${h.id}`, source, target: h.id, type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
+        style: { stroke: EDGE_COLOR },
+      });
+    }
+    for (const c of visiblePendingFor(ORIGIN_NODE_ID)) {
+      const id = pendingNodeId(ORIGIN_NODE_ID, c.openalex_id);
+      list.push({ id: `e-${id}`, source: ORIGIN_NODE_ID, target: id, type: 'smoothstep', style: { stroke: EDGE_COLOR, strokeDasharray: '4 3' } });
+    }
+    for (const h of hops) {
+      if (hiddenHopIds.has(h.id)) continue;
+      for (const c of visiblePendingFor(h.id)) {
+        const id = pendingNodeId(h.id, c.openalex_id);
+        list.push({ id: `e-${id}`, source: h.id, target: id, type: 'smoothstep', style: { stroke: EDGE_COLOR, strokeDasharray: '4 3' } });
+      }
+    }
+    return list;
+  }, [hops, hiddenHopIds, visiblePendingFor]);
+
+  // Explicit fit on becoming visible (a flow laid out while `display:none`
+  // doesn't compute correctly) and whenever the node count changes — new
+  // hops/pending cards appearing should stay in frame automatically.
+  const wasVisibleRef = useRef(false);
+  useEffect(() => {
+    if (!visible) { wasVisibleRef.current = false; return; }
+    const alreadyVisible = wasVisibleRef.current;
+    wasVisibleRef.current = true;
+    const id = requestAnimationFrame(() => fitView({ padding: 0.15, minZoom: 0.3, duration: alreadyVisible ? 200 : 0 }));
+    return () => cancelAnimationFrame(id);
+  }, [visible, nodes.length, fitView]);
+
+  const yearTicks = useMemo(() => {
+    const span = layout.maxYear - layout.minYear;
+    const step = Math.max(1, Math.ceil(span / 6));
+    const ticks: { year: number; screenY: number }[] = [];
+    for (let year = layout.maxYear; year >= layout.minYear; year -= step) {
+      const modelY = ((layout.maxYear - year) / Math.max(1, span)) * layout.ySpan;
+      ticks.push({ year, screenY: modelY * viewport.zoom + viewport.y });
+    }
+    return ticks;
+  }, [layout, viewport]);
 
   return (
     <div className={styles.wrap}>
-      <div ref={containerRef} className={styles.canvas} />
+      <div className={styles.canvas}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          minZoom={0.3}
+          maxZoom={2}
+        >
+          <Background color="#2a2a2a" gap={24} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
 
       <div className={styles.header}>
         <button className={styles.headerBtn} onClick={() => setHistoryOpen((v) => !v)}>
@@ -572,7 +760,6 @@ export default function BacktraceTree({
         </div>
       )}
 
-      {/* ── Year axis ── */}
       {chainId && detail && (
         <div className={styles.yearAxis}>
           {yearTicks.map((t) => (
@@ -580,169 +767,6 @@ export default function BacktraceTree({
               <span className={styles.yearTickLabel}>{t.year}</span>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* ── Hover tooltip (match_reasoning) ── */}
-      {hoveredHop && hoveredPos && (hoveredHop.match_reasoning || hoveredHop.relevance_note) && (
-        <div className={styles.hoverTooltip} style={{ left: hoveredPos.x, top: hoveredPos.y + 30 }}>
-          {hoveredHop.match_reasoning && (
-            <div className={styles.hoverTooltipText}>{trunc(hoveredHop.match_reasoning, 160)}</div>
-          )}
-          {!hoveredHop.match_reasoning && hoveredHop.relevance_note && (
-            <div className={styles.hoverTooltipText}>{trunc(hoveredHop.relevance_note, 160)}</div>
-          )}
-        </div>
-      )}
-
-      {/* ── Detail popover ── */}
-      {detailTarget && detailPos && (
-        <div
-          className={styles.detailPopover}
-          style={{
-            left: detailPos.x,
-            top: detailPos.y + 34,
-            // The X/Y clamp in toViewportPos only keeps the popover's
-            // *origin point* on-screen — content-rich popovers (full
-            // quote + two AiNotes + a candidate checklist) can still run
-            // past the viewport bottom for nodes anywhere but the very
-            // top, silently pushing action buttons out of reach with no
-            // way to scroll to them. Capping maxHeight to whatever space
-            // actually remains below the popover forces its own existing
-            // overflow-y:auto to kick in instead, the same pattern
-            // EvidenceLinkPopover already uses for the same reason.
-            maxHeight: Math.max(160, window.innerHeight - (detailPos.y + 34) - 16),
-          }}
-        >
-          {detailTarget.kind === 'origin' ? (
-            <>
-              <div className={styles.detailKind}>origin claim</div>
-              <div className={styles.detailQuote}>&ldquo;{detail?.chain.origin_text}&rdquo;</div>
-              {originPaper && (
-                <div className={styles.detailMeta}>from &ldquo;{trunc(originPaper.title, 60)}&rdquo;</div>
-              )}
-            </>
-          ) : detailHop ? (
-            <>
-              <div className={styles.detailKind}>{detailHop.resolution_status.replace('_', ' ')}</div>
-              <div className={styles.detailTitle}>{detailHop.to_title}</div>
-              <div className={styles.detailMeta}>
-                {(detailHop.to_authors_json ?? []).join(', ') || 'Unknown authors'}
-                {detailHop.to_venue ? ` · ${detailHop.to_venue}` : ''}
-                {detailHop.to_year ? ` · ${detailHop.to_year}` : ''}
-              </div>
-              {detailHop.quote && <div className={styles.detailQuote}>&ldquo;{detailHop.quote}&rdquo;</div>}
-              {detailHop.relevance_note && (
-                detailHop.model
-                  ? <AiNote text={detailHop.relevance_note} model={detailHop.model} label="Relevance" />
-                  : <div className={styles.detailHint}><strong>Relevance:</strong> {detailHop.relevance_note}</div>
-              )}
-              {detailHop.match_reasoning && (
-                detailHop.model
-                  ? <AiNote text={detailHop.match_reasoning} model={detailHop.model} label="Match reasoning" />
-                  : <div className={styles.detailHint}><strong>Match reasoning:</strong> {detailHop.match_reasoning}</div>
-              )}
-              <div className={styles.detailActionsRow}>
-                {detailHop.to_doi && (
-                  <a className={styles.detailLinkBtn} href={`https://doi.org/${detailHop.to_doi}`} target="_blank" rel="noreferrer">
-                    visit
-                  </a>
-                )}
-                {hopImportState(detailHop) === 'importable' && (
-                  <button
-                    className={styles.detailBtn}
-                    onClick={() => importMutation.mutate(detailHop)}
-                    disabled={importMutation.isPending}
-                  >
-                    {importMutation.isPending ? 'Importing…' : '+ import'}
-                  </button>
-                )}
-                {hopImportState(detailHop) === 'already_in_project' && (
-                  <span className={styles.detailHint}>✓ in project</span>
-                )}
-                {childCount > 0 && (
-                  <button
-                    className={styles.detailBtn}
-                    onClick={() =>
-                      setCollapsed((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(detailTarget.hopId)) next.delete(detailTarget.hopId);
-                        else next.add(detailTarget.hopId);
-                        return next;
-                      })
-                    }
-                  >
-                    {isCollapsed ? `Expand (${descendantCount(detailTarget.hopId, hops)})` : 'Collapse subtree'}
-                  </button>
-                )}
-              </div>
-            </>
-          ) : null}
-
-          {canExploreFurther && (
-            <div className={styles.exploreSection}>
-              {!rankState ? (
-                <button
-                  className={styles.detailBtn}
-                  onClick={() => rankMutation.mutate(explorableParentId)}
-                  disabled={rankMutation.isPending || openBranchesMutation.isPending}
-                >
-                  {rankMutation.isPending
-                    ? 'Ranking…'
-                    : openBranchesMutation.isPending
-                      ? 'Opening branches…'
-                      : 'Explore further from here'}
-                </button>
-              ) : rankState.candidates.length === 0 ? (
-                <div className={styles.detailHint}>{rankState.message ?? 'No further references found.'}</div>
-              ) : (
-                <>
-                  <div className={styles.detailKind}>other possible matches — add manually if correct</div>
-                  {rankState.candidates.map((c) => {
-                    const checked = checkedCandidates.has(c.openalex_id);
-                    const citation = formatCitation(c.authors[0] ?? null, c.year);
-                    return (
-                      <label key={c.openalex_id} className={styles.candidateRow}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setCheckedCandidates((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(c.openalex_id)) next.delete(c.openalex_id);
-                              else next.add(c.openalex_id);
-                              return next;
-                            })
-                          }
-                        />
-                        <span className={styles.candidateLabel}>
-                          {c.title}{citation !== 'Unknown source' ? `, ${citation}` : ''}
-                          {!c.confident && <span className={styles.candidateUnsure}> (uncertain)</span>}
-                        </span>
-                      </label>
-                    );
-                  })}
-                  <div className={styles.detailActionsRow}>
-                    <button
-                      className={styles.detailBtn}
-                      disabled={checkedCandidates.size === 0 || openBranchesMutation.isPending}
-                      onClick={() =>
-                        openBranchesMutation.mutate({
-                          parentHopId: rankState.parentHopId,
-                          candidates: rankState.candidates.filter((c) => checkedCandidates.has(c.openalex_id)),
-                        })
-                      }
-                    >
-                      {openBranchesMutation.isPending
-                        ? 'Opening…'
-                        : `Open ${checkedCandidates.size || ''} branch${checkedCandidates.size === 1 ? '' : 'es'}`}
-                    </button>
-                    <button className={styles.detailLinkBtn} onClick={() => setRankState(null)}>cancel</button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

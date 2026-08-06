@@ -10,6 +10,16 @@
   inset: 0;
 }
 
+/* React Flow inlines `pointer-events: none` on any node that isn't
+   draggable/selectable/connectable (nodesDraggable/elementsSelectable are
+   both false here, since positions are computed, not user-arranged) — a
+   sensible default for display-only nodes, but ours hold real interactive
+   buttons/links. `!important` in an author stylesheet is one of the few
+   things that outranks an inline style, which is what's needed here. */
+:global(.react-flow__node) {
+  pointer-events: auto !important;
+}
+
 /* ── Header: history / save / load ── */
 
 .header {
@@ -156,46 +166,52 @@
   color: var(--text-faint);
 }
 
-/* ── Hover tooltip ── */
+/* ── Node cards (React Flow custom nodes) ── */
 
-.hoverTooltip {
-  position: fixed;
-  z-index: 210;
-  max-width: 280px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  padding: 8px 10px;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.hoverTooltipText {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  color: var(--link);
-  font-style: italic;
-  line-height: 1.45;
-}
-
-/* ── Detail popover ── */
-
-.detailPopover {
-  position: fixed;
-  z-index: 220;
+.nodeCardWrap {
+  position: relative;
   width: 320px;
-  max-height: 480px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.originCard {
   background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--link);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transform: translateX(-50%);
+}
+
+.rfHandle {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  background: var(--border-strong);
+  border: none;
+  opacity: 0.6;
+}
+
+.frontierStatus {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-style: italic;
+  color: var(--text-faint);
+  padding: 2px 2px 0;
+}
+
+.frontierRow {
+  display: flex;
+  padding-top: 2px;
+}
+
+.pendingCard {
+  border-style: dashed;
+  opacity: 0.92;
 }
 
 .detailKind {
@@ -205,13 +221,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-faint);
-}
-
-.detailTitle {
-  font-family: 'Lora', Georgia, serif;
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.35;
 }
 
 .detailMeta {
@@ -257,42 +266,11 @@
 .detailBtn:hover { border-color: var(--accent-dim); color: var(--accent); }
 .detailBtn:disabled { opacity: 0.5; cursor: default; }
 
-.detailLinkBtn {
-  font-family: 'Inter', sans-serif;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-  text-decoration: underline;
-}
-.detailLinkBtn:hover { color: var(--text-muted); }
-
-.exploreSection {
-  margin-top: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.candidateRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.candidateLabel {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
 .candidateUnsure {
   color: var(--text-faint);
   font-style: italic;
+  font-size: 10px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }

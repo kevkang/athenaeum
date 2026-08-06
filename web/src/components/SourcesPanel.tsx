@@ -4,9 +4,10 @@ import { papersApi, type Paper } from '../api/papers';
 import { highlightsApi } from '../api/highlights';
 import { formatCitation, trunc, stripHtml } from '../lib/format';
 import ReaderPane, { PASSAGE_MIME } from './ReaderPane';
+import ReferencesList from './ReferencesList';
 import styles from './SourcesPanel.module.css';
 
-type SourcesTab = 'papers' | 'highlights';
+type SourcesTab = 'papers' | 'highlights' | 'refs';
 
 export default function SourcesPanel({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState<SourcesTab>('papers');
@@ -37,6 +38,12 @@ export default function SourcesPanel({ projectId }: { projectId: string }) {
           onClick={() => setTab('highlights')}
         >
           Highlights
+        </button>
+        <button
+          className={`${styles.tabBtn} ${tab === 'refs' ? styles.tabBtnActive : ''}`}
+          onClick={() => setTab('refs')}
+        >
+          References
         </button>
       </div>
 
@@ -87,6 +94,8 @@ export default function SourcesPanel({ projectId }: { projectId: string }) {
           ))}
         </div>
       )}
+
+      {tab === 'refs' && <ReferencesList projectId={projectId} />}
     </div>
   );
 }

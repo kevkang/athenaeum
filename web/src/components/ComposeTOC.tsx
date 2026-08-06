@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type RefObject } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import { trunc } from '../lib/format';
 import styles from './ComposeTOC.module.css';
@@ -31,14 +31,30 @@ function useHeadingOutline(editor: Editor | null): HeadingEntry[] {
   );
 }
 
-export default function ComposeTOC({ editor }: { editor: Editor }) {
+export default function ComposeTOC({
+  editor,
+  scrollContainerRef,
+}: {
+  editor: Editor;
+  /** The `.editorScroll` div — scrolled directly rather than trusting
+   * TipTap's own `scrollIntoView()` command, which turned out to be an
+   * unreliable no-op for this panel (its "already in view" heuristic
+   * doesn't account for the floating TOC overlaying part of the column). */
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+}) {
   const headings = useHeadingOutline(editor);
   const [collapsed, setCollapsed] = useState(false);
 
   const visible = collapsed ? headings.filter((h) => h.level === 1) : headings;
 
   const goTo = (pos: number) => {
-    editor.chain().focus().setTextSelection(pos).scrollIntoView().run();
+    editor.chain().focus().setTextSelection(pos).run();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const coords = editor.view.coordsAtPos(pos);
+    const containerRect = container.getBoundingClientRect();
+    const targetTop = container.scrollTop + (coords.top - containerRect.top) - 24;
+    container.scrollTo({ top: targetTop, behavior: 'smooth' });
   };
 
   return (

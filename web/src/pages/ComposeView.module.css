@@ -136,6 +136,26 @@
   box-sizing: border-box;
 }
 
+.referencesToggleRow {
+  margin-top: 2.5em;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.referencesToggleBtn {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.referencesToggleBtn:hover { color: var(--text-muted); }
+
 .insertWrap {
   position: relative;
 }

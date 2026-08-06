@@ -84,15 +84,13 @@
   padding: 0.1em 0.35em;
 }
 
+/* Box styling (background/border/padding/margin) lives on ComposeCodeBlock's
+   own .wrap instead — every code block node now renders through that custom
+   node view, so `pre` itself only needs typography + horizontal scrolling. */
 .compose-prose pre {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.85em;
   line-height: 1.5;
-  background: var(--bg-code);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.9em 1em;
-  margin: 1em 0;
   overflow-x: auto;
 }
 .compose-prose pre code {
@@ -100,6 +98,47 @@
   padding: 0;
   border-radius: 0;
 }
+
+/* ── highlight.js token colors (lowlight adds these classes; no theme
+   stylesheet ships one by default) — reuses the same key/string/comment/
+   anchor/meta palette already established for YAML syntax in tokens.css,
+   so highlighted code reads as one coherent system regardless of language. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-tag,
+.hljs-name,
+.hljs-attr,
+.hljs-built_in {
+  color: var(--yaml-key);
+}
+.hljs-string,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: var(--yaml-string);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-deletion {
+  color: var(--yaml-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-section,
+.hljs-function,
+.hljs-title.function_ {
+  color: var(--yaml-anchor);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-meta,
+.hljs-type,
+.hljs-params {
+  color: var(--yaml-meta);
+}
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
 
 .compose-prose a {
   color: var(--link);

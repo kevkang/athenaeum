@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEditor, useEditorState, EditorContent, type Editor } from '@tiptap/react';
+import { useEditor, useEditorState, EditorContent, ReactNodeViewRenderer, type Editor } from '@tiptap/react';
+import { InputRule } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { Mathematics } from '@tiptap/extension-mathematics';
+import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { TableKit } from '@tiptap/extension-table';
 import { createLowlight, common } from 'lowlight';
@@ -16,9 +17,10 @@ import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
 import SourcesPanel from '../components/SourcesPanel';
 import AuditPanel from '../components/AuditPanel';
-import CitedRefsPanel from '../components/CitedRefsPanel';
 import ComposeTOC from '../components/ComposeTOC';
 import ComposeTableControls from '../components/ComposeTableControls';
+import ComposeCodeBlock from '../components/ComposeCodeBlock';
+import ReferencesList from '../components/ReferencesList';
 import { PASSAGE_MIME } from '../components/ReaderPane';
 import '../components/ComposeEditor.css';
 import 'katex/dist/katex.min.css';
@@ -31,6 +33,55 @@ const AUTOSAVE_DELAY_MS = 1500;
 const HEADING_LEVELS = [1, 2, 3, 4] as const;
 
 const lowlight = createLowlight(common);
+
+// The shipped input rules in @tiptap/extension-mathematics trigger inline
+// math on `$$...$$` and block math on `$$$...$$$` — backwards from the
+// conventional KaTeX-default delimiters (`$inline$` / `$$block$$`) that
+// .athmd's own grammar already documents (see archive/athmd.py). Re-declare
+// just the input rules with the corrected delimiter counts; node type,
+// rendering, and click-to-edit behavior are untouched.
+const ComposeBlockMath = BlockMath.extend({
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /^\$\$([^$]+)\$\$$/,
+        handler: ({ state, range, match }) => {
+          const [, latex] = match;
+          const { tr } = state;
+          const $from = state.doc.resolve(range.from);
+          const node = this.type.create({ latex });
+          const consumesHostTextblock =
+            $from.depth > 0 && $from.parent.isTextblock && range.from === $from.start() && range.to === $from.end();
+          const canReplaceHostTextblock =
+            consumesHostTextblock && $from.node(-1).canReplaceWith($from.index(-1), $from.indexAfter(-1), this.type);
+          const replacementRange = canReplaceHostTextblock ? { from: $from.before(), to: $from.after() } : range;
+          tr.replaceWith(replacementRange.from, replacementRange.to, node);
+        },
+      }),
+    ];
+  },
+});
+
+const ComposeInlineMath = InlineMath.extend({
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /(?<!\$)\$([^$\n]+?)\$(?!\$)/,
+        handler: ({ state, range, match }) => {
+          const latex = match[1];
+          const { tr } = state;
+          tr.replaceWith(range.from, range.to, this.type.create({ latex }));
+        },
+      }),
+    ];
+  },
+});
+
+const ComposeCodeBlockLowlight = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(ComposeCodeBlock);
+  },
+});
 
 // Mathematics.configure's onClick options only receive (node, pos), not the
 // editor — extensions are handed to useEditor once at construction, before
@@ -77,8 +128,13 @@ export default function ComposeView() {
   }, [saveState]);
   const versionRef = useRef(1);
   const loadedRef = useRef(false);
-  const [rightPanel, setRightPanel] = useState<'sources' | 'audit' | 'refs' | null>('sources');
+  const [rightPanel, setRightPanel] = useState<'sources' | 'audit' | null>('sources');
   const [tocOpen, setTocOpen] = useState(false);
+  // Auto-generated from the same citation data as the sidebar tab — never
+  // part of content_json, recomputed the same way citation numbers already
+  // are. Defaults open since it's meant to read as part of the manuscript.
+  const [referencesOpen, setReferencesOpen] = useState(true);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
   const [evidencePopover, setEvidencePopover] = useState<{
     from: number; to: number; x: number; y: number; text: string; existingStatementId: string | null;
     pendingEvidence?: { targetKind: string; targetId: string } | null;
@@ -100,25 +156,23 @@ export default function ComposeView() {
         heading: { levels: [...HEADING_LEVELS] },
         link: { openOnClick: false }, // editing, not browsing — don't navigate away on click
       }),
-      CodeBlockLowlight.configure({ lowlight }),
+      ComposeCodeBlockLowlight.configure({ lowlight }),
       TableKit.configure({ table: { resizable: false } }),
       StatementLink,
-      Mathematics.configure({
-        inlineOptions: {
-          onClick: (node, pos) => {
-            const latex = window.prompt('Edit inline LaTeX:', node.attrs.latex as string);
-            if (latex === null) return;
-            if (latex.trim() === '') composeEditorRef.current?.commands.deleteInlineMath({ pos });
-            else composeEditorRef.current?.commands.updateInlineMath({ latex, pos });
-          },
+      ComposeInlineMath.configure({
+        onClick: (node, pos) => {
+          const latex = window.prompt('Edit inline LaTeX:', node.attrs.latex as string);
+          if (latex === null) return;
+          if (latex.trim() === '') composeEditorRef.current?.commands.deleteInlineMath({ pos });
+          else composeEditorRef.current?.commands.updateInlineMath({ latex, pos });
         },
-        blockOptions: {
-          onClick: (node, pos) => {
-            const latex = window.prompt('Edit LaTeX block:', node.attrs.latex as string);
-            if (latex === null) return;
-            if (latex.trim() === '') composeEditorRef.current?.commands.deleteBlockMath({ pos });
-            else composeEditorRef.current?.commands.updateBlockMath({ latex, pos });
-          },
+      }),
+      ComposeBlockMath.configure({
+        onClick: (node, pos) => {
+          const latex = window.prompt('Edit LaTeX block:', node.attrs.latex as string);
+          if (latex === null) return;
+          if (latex.trim() === '') composeEditorRef.current?.commands.deleteBlockMath({ pos });
+          else composeEditorRef.current?.commands.updateBlockMath({ latex, pos });
         },
       }),
       Figure,
@@ -547,13 +601,6 @@ export default function ComposeView() {
         </button>
 
         <button
-          className={`${styles.toolbarBtn} ${rightPanel === 'refs' ? styles.toolbarBtnActive : ''}`}
-          onClick={() => setRightPanel((v) => (v === 'refs' ? null : 'refs'))}
-        >
-          Cited Refs
-        </button>
-
-        <button
           className={styles.toolbarBtn}
           onClick={() => exportAthmdMutation.mutate()}
           disabled={exportAthmdMutation.isPending}
@@ -618,13 +665,27 @@ export default function ComposeView() {
       )}
 
       <div className={styles.body}>
-        <div className={styles.editorScroll}>
+        <div className={styles.editorScroll} ref={editorScrollRef}>
           <div
             className={styles.editorColumn}
             onMouseOver={handleEditorMouseOver}
             onMouseOut={handleEditorMouseOut}
           >
             <EditorContent editor={editor} />
+
+            <div className={styles.referencesToggleRow}>
+              <button
+                className={styles.referencesToggleBtn}
+                onClick={() => setReferencesOpen((v) => !v)}
+              >
+                {referencesOpen ? '▾' : '▸'} References
+              </button>
+            </div>
+            {referencesOpen && (
+              <div className="compose-prose">
+                <ReferencesList projectId={projectId} variant="prose" />
+              </div>
+            )}
           </div>
         </div>
         {rightPanel === 'sources' && (
@@ -637,12 +698,7 @@ export default function ComposeView() {
             <AuditPanel projectId={projectId} />
           </div>
         )}
-        {rightPanel === 'refs' && (
-          <div className={styles.sourcesPanelWrap}>
-            <CitedRefsPanel projectId={projectId} />
-          </div>
-        )}
-        {tocOpen && <ComposeTOC editor={editor} />}
+        {tocOpen && <ComposeTOC editor={editor} scrollContainerRef={editorScrollRef} />}
         <ComposeTableControls editor={editor} />
       </div>
 
