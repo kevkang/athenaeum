@@ -3,11 +3,38 @@
 [![CI](https://github.com/kevkang/athenaeum/actions/workflows/ci.yml/badge.svg)](https://github.com/kevkang/athenaeum/actions/workflows/ci.yml)
 [![Deploy](https://github.com/kevkang/athenaeum/actions/workflows/deploy.yml/badge.svg)](https://github.com/kevkang/athenaeum/actions/workflows/deploy.yml)
 
-A research traceability tool for working scientists: every claim in a project traces back to a
-verbatim passage in a source paper, every citation can be chased backward through the literature,
-and every cited piece of evidence can be independently checked against the statement it supports.
+A research traceability tool 
 
 by Tris Caro, Kevin Kang, Liz Wu
+
+Tris is a Stanback Postdoctoral Fellow at Caltech
+Liz is an MDE at Harvard
+Kevin is a software engineer
+
+
+## An opinionated framework
+
+This section of the `README` was written by TC and not reviewed by an LLM.
+
+Our goal is to create a research traceability tool for working scientists: every claim in a project traces back to a verbatim passage in a source paper, every citation can be chased backward through the literature, and every cited piece of evidence can be independently checked against the statement it supports.
+
+Problems of the AI era:
+1. The speed of research is increasing, but our capacity to parse it is not.
+2. When the volume of research increases, risks to traceability increase exponentially. Even basic cross-references are polluted with faulty or hallucinated citations.
+
+Boons of the AI era:
+1. Parsing text (intelligently) is now a rapid computational task.
+
+**These are our opinions (hence an opinionated framework):**
+
+1. Humans are ultimately responsible for scientific output because it is humans, not computers, that ultimately live in the world. Only humans can take responsibility for and ownership of scientific output. 
+
+2. Every citation should include the *verbatim* text that supports the relevant claim/statement.
+
+3. Traceability should be an easily human-and-computer auditable process.
+
+---
+The following sections of the `README` were written with and reviewed by Claude Sonnet 4.6.
 
 ## Stack
 
