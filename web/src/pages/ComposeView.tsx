@@ -16,6 +16,9 @@ import EvidenceHoverTooltip from '../components/EvidenceHoverTooltip';
 import StatementPicker from '../components/StatementPicker';
 import SourcesPanel from '../components/SourcesPanel';
 import AuditPanel from '../components/AuditPanel';
+import CitedRefsPanel from '../components/CitedRefsPanel';
+import ComposeTOC from '../components/ComposeTOC';
+import ComposeTableControls from '../components/ComposeTableControls';
 import { PASSAGE_MIME } from '../components/ReaderPane';
 import '../components/ComposeEditor.css';
 import 'katex/dist/katex.min.css';
@@ -74,7 +77,8 @@ export default function ComposeView() {
   }, [saveState]);
   const versionRef = useRef(1);
   const loadedRef = useRef(false);
-  const [rightPanel, setRightPanel] = useState<'sources' | 'audit' | null>('sources');
+  const [rightPanel, setRightPanel] = useState<'sources' | 'audit' | 'refs' | null>('sources');
+  const [tocOpen, setTocOpen] = useState(false);
   const [evidencePopover, setEvidencePopover] = useState<{
     from: number; to: number; x: number; y: number; text: string; existingStatementId: string | null;
     pendingEvidence?: { targetKind: string; targetId: string } | null;
@@ -522,7 +526,14 @@ export default function ComposeView() {
         </div>
 
         <button
-          className={`${styles.toolbarBtn} ${rightPanel === 'sources' ? styles.toolbarBtnActive : ''} ${styles.sourcesToggle}`}
+          className={`${styles.toolbarBtn} ${tocOpen ? styles.toolbarBtnActive : ''} ${styles.sourcesToggle}`}
+          onClick={() => setTocOpen((v) => !v)}
+        >
+          Contents
+        </button>
+
+        <button
+          className={`${styles.toolbarBtn} ${rightPanel === 'sources' ? styles.toolbarBtnActive : ''}`}
           onClick={() => setRightPanel((v) => (v === 'sources' ? null : 'sources'))}
         >
           Sources
@@ -533,6 +544,13 @@ export default function ComposeView() {
           onClick={() => setRightPanel((v) => (v === 'audit' ? null : 'audit'))}
         >
           Audit
+        </button>
+
+        <button
+          className={`${styles.toolbarBtn} ${rightPanel === 'refs' ? styles.toolbarBtnActive : ''}`}
+          onClick={() => setRightPanel((v) => (v === 'refs' ? null : 'refs'))}
+        >
+          Cited Refs
         </button>
 
         <button
@@ -619,6 +637,13 @@ export default function ComposeView() {
             <AuditPanel projectId={projectId} />
           </div>
         )}
+        {rightPanel === 'refs' && (
+          <div className={styles.sourcesPanelWrap}>
+            <CitedRefsPanel projectId={projectId} />
+          </div>
+        )}
+        {tocOpen && <ComposeTOC editor={editor} />}
+        <ComposeTableControls editor={editor} />
       </div>
 
       {hoveredMarker && citations && (() => {
