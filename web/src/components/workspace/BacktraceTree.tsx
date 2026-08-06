@@ -413,23 +413,48 @@ export default function BacktraceTree({
   } | null>(null);
   const [checkedCandidates, setCheckedCandidates] = useState<Set<string>>(new Set());
 
-  const rankMutation = useMutation({
-    mutationFn: (parentHopId: string | null) => backtraceApi.rank(chainId!, parentHopId),
-    onSuccess: (result, parentHopId) => {
-      setRankState({ parentHopId, candidates: result.candidates, message: result.message, model: result.model });
-      setCheckedCandidates(new Set(result.candidates.slice(0, 1).map((c) => c.openalex_id)));
-    },
-  });
-
   const openBranchesMutation = useMutation({
     mutationFn: async ({ parentHopId, candidates }: { parentHopId: string | null; candidates: BacktraceCandidate[] }) => {
-      for (const c of candidates) {
-        await backtraceApi.commitHop(chainId!, parentHopId, c.openalex_id, c.reasoning);
-      }
+      // Genuinely parallel branch creation — safe because each commit's
+      // hop_index is derived from the already-resolved parent hop, not a
+      // shared counter, and the DB's own backtrace_hops_chain_target_uq
+      // constraint (plus each request's own fresh exclusion check) rules
+      // out duplicate targets even if two of these land concurrently.
+      await Promise.all(
+        candidates.map((c) => backtraceApi.commitHop(chainId!, parentHopId, c.openalex_id, c.reasoning)),
+      );
     },
     onSuccess: () => {
       setRankState(null);
       queryClient.invalidateQueries({ queryKey: ['backtrace-chain', chainId] });
+    },
+  });
+
+  const rankMutation = useMutation({
+    mutationFn: (parentHopId: string | null) => backtraceApi.rank(chainId!, parentHopId),
+    onSuccess: (result, parentHopId) => {
+      const confident = result.candidates.filter((c) => c.confident);
+      const uncertain = result.candidates.filter((c) => !c.confident);
+      // A citing sentence naming several distinct works (e.g. three
+      // parenthetical citations) surfaces here as several `confident: true`
+      // candidates from a single rank call — spawn all of them as sibling
+      // branches immediately rather than making the user check boxes one by
+      // one. Uncertain matches stay opt-in: auto-committing a wrong guess
+      // wastes an OpenAlex fetch and possibly a full-text ingestion for no
+      // benefit.
+      if (confident.length > 0) {
+        openBranchesMutation.mutate({ parentHopId, candidates: confident });
+      }
+      // Leftover uncertain candidates (or, if nothing was confident, the
+      // full result) still go through manual review — `rankState` is left
+      // null only when every candidate was confident and got auto-opened
+      // above, so the popover falls straight back to "Explore further".
+      setRankState(
+        result.candidates.length === 0 || uncertain.length > 0
+          ? { parentHopId, candidates: uncertain, message: result.message, model: result.model }
+          : null,
+      );
+      setCheckedCandidates(new Set());
     },
   });
 
@@ -660,15 +685,19 @@ export default function BacktraceTree({
                 <button
                   className={styles.detailBtn}
                   onClick={() => rankMutation.mutate(explorableParentId)}
-                  disabled={rankMutation.isPending}
+                  disabled={rankMutation.isPending || openBranchesMutation.isPending}
                 >
-                  {rankMutation.isPending ? 'Ranking…' : 'Explore further from here'}
+                  {rankMutation.isPending
+                    ? 'Ranking…'
+                    : openBranchesMutation.isPending
+                      ? 'Opening branches…'
+                      : 'Explore further from here'}
                 </button>
               ) : rankState.candidates.length === 0 ? (
                 <div className={styles.detailHint}>{rankState.message ?? 'No further references found.'}</div>
               ) : (
                 <>
-                  <div className={styles.detailKind}>pick candidates to branch into</div>
+                  <div className={styles.detailKind}>other possible matches — add manually if correct</div>
                   {rankState.candidates.map((c) => {
                     const checked = checkedCandidates.has(c.openalex_id);
                     const citation = formatCitation(c.authors[0] ?? null, c.year);
