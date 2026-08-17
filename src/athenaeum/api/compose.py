@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
-from athenaeum.archive.athmd import build_athmd, import_athmd
+from athenaeum.archive.athmd import build_athmd, build_dataset_url_resolver, import_athmd
+from athenaeum.archive.athmd_render import render_athmd_pdf, render_athmd_standalone_html
 from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.citations import build_reference_numbering, iter_statement_ids_in_order
 from athenaeum.domain.models import (
@@ -38,7 +39,7 @@ async def _assert_member(session: SessionDep, project_id: uuid.UUID, user_id: uu
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a project member")
 
 
-async def _get_or_create(session: SessionDep, project_id: uuid.UUID) -> ComposeDocument:
+async def get_or_create(session: SessionDep, project_id: uuid.UUID) -> ComposeDocument:
     doc = await session.scalar(
         select(ComposeDocument).where(ComposeDocument.project_id == project_id)
     )
@@ -57,7 +58,7 @@ async def get_compose_document(
     project_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
 ) -> ComposeDocument:
     await _assert_member(session, project_id, user.id)
-    return await _get_or_create(session, project_id)
+    return await get_or_create(session, project_id)
 
 
 @router.put("", response_model=ComposeDocumentOut)
@@ -68,7 +69,7 @@ async def save_compose_document(
     user: CurrentUserDep,
 ) -> ComposeDocument:
     await _assert_member(session, project_id, user.id)
-    doc = await _get_or_create(session, project_id)
+    doc = await get_or_create(session, project_id)
     if doc.version != payload.version:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -91,7 +92,7 @@ async def get_compose_document_citations(
     fresh from the currently persisted document on every call; nothing here
     is cached or persisted itself."""
     await _assert_member(session, project_id, user.id)
-    doc = await _get_or_create(session, project_id)
+    doc = await get_or_create(session, project_id)
 
     statement_ids = iter_statement_ids_in_order(doc.content_json)
     numbering = await build_reference_numbering(session, statement_ids)
@@ -130,7 +131,7 @@ async def export_compose_document(
     """Download the compose document as a `.athmd` file — see
     archive/athmd.py's module docstring."""
     await _assert_member(session, project_id, user.id)
-    doc = await _get_or_create(session, project_id)
+    doc = await get_or_create(session, project_id)
     project = await session.get(Project, project_id)
 
     text = await build_athmd(session, doc.id)
@@ -140,6 +141,56 @@ async def export_compose_document(
         iter([text.encode()]),
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{safe_title}.athmd"'},
+    )
+
+
+@router.get("/render.html")
+async def render_compose_document_html(
+    project_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
+) -> Response:
+    """Download the compose document as a self-contained HTML file — see
+    archive/athmd_render.py's module docstring."""
+    await _assert_member(session, project_id, user.id)
+    doc = await get_or_create(session, project_id)
+    project = await session.get(Project, project_id)
+
+    text = await build_athmd(session, doc.id)
+    resolver = await build_dataset_url_resolver(session, text)
+    title = project.title if project else "Athenaeum document"
+    html_out = render_athmd_standalone_html(text, title=title, dataset_url_resolver=resolver)
+
+    safe_title = title[:60].replace("/", "-").replace(" ", "_")
+    return Response(
+        content=html_out,
+        media_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.html"'},
+    )
+
+
+@router.get("/render.pdf")
+async def render_compose_document_pdf(
+    project_id: uuid.UUID, request: Request, session: SessionDep, user: CurrentUserDep,
+) -> Response:
+    """Download the compose document as a PDF, via a shared headless-Chromium
+    instance launched at app startup (see main.py's lifespan)."""
+    await _assert_member(session, project_id, user.id)
+    browser = request.app.state.pw_browser
+    if browser is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "PDF rendering is unavailable")
+
+    doc = await get_or_create(session, project_id)
+    project = await session.get(Project, project_id)
+
+    text = await build_athmd(session, doc.id)
+    resolver = await build_dataset_url_resolver(session, text)
+    title = project.title if project else "Athenaeum document"
+    pdf_bytes = await render_athmd_pdf(browser, text, title=title, dataset_url_resolver=resolver)
+
+    safe_title = title[:60].replace("/", "-").replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.pdf"'},
     )
 
 
@@ -167,7 +218,7 @@ async def import_compose_document(
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cannot parse .athmd: {exc}") from exc
 
-    doc = await _get_or_create(session, project_id)
+    doc = await get_or_create(session, project_id)
     doc.content_json = result["content_json"]
     doc.version += 1
     doc.updated_by = user.id

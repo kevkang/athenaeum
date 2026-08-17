@@ -112,6 +112,19 @@
   cursor: pointer;
 }
 
+.shareLinks {
+  display: flex;
+  gap: 16px;
+}
+
+.shareLink {
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  color: var(--link);
+  text-decoration: none;
+}
+.shareLink:hover { text-decoration: underline; }
+
 .saveRow {
   display: flex;
   align-items: center;

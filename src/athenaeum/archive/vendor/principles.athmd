@@ -1,0 +1,47 @@
+# Athenaeum
+
+## An opinionated AI-driven research and publishing platform
+
+Tristan Caro 20 Aug 2026
+
+*No LLM was used in the drafting or editing of this document.*
+
+# What do we want science to be?
+
+The proliferation of AI tools has been both a boon and a burden to scientific infrastructure and, as today's working scientist can plainly see, has exacerbated problems in our current `research -> publish` model. (REF)
+
+On one hand, large language models have immensely facilitated the scholar's ability to identify, access, and parse, an immense literature. This cannot be overstated: in the age of paper journals, finding relevant literature was an immense effort in-and-of-itself, hence the stereotype of the first year graduate student locked away in the library basement reading/parsing/reading again. Now, LLMs make finding relevant literature a near-trivial task.
+
+On the other hand, LLMs have de-frictioned this process to an extent that can lead to scholar overload. The bottom line is: expectations for how much literature a scientist must both **parse** and **produce** have increased exponentially. This has put immense strain on scientists, peer-reviewed journals, editors, and peer-reviewers. More insidiously, this environment, where we struggle not to drown in the floodwaters of scientific output, creates greater incentives to *distinguish* our in for-profit, 'high impact' journals – journals that constitute one of the most profitable industries worldwide. As any scientist can attest, this system creates immense strain on scientists (REF), creates incentive structures that ultimately harm science (REF), and create severe equity problems (REF). Most worryingly, this system has created a political backlash (REF) that has sought to exert large control over scientific publishing. As with many issues of our day, the real problem "should taxpayer dollars be shuttled to for-profit publishers?" has generated an improper solution "threaten scientific funding across the board" - but in the absence of a real solution, phony solutions proliferate (REF).
+
+What do we want science to be? I think most scientists can agree on the following:
+
+1\. Quality should trump quantity in publishing. We need to temper incentives for people to publish high volumes of [sometimes questionable] work.
+
+2\. Yet- incremental science still deserves a place. How many important findings sit on a desk because they are not "high impact" enough or don't fit into a story? Publish science as it happens.
+
+3\. Rigorous and open peer review. Open science should not be "blog science" where quality checks are discarded. Science should be peer reviewed actively, with both invited and contributed review. Peer reviews should be available to readers so that real problems aren't buried upon publication; but these should also be moderated to prevent abuse.
+
+In service of these goals, Athenaeum makes the following points:
+
+1\. LLMs should be driven by humans, not drive humans. Humans, not computers, are who ultimately inhabit the world and directly experience the outcomes of scientific advancement-good and bad. Thus, humans must be ultimately accountable for scientific output. Computers, especially large language models, cannot be held accountable for their output (REF).
+
+2\. LLMs should facilitate thoughtful inquiry, not replace it. LLMs remove friction in many aspects of research. But many of us, even in our own lives, are realizing that friction often serves a purpose: beyond the endless removal of friction lies madness.
+
+3\. To this end, LLMs should be positioned as the archivist, an assistant who knows where to find the paper, the resource, the historical pedigree of literature underlying a key claim. Such research connections and lineages should not be gatekept.
+
+4\. The human must remain the expert. LLM finds the research, the human parses it, does the research, makes a claim, and stakes their name to it.
+
+# Athenaeum
+
+Love them or hate them, LLMs have escaped Pandora's box. Right now, they swirl around causing mayhem (for example REF). What we desperately need is scientific consensus. But, **consensus is not enough**, we need a tool that enables and celebrates this consensus.
+
+We created Athenaeum ("Ath" for short) to be a tool that brings about this consensus.
+
+1\. It must be freely-available to all working scientists.
+
+2\. It must connect with existing open science infrastructure: pre-prints, OpenAlex, open-access research, citation managers, etc.
+
+3\. It must enable users to responsibly parse and organize large volumes of scientific literature.
+
+4\. It must encourage research traceability: statements are evaluated based on verbatim evidence. This goes for both machine (hallucinated references) and human (incorrect or misleading references) citation problems.

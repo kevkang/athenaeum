@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/auth';
 import styles from './ProjectSettingsModal.module.css';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 type Tab = 'general' | 'members';
 
@@ -165,6 +166,28 @@ export default function ProjectSettingsModal({
                   Make this project publicly discoverable
                 </label>
               </div>
+
+              {project?.is_public && (
+                <div className={styles.field}>
+                  <label className={styles.label}>Share links</label>
+                  <div className={styles.shareLinks}>
+                    <a
+                      className={styles.shareLink}
+                      href={`${API_URL}/public/projects/${projectId}/compose-document/render.html`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View rendered document
+                    </a>
+                    <a
+                      className={styles.shareLink}
+                      href={`${API_URL}/public/projects/${projectId}/compose-document/render.pdf`}
+                    >
+                      ↓ Download PDF
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {isOwner && (
                 <div className={styles.saveRow}>

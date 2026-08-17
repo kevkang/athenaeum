@@ -78,12 +78,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("neo4j.unavailable", error=str(exc))
         app.state.neo4j_driver = None
 
+    try:
+        from playwright.async_api import async_playwright
+
+        # One shared browser process, reused across every .athmd PDF render —
+        # launching Chromium fresh per-request costs roughly a second before
+        # any actual rendering starts.
+        app.state.pw = await async_playwright().start()
+        app.state.pw_browser = await app.state.pw.chromium.launch()
+        log.info("playwright.connected")
+    except Exception as exc:
+        log.warning("playwright.unavailable", error=str(exc))
+        app.state.pw = None
+        app.state.pw_browser = None
+
     yield
 
     if app.state.arq_pool is not None:
         await app.state.arq_pool.aclose()
     if getattr(app.state, "neo4j_driver", None) is not None:
         await app.state.neo4j_driver.close()
+    if getattr(app.state, "pw_browser", None) is not None:
+        await app.state.pw_browser.close()
+    if getattr(app.state, "pw", None) is not None:
+        await app.state.pw.stop()
 
 
 _settings = get_settings()

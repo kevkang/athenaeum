@@ -70,6 +70,19 @@ export const composeApi = {
     api
       .get<string>(`/projects/${projectId}/compose-document/export`, { responseType: 'text' })
       .then((r) => r.data),
+  /** Self-contained HTML file — see archive/athmd_render.py. Same
+   * blob-download rationale as `export`. */
+  renderHtml: (projectId: string) =>
+    api
+      .get<string>(`/projects/${projectId}/compose-document/render.html`, { responseType: 'text' })
+      .then((r) => r.data),
+  /** PDF, via a shared headless-Chromium instance on the backend. */
+  renderPdf: (projectId: string) =>
+    api
+      .get<ArrayBuffer>(`/projects/${projectId}/compose-document/render.pdf`, {
+        responseType: 'arraybuffer',
+      })
+      .then((r) => r.data),
   /** Replaces the document's prose from an uploaded .athmd file — see
    * archive/athmd.py's module docstring for what does/doesn't survive the
    * round trip. Always overwrites (no version check, unlike `save`), since

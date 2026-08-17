@@ -39,6 +39,9 @@ dependencies = [
     # .athmd import
     "markdown-it-py>=3.0",
     "mdit-py-plugins>=0.4",
+    # .athmd render (HTML/PDF)
+    "pygments>=2.18",
+    "playwright>=1.48",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +50,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "mypy>=1.13",
+    "types-Pygments>=2.18",
 ]
 
 # Later phases will add: neo4j, ruamel.yaml, anthropic, openai

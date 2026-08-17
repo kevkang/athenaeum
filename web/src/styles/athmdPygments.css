@@ -1,0 +1,86 @@
+/* Pygments' 'default' style CSS, targeting the same .athmd-code class the
+ * backend's HtmlFormatter emits in rendered code blocks (see
+ * src/athenaeum/archive/athmd_render.py's _render_code_block). The React
+ * home page renders backend-rendered HTML directly (not through lowlight),
+ * so it needs this to color the same markup the backend already produced,
+ * rather than re-highlighting client-side.
+ *
+ * Regenerate with:
+ *   python -c "from pygments.formatters import HtmlFormatter; \
+ *     print(HtmlFormatter(cssclass='athmd-code').get_style_defs('.athmd-code'))"
+ */
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.athmd-code .hll { background-color: #ffffcc }
+.athmd-code { background: #f8f8f8; }
+.athmd-code .c { color: #3D7B7B; font-style: italic } /* Comment */
+.athmd-code .err { border: 1px solid #F00 } /* Error */
+.athmd-code .k { color: #008000; font-weight: bold } /* Keyword */
+.athmd-code .o { color: #666 } /* Operator */
+.athmd-code .ch { color: #3D7B7B; font-style: italic } /* Comment.Hashbang */
+.athmd-code .cm { color: #3D7B7B; font-style: italic } /* Comment.Multiline */
+.athmd-code .cp { color: #9C6500 } /* Comment.Preproc */
+.athmd-code .cpf { color: #3D7B7B; font-style: italic } /* Comment.PreprocFile */
+.athmd-code .c1 { color: #3D7B7B; font-style: italic } /* Comment.Single */
+.athmd-code .cs { color: #3D7B7B; font-style: italic } /* Comment.Special */
+.athmd-code .gd { color: #A00000 } /* Generic.Deleted */
+.athmd-code .ge { font-style: italic } /* Generic.Emph */
+.athmd-code .ges { font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.athmd-code .gr { color: #E40000 } /* Generic.Error */
+.athmd-code .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+.athmd-code .gi { color: #008400 } /* Generic.Inserted */
+.athmd-code .go { color: #717171 } /* Generic.Output */
+.athmd-code .gp { color: #000080; font-weight: bold } /* Generic.Prompt */
+.athmd-code .gs { font-weight: bold } /* Generic.Strong */
+.athmd-code .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+.athmd-code .gt { color: #04D } /* Generic.Traceback */
+.athmd-code .kc { color: #008000; font-weight: bold } /* Keyword.Constant */
+.athmd-code .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */
+.athmd-code .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */
+.athmd-code .kp { color: #008000 } /* Keyword.Pseudo */
+.athmd-code .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */
+.athmd-code .kt { color: #B00040 } /* Keyword.Type */
+.athmd-code .m { color: #666 } /* Literal.Number */
+.athmd-code .s { color: #BA2121 } /* Literal.String */
+.athmd-code .na { color: #687822 } /* Name.Attribute */
+.athmd-code .nb { color: #008000 } /* Name.Builtin */
+.athmd-code .nc { color: #00F; font-weight: bold } /* Name.Class */
+.athmd-code .no { color: #800 } /* Name.Constant */
+.athmd-code .nd { color: #A2F } /* Name.Decorator */
+.athmd-code .ni { color: #717171; font-weight: bold } /* Name.Entity */
+.athmd-code .ne { color: #CB3F38; font-weight: bold } /* Name.Exception */
+.athmd-code .nf { color: #00F } /* Name.Function */
+.athmd-code .nl { color: #767600 } /* Name.Label */
+.athmd-code .nn { color: #00F; font-weight: bold } /* Name.Namespace */
+.athmd-code .nt { color: #008000; font-weight: bold } /* Name.Tag */
+.athmd-code .nv { color: #19177C } /* Name.Variable */
+.athmd-code .ow { color: #A2F; font-weight: bold } /* Operator.Word */
+.athmd-code .w { color: #BBB } /* Text.Whitespace */
+.athmd-code .mb { color: #666 } /* Literal.Number.Bin */
+.athmd-code .mf { color: #666 } /* Literal.Number.Float */
+.athmd-code .mh { color: #666 } /* Literal.Number.Hex */
+.athmd-code .mi { color: #666 } /* Literal.Number.Integer */
+.athmd-code .mo { color: #666 } /* Literal.Number.Oct */
+.athmd-code .sa { color: #BA2121 } /* Literal.String.Affix */
+.athmd-code .sb { color: #BA2121 } /* Literal.String.Backtick */
+.athmd-code .sc { color: #BA2121 } /* Literal.String.Char */
+.athmd-code .dl { color: #BA2121 } /* Literal.String.Delimiter */
+.athmd-code .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */
+.athmd-code .s2 { color: #BA2121 } /* Literal.String.Double */
+.athmd-code .se { color: #AA5D1F; font-weight: bold } /* Literal.String.Escape */
+.athmd-code .sh { color: #BA2121 } /* Literal.String.Heredoc */
+.athmd-code .si { color: #A45A77; font-weight: bold } /* Literal.String.Interpol */
+.athmd-code .sx { color: #008000 } /* Literal.String.Other */
+.athmd-code .sr { color: #A45A77 } /* Literal.String.Regex */
+.athmd-code .s1 { color: #BA2121 } /* Literal.String.Single */
+.athmd-code .ss { color: #19177C } /* Literal.String.Symbol */
+.athmd-code .bp { color: #008000 } /* Name.Builtin.Pseudo */
+.athmd-code .fm { color: #00F } /* Name.Function.Magic */
+.athmd-code .vc { color: #19177C } /* Name.Variable.Class */
+.athmd-code .vg { color: #19177C } /* Name.Variable.Global */
+.athmd-code .vi { color: #19177C } /* Name.Variable.Instance */
+.athmd-code .vm { color: #19177C } /* Name.Variable.Magic */
+.athmd-code .il { color: #666 } /* Literal.Number.Integer.Long */

@@ -74,6 +74,10 @@ class VerificationRateStats(BaseModel):
     avg_verification_rate: float | None
 
 
+class PublicPrinciplesOut(BaseModel):
+    html: str
+
+
 class PaperIngest(BaseModel):
     doi: str
     project_id: UUID

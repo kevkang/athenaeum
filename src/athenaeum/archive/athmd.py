@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from markdown_it import MarkdownIt
@@ -35,21 +36,24 @@ from mdit_py_plugins.dollarmath import dollarmath_plugin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from athenaeum.config import get_settings
 from athenaeum.domain.citations import (
     CitationNumbering,
     ReferenceEntry,
     build_reference_numbering,
     iter_statement_ids_in_order,
 )
-from athenaeum.storage.models import ComposeDocument, Statement
+from athenaeum.storage.models import ComposeDocument, Dataset, Statement
 
 ATHMD_VERSION = 1
+
+_DATASET_ID_SCAN_RE = re.compile(r"athm:dataset/([0-9a-fA-F-]{36})")
 
 _SUPPORTED_MARKS = {"bold", "italic", "statementLink", "code", "link"}
 _SUPPORTED_INLINE_TYPES = {"text", "inlineMath"}
 
-_ATHM_STATEMENT_HREF_RE = re.compile(r"^athm:statement/([0-9a-fA-F-]{36})$")
-_ATHM_DATASET_HREF_RE = re.compile(r"^athm:dataset/([0-9a-fA-F-]{36})$")
+ATHM_STATEMENT_HREF_RE = re.compile(r"^athm:statement/([0-9a-fA-F-]{36})$")
+ATHM_DATASET_HREF_RE = re.compile(r"^athm:dataset/([0-9a-fA-F-]{36})$")
 # The literal `[^N.k]` citation markers export appends right after a
 # statement link (comma-space joined) aren't real footnote syntax — nothing
 # defines them — so on import they show up as ordinary leading text right
@@ -59,9 +63,9 @@ _ATHM_DATASET_HREF_RE = re.compile(r"^athm:dataset/([0-9a-fA-F-]{36})$")
 # only ever consumed when it's immediately followed by another marker —
 # export never emits a trailing separator after the last one, so a comma
 # right after it belongs to whatever prose came next (e.g. ", though ...").
-_MARKER_PREFIX_RE = re.compile(r"^\[\^\d+\.\d+\](?:, \[\^\d+\.\d+\])*")
+MARKER_PREFIX_RE = re.compile(r"^\[\^\d+\.\d+\](?:, \[\^\d+\.\d+\])*")
 
-_REFERENCES_HEADING_RE = re.compile(r"^## References\s*$", re.MULTILINE)
+REFERENCES_HEADING_RE = re.compile(r"^## References\s*$", re.MULTILINE)
 
 _md = MarkdownIt().use(dollarmath_plugin).enable("table")
 
@@ -79,6 +83,42 @@ async def build_athmd(session: AsyncSession, compose_document_id: uuid.UUID) -> 
 
     parts = [p for p in (body.rstrip(), references) if p]
     return "\n\n".join(parts) + "\n"
+
+
+async def build_dataset_url_resolver(
+    session: AsyncSession, text: str
+) -> Callable[[uuid.UUID], str | None] | None:
+    """Pre-generates presigned download URLs for every `athm:dataset/<uuid>`
+    reference in a piece of `.athmd` text, for `archive/athmd_render.py`'s
+    optional `dataset_url_resolver` callback — that renderer is deliberately
+    DB-free, so this does the one-time async DB/S3 work up front and hands
+    back a plain synchronous dict lookup. Returns None (falls back to
+    render-time placeholders) if there are no figures, or no dataset actually
+    resolves to a real S3-backed file — same presigned-URL mechanics as
+    `api/annotations.py`'s `get_dataset_file`."""
+    ids = {uuid.UUID(m) for m in _DATASET_ID_SCAN_RE.findall(text)}
+    if not ids:
+        return None
+
+    datasets = await session.scalars(select(Dataset).where(Dataset.id.in_(ids)))
+    settings = get_settings()
+
+    from athenaeum.storage.s3 import generate_presigned_url
+
+    urls: dict[uuid.UUID, str] = {}
+    for dataset in datasets:
+        if not dataset.storage_uri or not dataset.storage_uri.startswith("s3://"):
+            continue
+        bucket, _, key = dataset.storage_uri.removeprefix("s3://").partition("/")
+        try:
+            urls[dataset.id] = await generate_presigned_url(
+                bucket, key, region=settings.aws_region,
+                endpoint_url=settings.s3_public_endpoint_url or settings.s3_endpoint_url,
+            )
+        except Exception:
+            continue
+
+    return urls.get if urls else None
 
 
 def _render_blocks(nodes: list[dict[str, Any]], numbering: CitationNumbering) -> str:
@@ -330,7 +370,7 @@ async def import_athmd(
 
 
 def _strip_references_section(text: str) -> str:
-    match = _REFERENCES_HEADING_RE.search(text)
+    match = REFERENCES_HEADING_RE.search(text)
     return text if match is None else text[: match.start()]
 
 
@@ -345,7 +385,7 @@ def _image_block_from_paragraph(children: list[Token]) -> dict[str, Any] | None:
         return None
     token = children[0]
     href = (token.attrs or {}).get("src", "")
-    match = _ATHM_DATASET_HREF_RE.match(str(href))
+    match = ATHM_DATASET_HREF_RE.match(str(href))
     if match is None:
         return None
     return {"type": "image", "attrs": {"datasetId": match.group(1), "alt": token.content or ""}}
@@ -420,7 +460,7 @@ def _import_inline_tokens(
             nodes.append({"type": "text", "text": text, "marks": marks})
         elif child.type == "link_open":
             href = (child.attrs or {}).get("href", "")
-            match = _ATHM_STATEMENT_HREF_RE.match(str(href))
+            match = ATHM_STATEMENT_HREF_RE.match(str(href))
             if match is not None:
                 current_statement_id = match.group(1)
             else:
@@ -434,7 +474,7 @@ def _import_inline_tokens(
         elif child.type == "text":
             text = child.content
             if just_closed_statement_link:
-                text = _MARKER_PREFIX_RE.sub("", text, count=1)
+                text = MARKER_PREFIX_RE.sub("", text, count=1)
             just_closed_statement_link = False
             if not text:
                 continue

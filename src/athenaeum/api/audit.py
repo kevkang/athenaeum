@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from athenaeum.api.compose import _assert_member, _get_or_create
+from athenaeum.api.compose import _assert_member, get_or_create
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
 from athenaeum.domain.citations import build_reference_numbering, iter_statement_ids_in_order
@@ -39,7 +39,7 @@ async def create_audit_run(
     request: Request,
 ) -> AuditRun:
     await _assert_member(session, project_id, user.id)
-    doc = await _get_or_create(session, project_id)
+    doc = await get_or_create(session, project_id)
 
     audit_run = AuditRun(
         id=uuid.uuid4(),

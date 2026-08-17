@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir \
 
 RUN pip install --no-cache-dir -e .
 
+# Headless Chromium for .athmd -> PDF rendering (archive/athmd_render.py).
+# --with-deps pulls in the apt packages Chromium needs on Debian slim.
+RUN playwright install --with-deps chromium
+
 EXPOSE 8000
 
 CMD ["uvicorn", "athenaeum.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -93,6 +93,17 @@ const ComposeCodeBlockLowlight = CodeBlockLowlight.extend({
 // ComposeView is ever mounted at a time.
 const composeEditorRef: { current: Editor | null } = { current: null };
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function findEvidenceBySubId(numbering: CitationNumbering, subId: string) {
   for (const reference of numbering.references) {
     const evidence = reference.evidence.find((e) => e.sub_id === subId);
@@ -303,17 +314,17 @@ export default function ComposeView() {
 
   const exportAthmdMutation = useMutation({
     mutationFn: () => composeApi.export(projectId),
-    onSuccess: (text) => {
-      const blob = new Blob([text], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'compose.athmd';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    },
+    onSuccess: (text) => downloadBlob(new Blob([text], { type: 'text/markdown' }), 'compose.athmd'),
+  });
+
+  const renderHtmlMutation = useMutation({
+    mutationFn: () => composeApi.renderHtml(projectId),
+    onSuccess: (html) => downloadBlob(new Blob([html], { type: 'text/html' }), 'compose.html'),
+  });
+
+  const renderPdfMutation = useMutation({
+    mutationFn: () => composeApi.renderPdf(projectId),
+    onSuccess: (pdf) => downloadBlob(new Blob([pdf], { type: 'application/pdf' }), 'compose.pdf'),
   });
 
   const importAthmdMutation = useMutation({
@@ -606,6 +617,22 @@ export default function ComposeView() {
           disabled={exportAthmdMutation.isPending}
         >
           {exportAthmdMutation.isPending ? 'Exporting…' : '↓ Export .athmd'}
+        </button>
+
+        <button
+          className={styles.toolbarBtn}
+          onClick={() => renderHtmlMutation.mutate()}
+          disabled={renderHtmlMutation.isPending}
+        >
+          {renderHtmlMutation.isPending ? 'Rendering…' : '↓ Export HTML'}
+        </button>
+
+        <button
+          className={styles.toolbarBtn}
+          onClick={() => renderPdfMutation.mutate()}
+          disabled={renderPdfMutation.isPending}
+        >
+          {renderPdfMutation.isPending ? 'Rendering…' : '↓ Export PDF'}
         </button>
 
         <button

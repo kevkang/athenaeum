@@ -5,11 +5,21 @@ import uuid
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import func, select
 
+from athenaeum.api.compose import get_or_create
 from athenaeum.api.deps import SessionDep
+from athenaeum.archive.athmd import build_athmd, build_dataset_url_resolver
+from athenaeum.archive.athmd_render import (
+    load_principles_athmd,
+    render_athmd_body_html,
+    render_athmd_pdf,
+    render_athmd_standalone_html,
+)
 from athenaeum.domain.models import (
+    PublicPrinciplesOut,
     PublicProjectOut,
     StatementOut,
     VerificationRateStats,
@@ -153,4 +163,78 @@ async def get_verification_rate(
         project_id=project_id,
         synthesis_count=count or 0,
         avg_verification_rate=float(avg_vr) if avg_vr is not None else None,
+    )
+
+
+# ── Principles: the .athmd proof-of-concept, shown on the home page ────────────
+
+@router.get("/principles", response_model=PublicPrinciplesOut)
+async def get_public_principles() -> PublicPrinciplesOut:
+    text = load_principles_athmd()
+    return PublicPrinciplesOut(html=render_athmd_body_html(text))
+
+
+@router.get("/principles.athmd")
+async def download_public_principles_athmd() -> Response:
+    return Response(
+        content=load_principles_athmd(),
+        media_type="text/markdown",
+        headers={"Content-Disposition": 'attachment; filename="principles.athmd"'},
+    )
+
+
+@router.get("/principles.pdf")
+async def download_public_principles_pdf(request: Request) -> Response:
+    browser = request.app.state.pw_browser
+    if browser is None:
+        raise HTTPException(status_code=503, detail="PDF rendering is unavailable")
+    text = load_principles_athmd()
+    pdf_bytes = await render_athmd_pdf(browser, text, title="Athenaeum Principles")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="athenaeum-principles.pdf"'},
+    )
+
+
+# ── Public project Compose document rendering ───────────────────────────────
+
+@router.get("/projects/{project_id}/compose-document/render.html")
+async def render_public_compose_document_html(
+    project_id: uuid.UUID, session: SessionDep,
+) -> Response:
+    project = await _require_public_project(session, project_id)
+    doc = await get_or_create(session, project_id)
+    text = await build_athmd(session, doc.id)
+    resolver = await build_dataset_url_resolver(session, text)
+    html_out = render_athmd_standalone_html(
+        text, title=project.title, dataset_url_resolver=resolver
+    )
+    safe_title = project.title[:60].replace("/", "-").replace(" ", "_")
+    return Response(
+        content=html_out,
+        media_type="text/html",
+        headers={"Content-Disposition": f'inline; filename="{safe_title}.html"'},
+    )
+
+
+@router.get("/projects/{project_id}/compose-document/render.pdf")
+async def render_public_compose_document_pdf(
+    project_id: uuid.UUID, request: Request, session: SessionDep,
+) -> Response:
+    project = await _require_public_project(session, project_id)
+    browser = request.app.state.pw_browser
+    if browser is None:
+        raise HTTPException(status_code=503, detail="PDF rendering is unavailable")
+    doc = await get_or_create(session, project_id)
+    text = await build_athmd(session, doc.id)
+    resolver = await build_dataset_url_resolver(session, text)
+    pdf_bytes = await render_athmd_pdf(
+        browser, text, title=project.title, dataset_url_resolver=resolver
+    )
+    safe_title = project.title[:60].replace("/", "-").replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.pdf"'},
     )
