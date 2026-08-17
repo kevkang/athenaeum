@@ -22,3 +22,5 @@ web/node_modules/
 web/dist/
 web/.env
 .DS_Store
+extension-plan-context.md
+PRINCIPLES.md
