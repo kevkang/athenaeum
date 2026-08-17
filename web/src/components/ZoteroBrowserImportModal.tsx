@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { papersApi } from '../api/papers';
 import {
@@ -7,9 +7,13 @@ import {
 } from '../api/zoteroBrowserImport';
 import type { ZoteroCollection } from '../api/zotero';
 import {
+  forgetZoteroFolder,
+  getReconnectableFolderName,
   isDirectoryPickerSupported,
   isPickerCancelled,
   pickZoteroFolder,
+  reconnectZoteroFolder,
+  tryAutoRestoreZoteroFolder,
   type ZoteroFolderHandle,
 } from '../lib/zoteroFolderAccess';
 import styles from './ZoteroBrowserImportModal.module.css';
@@ -88,6 +92,8 @@ export default function ZoteroBrowserImportModal({
   const [collectionFilter, setCollectionFilter] = useState<string>('');
   const [importProgress, setImportProgress] = useState({ done: 0, total: 0 });
   const [outcomes, setOutcomes] = useState<ImportOutcome[]>([]);
+  const [checkingRestore, setCheckingRestore] = useState(true);
+  const [reconnectName, setReconnectName] = useState<string | null>(null);
 
   function updateRow(itemKey: string, patch: Partial<ImportRow>) {
     setRows((prev) => prev.map((r) => (r.item.item_key === itemKey ? { ...r, ...patch } : r)));
@@ -102,28 +108,82 @@ export default function ZoteroBrowserImportModal({
     });
   }
 
+  async function proceedWithHandle(handle: ZoteroFolderHandle) {
+    setFolderHandle(handle);
+    setPhase('parsing');
+    const parsed = await zoteroBrowserImportApi.parse(handle.sqliteFile, projectId);
+    setCollections(parsed.collections);
+    const initialRows: ImportRow[] = parsed.items.map((item) => ({
+      item,
+      selected: !item.already_in_project && isImportable(item),
+      pdfStatus: item.attachment_relative_path ? 'checking' : 'n/a',
+    }));
+    setRows(initialRows);
+    setPhase('review');
+    void checkPdfAvailability(handle, initialRows);
+  }
+
   async function handlePick() {
     setError(null);
     try {
       const handle = await pickZoteroFolder();
-      setFolderHandle(handle);
-      setPhase('parsing');
-      const parsed = await zoteroBrowserImportApi.parse(handle.sqliteFile, projectId);
-      setCollections(parsed.collections);
-      const initialRows: ImportRow[] = parsed.items.map((item) => ({
-        item,
-        selected: !item.already_in_project && isImportable(item),
-        pdfStatus: item.attachment_relative_path ? 'checking' : 'n/a',
-      }));
-      setRows(initialRows);
-      setPhase('review');
-      void checkPdfAvailability(handle, initialRows);
+      await proceedWithHandle(handle);
     } catch (err) {
       if (isPickerCancelled(err)) return;
       setError(extractErrorMessage(err, 'Could not read that folder.'));
       setPhase('idle');
     }
   }
+
+  async function handleReconnect() {
+    setError(null);
+    try {
+      const handle = await reconnectZoteroFolder();
+      await proceedWithHandle(handle);
+    } catch (err) {
+      if (isPickerCancelled(err)) return;
+      setReconnectName(null);
+      setError(extractErrorMessage(err, 'Could not reconnect — choose the folder again.'));
+    }
+  }
+
+  function handleForgetFolder() {
+    void forgetZoteroFolder();
+    setReconnectName(null);
+  }
+
+  // On mount: silently restore if permission is already granted (no click
+  // needed at all), otherwise check whether there's a saved folder that
+  // just needs a one-click reconnect instead of a full re-pick.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const handle = await tryAutoRestoreZoteroFolder();
+      if (cancelled) return;
+      if (handle) {
+        try {
+          await proceedWithHandle(handle);
+        } catch (err) {
+          if (!cancelled) {
+            setError(extractErrorMessage(err, 'Could not read that folder.'));
+            setPhase('idle');
+          }
+        } finally {
+          if (!cancelled) setCheckingRestore(false);
+        }
+        return;
+      }
+      const name = await getReconnectableFolderName();
+      if (!cancelled) {
+        setReconnectName(name);
+        setCheckingRestore(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -209,9 +269,22 @@ export default function ZoteroBrowserImportModal({
               &ldquo;Show Data Directory&rdquo;). Everything is read in your browser — only item
               metadata and the PDFs you choose to import ever leave your machine.
             </div>
-            <button className={styles.pickerBtn} onClick={() => void handlePick()}>
-              Choose Zotero Folder…
-            </button>
+            {checkingRestore ? (
+              <button className={styles.pickerBtn} disabled>Checking for a saved folder…</button>
+            ) : reconnectName ? (
+              <>
+                <button className={styles.pickerBtn} onClick={() => void handleReconnect()}>
+                  Reconnect to &ldquo;{reconnectName}&rdquo;
+                </button>
+                <button className={styles.selectLink} onClick={handleForgetFolder}>
+                  Use a different folder
+                </button>
+              </>
+            ) : (
+              <button className={styles.pickerBtn} onClick={() => void handlePick()}>
+                Choose Zotero Folder…
+              </button>
+            )}
             {error && <div className={styles.pickerError}>{error}</div>}
             {!isDirectoryPickerSupported() && (
               <div className={styles.pickerNote}>
