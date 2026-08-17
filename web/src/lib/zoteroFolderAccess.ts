@@ -32,9 +32,14 @@ interface FileSystemFileHandleLike {
   getFile(): Promise<File>;
 }
 
+type FileSystemPermissionState = 'granted' | 'denied' | 'prompt';
+
 interface FileSystemDirectoryHandleLike {
+  readonly name: string;
   getFileHandle(name: string): Promise<FileSystemFileHandleLike>;
   getDirectoryHandle(name: string): Promise<FileSystemDirectoryHandleLike>;
+  queryPermission(descriptor: { mode: 'read' }): Promise<FileSystemPermissionState>;
+  requestPermission(descriptor: { mode: 'read' }): Promise<FileSystemPermissionState>;
 }
 
 declare global {
@@ -59,9 +64,12 @@ export async function pickZoteroFolder(): Promise<ZoteroFolderHandle> {
   return isDirectoryPickerSupported() ? pickViaFileSystemAccess() : pickViaInputFallback();
 }
 
-async function pickViaFileSystemAccess(): Promise<ZoteroFolderHandle> {
-  const rootHandle = await window.showDirectoryPicker!();
-
+/** Builds the ZoteroFolderHandle wrapper around a directory handle, whether
+ * it just came out of a fresh picker or was restored from IndexedDB — same
+ * lazy directory-resolution logic either way. */
+async function buildHandleFromRoot(
+  rootHandle: FileSystemDirectoryHandleLike,
+): Promise<ZoteroFolderHandle> {
   const sqliteHandle = await rootHandle.getFileHandle('zotero.sqlite').catch(() => null);
   if (!sqliteHandle) throw new Error(NO_SQLITE_MESSAGE);
   const sqliteFile = await sqliteHandle.getFile();
@@ -100,6 +108,12 @@ async function pickViaFileSystemAccess(): Promise<ZoteroFolderHandle> {
       }
     },
   };
+}
+
+async function pickViaFileSystemAccess(): Promise<ZoteroFolderHandle> {
+  const rootHandle = await window.showDirectoryPicker!();
+  void saveStoredHandle(rootHandle);
+  return buildHandleFromRoot(rootHandle);
 }
 
 function pickViaInputFallback(): Promise<ZoteroFolderHandle> {
@@ -154,4 +168,142 @@ function pickViaInputFallback(): Promise<ZoteroFolderHandle> {
     // same as every other native file input in this app.
     input.click();
   });
+}
+
+/* ── Persisting the picked directory handle ──
+ *
+ * FileSystemDirectoryHandle is structured-cloneable, so IndexedDB can store
+ * it directly (no serialization needed) — this is what lets a returning user
+ * skip re-picking their whole Zotero folder every session. The <input
+ * webkitdirectory> fallback has no equivalent: a FileList has no persisted
+ * handle, so those users are unaffected by any of this (pickZoteroFolder()
+ * never calls into it for that path).
+ *
+ * The OS-level grant behind a saved handle can still lapse (e.g. after a
+ * browser restart) without the handle itself becoming invalid — that shows
+ * up as queryPermission() returning 'prompt' rather than 'granted', which is
+ * why restoring is split into a fully silent check (safe to call on mount)
+ * and an explicit reconnect that requires a user gesture (permission
+ * prompts cannot be triggered otherwise).
+ */
+
+const DB_NAME = 'athenaeum-zotero-folder';
+const STORE_NAME = 'handles';
+const HANDLE_KEY = 'root';
+
+function openHandleDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveStoredHandle(handle: FileSystemDirectoryHandleLike): Promise<void> {
+  try {
+    const db = await openHandleDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(handle, HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Persistence is a nicety on top of picking, not a requirement for it —
+    // a write failure here shouldn't surface as an import error.
+  }
+}
+
+async function loadStoredHandle(): Promise<FileSystemDirectoryHandleLike | null> {
+  try {
+    const db = await openHandleDb();
+    const handle = await new Promise<FileSystemDirectoryHandleLike | null>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(HANDLE_KEY);
+      req.onsuccess = () => resolve((req.result as FileSystemDirectoryHandleLike | undefined) ?? null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return handle;
+  } catch {
+    return null;
+  }
+}
+
+async function clearStoredHandle(): Promise<void> {
+  try {
+    const db = await openHandleDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // best-effort — worst case a stale handle sticks around and the next
+    // restore attempt fails harmlessly instead.
+  }
+}
+
+/** Silently restores a previously-picked folder if, and only if, its
+ * permission is already granted from a prior visit — safe to call on
+ * mount with no user gesture. Returns null for "nothing to restore" and
+ * for "restore is possible but needs a click" alike; use
+ * `getReconnectableFolderName()` to distinguish the latter for the UI. */
+export async function tryAutoRestoreZoteroFolder(): Promise<ZoteroFolderHandle | null> {
+  if (!isDirectoryPickerSupported()) return null;
+  const handle = await loadStoredHandle();
+  if (!handle) return null;
+  try {
+    const state = await handle.queryPermission({ mode: 'read' });
+    if (state !== 'granted') return null;
+    return await buildHandleFromRoot(handle);
+  } catch {
+    await clearStoredHandle();
+    return null;
+  }
+}
+
+/** Name of a saved folder that could be reconnected with one click (its
+ * permission needs re-confirming, e.g. after a browser restart) — or null
+ * if there's nothing saved, or the saved grant was denied outright, in
+ * which case the saved handle is dropped and a fresh pick is needed. */
+export async function getReconnectableFolderName(): Promise<string | null> {
+  if (!isDirectoryPickerSupported()) return null;
+  const handle = await loadStoredHandle();
+  if (!handle) return null;
+  try {
+    const state = await handle.queryPermission({ mode: 'read' });
+    if (state === 'denied') {
+      await clearStoredHandle();
+      return null;
+    }
+    return handle.name;
+  } catch {
+    await clearStoredHandle();
+    return null;
+  }
+}
+
+/** Re-requests permission on the saved folder handle — must be called from
+ * within a user-gesture handler (e.g. a button's onClick), same as any
+ * File System Access permission prompt. */
+export async function reconnectZoteroFolder(): Promise<ZoteroFolderHandle> {
+  const handle = await loadStoredHandle();
+  if (!handle) throw new Error('No saved Zotero folder to reconnect to.');
+  const state = await handle.requestPermission({ mode: 'read' });
+  if (state !== 'granted') {
+    throw new DOMException('Permission to access the saved folder was not granted', 'AbortError');
+  }
+  return buildHandleFromRoot(handle);
+}
+
+/** Forgets the saved folder handle, so the next pick starts fresh. */
+export async function forgetZoteroFolder(): Promise<void> {
+  await clearStoredHandle();
 }

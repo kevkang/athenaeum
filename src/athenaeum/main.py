@@ -30,6 +30,7 @@ from athenaeum.api import (
     websearch_find,
     zotero,
     zotero_find,
+    zotero_highlights,
     zotero_local,
 )
 from athenaeum.config import DEFAULT_JWT_SECRET, Settings, get_settings
@@ -116,6 +117,7 @@ app.include_router(links.router)
 app.include_router(history.router)
 app.include_router(zotero.router)
 app.include_router(zotero_local.router)
+app.include_router(zotero_highlights.router)
 app.include_router(zotero_find.router)
 app.include_router(openalex_find.router)
 app.include_router(websearch_find.router)

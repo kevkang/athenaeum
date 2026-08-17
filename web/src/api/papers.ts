@@ -12,6 +12,7 @@ export interface Paper {
   status: 'ghost' | 'full_text' | 'failed';
   created_at: string;
   zotero_item_key: string | null;
+  zotero_source: 'sync' | 'local' | null;
   found_quote: string | null;
   found_relevance_note: string | null;
   found_corpus: string | null;

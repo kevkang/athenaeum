@@ -24,6 +24,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.ingest.zotero import (
+    ZoteroAnnotation,
     ZoteroAttachment,
     ZoteroCollection,
     ZoteroSearchHit,
@@ -44,6 +45,11 @@ _LINK_MODE_NAMES = {
     3: "linked_url",
     4: "embedded_image",
 }
+
+# Zotero.Annotations.ANNOTATION_TYPE_* constants — only highlight/underline
+# carry a verbatim text span (note/image/ink don't), matching
+# ingest/zotero.py's _TEXT_ANNOTATION_TYPES for the Web API path.
+_TEXT_ANNOTATION_TYPE_NAMES = {1: "highlight", 5: "underline"}
 
 
 class LocalZoteroError(RuntimeError):
@@ -525,6 +531,54 @@ async def list_local_attachments(data_dir: str, item_key: str) -> list[ZoteroAtt
                 )
             )
         return attachments
+
+    return await loop.run_in_executor(None, _run(data_dir, _list))
+
+
+async def list_local_annotations(data_dir: str, item_key: str) -> list[ZoteroAnnotation]:
+    """Every highlight/underline annotation across all of a top-level item's
+    attachments, read straight from itemAnnotations. Unlike attachment
+    *files*, annotations are always present locally regardless of Zotero
+    account sync settings — the user created them in this same install."""
+    loop = asyncio.get_running_loop()
+
+    def _list(conn: sqlite3.Connection) -> list[ZoteroAnnotation]:
+        parent_row = conn.execute("SELECT itemID FROM items WHERE key = ?", (item_key,)).fetchone()
+        if parent_row is None:
+            raise LocalZoteroError(f"No item with key {item_key!r}")
+
+        rows = conn.execute(
+            """
+            SELECT ann.text AS text, ann.comment AS comment, ann.color AS color,
+                   ann.pageLabel AS pageLabel, ann.type AS type,
+                   i.key AS key, attach.key AS attachKey
+            FROM itemAttachments ia
+            JOIN items attach ON attach.itemID = ia.itemID
+            JOIN itemAnnotations ann ON ann.parentItemID = ia.itemID
+            JOIN items i ON i.itemID = ann.itemID
+            WHERE ia.parentItemID = ?
+              AND i.itemID NOT IN (SELECT itemID FROM deletedItems)
+            """,
+            (parent_row["itemID"],),
+        ).fetchall()
+
+        annotations: list[ZoteroAnnotation] = []
+        for row in rows:
+            annotation_type = _TEXT_ANNOTATION_TYPE_NAMES.get(row["type"])
+            if annotation_type is None or not row["text"]:
+                continue
+            annotations.append(
+                ZoteroAnnotation(
+                    item_key=row["key"],
+                    parent_item_key=row["attachKey"],
+                    annotation_type=annotation_type,
+                    text=row["text"],
+                    comment=row["comment"],
+                    color=row["color"],
+                    page_label=row["pageLabel"],
+                )
+            )
+        return annotations
 
     return await loop.run_in_executor(None, _run(data_dir, _list))
 

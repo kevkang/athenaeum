@@ -100,6 +100,7 @@ class PaperOut(BaseModel):
     status: str
     created_at: datetime
     zotero_item_key: str | None = None
+    zotero_source: str | None = None
     found_quote: str | None = None
     found_relevance_note: str | None = None
     found_corpus: str | None = None
@@ -889,3 +890,34 @@ class HighlightOut(BaseModel):
     paper_title: str
     paper_year: int | None
     paper_first_author: str | None
+
+
+# ── Zotero highlight import ──────────────────────────────────────────────────
+# Bridges a Zotero PDF annotation (highlight/underline) into a Highlight —
+# see ingest/highlight_match.py for why this needs a fuzzy-match preview step
+# rather than a direct 1:1 import.
+
+class ZoteroHighlightCandidateOut(BaseModel):
+    annotation_item_key: str
+    zotero_text: str
+    comment: str | None
+    color: str | None
+    matched: bool
+    match_ratio: float | None
+    sentence_ids: list[UUID] | None
+    verbatim_text: str | None
+    already_imported: bool
+
+
+class ZoteroHighlightPreviewResponse(BaseModel):
+    candidates: list[ZoteroHighlightCandidateOut]
+
+
+class ZoteroHighlightImportItem(BaseModel):
+    sentence_ids: list[UUID] = Field(min_length=1)
+    verbatim_text: str = Field(min_length=1)
+
+
+class ZoteroHighlightImportRequest(BaseModel):
+    project_id: UUID
+    items: list[ZoteroHighlightImportItem] = Field(min_length=1)

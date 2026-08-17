@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { papersApi, type Section, type Sentence, type SentenceEvidence, firstAuthor } from '../api/papers';
 import { highlightsApi, type Highlight } from '../api/highlights';
 import { safeHtml } from '../lib/format';
+import ZoteroHighlightImportModal from './ZoteroHighlightImportModal';
 import styles from '../pages/Workspace.module.css';
 
 export const PASSAGE_MIME = 'application/x-athenaeum-passage';
@@ -45,6 +46,7 @@ export default function ReaderPane({
   const [expandAbstract, setExpandAbstract] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [fullTextView, setFullTextView] = useState(false);
+  const [zoteroHighlightModalOpen, setZoteroHighlightModalOpen] = useState(false);
 
   const { data: paper } = useQuery({
     queryKey: ['paper', paperId],
@@ -207,7 +209,20 @@ export default function ReaderPane({
         <span className={styles.paperStatusLabel}>{paper.status.replace('_', ' ')}</span>
         {paper.doi && <span className={styles.paperDoi}>{paper.doi}</span>}
         {paper.zotero_item_key && <span className={styles.zoteroBadge}>Zotero</span>}
+        {paper.zotero_item_key && paper.status === 'full_text' && (
+          <button className={styles.retryBtn} onClick={() => setZoteroHighlightModalOpen(true)}>
+            Import Zotero highlights
+          </button>
+        )}
       </div>
+
+      {zoteroHighlightModalOpen && (
+        <ZoteroHighlightImportModal
+          paperId={paperId}
+          projectId={projectId}
+          onClose={() => setZoteroHighlightModalOpen(false)}
+        />
+      )}
 
       {paper.status === 'failed' && (
         <div className={styles.paperActionsRow}>

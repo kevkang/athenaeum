@@ -11,6 +11,7 @@ from athenaeum.ingest.zotero_local import (
     LocalZoteroError,
     browse_local_items,
     get_local_item,
+    list_local_annotations,
     list_local_attachments,
     list_local_collections,
     resolve_local_attachment_file,
@@ -36,6 +37,10 @@ CREATE TABLE collections (
 CREATE TABLE collectionItems (collectionID INTEGER, itemID INTEGER);
 CREATE TABLE itemAttachments (
     itemID INTEGER, parentItemID INTEGER, linkMode INTEGER, contentType TEXT, path TEXT
+);
+CREATE TABLE itemAnnotations (
+    itemID INTEGER, parentItemID INTEGER, type INTEGER,
+    text TEXT, comment TEXT, color TEXT, pageLabel TEXT
 );
 CREATE TABLE deletedItems (itemID INTEGER);
 """
@@ -100,6 +105,26 @@ def _build_db(path: Path) -> None:
     conn.execute("INSERT INTO collections VALUES (1, 'Vents', NULL, 'COLL0001')")
     conn.execute("INSERT INTO collectionItems VALUES (1, 1)")
 
+    # Annotations on item 1's attachment (itemID 2): one real highlight, one
+    # note (no text -- must be excluded), one highlight that's been trashed
+    # (must also be excluded).
+    conn.execute("INSERT INTO items VALUES (6, 4, 'ANNOT0001', '2024-02-01 00:00:00')")
+    conn.execute(
+        "INSERT INTO itemAnnotations VALUES "
+        "(6, 2, 1, 'Chemosynthesis sustains vent ecosystems via symbiotic bacteria.', "
+        "'key finding', '#ffd400', '3')"
+    )
+    conn.execute("INSERT INTO items VALUES (7, 4, 'ANNOT0002', '2024-02-01 00:00:01')")
+    conn.execute(
+        "INSERT INTO itemAnnotations VALUES (7, 2, 2, NULL, 'just a sticky note', NULL, NULL)"
+    )
+    conn.execute("INSERT INTO items VALUES (8, 4, 'ANNOT0003', '2024-02-01 00:00:02')")
+    conn.execute(
+        "INSERT INTO itemAnnotations VALUES "
+        "(8, 2, 1, 'Should not appear, trashed', NULL, NULL, NULL)"
+    )
+    conn.execute("INSERT INTO deletedItems VALUES (8)")
+
     conn.commit()
     conn.close()
 
@@ -136,6 +161,22 @@ async def test_search_broad_matches_abstract(zotero_dir: Path) -> None:
     hits = await search_local_library_broad(str(zotero_dir), "chemosynthesis")
     assert [h.item_key for h in hits] == ["ITEM0001"]
     assert hits[0].abstract == "Chemosynthesis sustains vent ecosystems."
+
+
+async def test_list_local_annotations_only_returns_text_bearing_ones(zotero_dir: Path) -> None:
+    annotations = await list_local_annotations(str(zotero_dir), "ITEM0001")
+    assert [a.item_key for a in annotations] == ["ANNOT0001"]
+    ann = annotations[0]
+    assert ann.parent_item_key == "ATTACH001"
+    assert ann.annotation_type == "highlight"
+    assert ann.text == "Chemosynthesis sustains vent ecosystems via symbiotic bacteria."
+    assert ann.comment == "key finding"
+    assert ann.color == "#ffd400"
+
+
+async def test_list_local_annotations_empty_for_item_without_attachment(zotero_dir: Path) -> None:
+    annotations = await list_local_annotations(str(zotero_dir), "ITEM0002")
+    assert annotations == []
 
 
 async def test_search_narrow_does_not_match_abstract(zotero_dir: Path) -> None:

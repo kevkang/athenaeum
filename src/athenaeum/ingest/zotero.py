@@ -85,6 +85,27 @@ class ZoteroCollection:
     parent_key: str | None
 
 
+@dataclass
+class ZoteroAnnotation:
+    """A highlight/underline a user made in Zotero's own PDF reader — the
+    only annotation types that carry verbatim text (note/image/ink don't).
+    `text` is Zotero's own PDF-text-extraction of the highlighted span, not
+    Athenaeum's — see ingest/highlight_match.py for why that means fuzzy,
+    not exact, matching against Athenaeum's own sentence parse."""
+
+    item_key: str
+    parent_item_key: str
+    annotation_type: str
+    text: str
+    comment: str | None
+    color: str | None
+    page_label: str | None
+
+
+# Only these carry a highlighted text span (note/image/ink annotations don't).
+_TEXT_ANNOTATION_TYPES = {"highlight", "underline"}
+
+
 def _client(creds: ZoteroCreds) -> Zotero:
     return Zotero(creds.zotero_user_id, creds.library_type, creds.api_key)
 
@@ -333,6 +354,55 @@ async def list_attachments(creds: ZoteroCreds, item_key: str) -> list[ZoteroAtta
             )
         )
     return attachments
+
+
+async def list_annotations(creds: ZoteroCreds, attachment_item_key: str) -> list[ZoteroAnnotation]:
+    """Highlight/underline annotations on one attachment. Annotation
+    *metadata* sync is a free-tier Zotero account feature, independent of
+    the (paid) file-storage sync `pick_best_attachment` cares about — an
+    attachment that was never itself downloadable can still have annotations
+    reachable here."""
+    loop = asyncio.get_running_loop()
+
+    def _children() -> list[dict]:
+        client = _client(creds)
+        return client.children(attachment_item_key)
+
+    children = await loop.run_in_executor(None, lambda: _run_zotero_call(_children))
+
+    annotations: list[ZoteroAnnotation] = []
+    for child in children:
+        data = child.get("data", {})
+        if data.get("itemType") != "annotation":
+            continue
+        annotation_type = data.get("annotationType") or ""
+        if annotation_type not in _TEXT_ANNOTATION_TYPES:
+            continue
+        text = data.get("annotationText")
+        if not text:
+            continue
+        annotations.append(
+            ZoteroAnnotation(
+                item_key=data.get("key", ""),
+                parent_item_key=attachment_item_key,
+                annotation_type=annotation_type,
+                text=text,
+                comment=data.get("annotationComment") or None,
+                color=data.get("annotationColor"),
+                page_label=data.get("annotationPageLabel"),
+            )
+        )
+    return annotations
+
+
+async def list_annotations_for_item(creds: ZoteroCreds, item_key: str) -> list[ZoteroAnnotation]:
+    """Every highlight/underline annotation across all of a top-level item's
+    attachments — the convenience most callers actually want."""
+    attachments = await list_attachments(creds, item_key)
+    if not attachments:
+        return []
+    results = await asyncio.gather(*(list_annotations(creds, a.item_key) for a in attachments))
+    return [ann for group in results for ann in group]
 
 
 def pick_best_attachment(attachments: list[ZoteroAttachment]) -> ZoteroAttachment | None:
