@@ -10,6 +10,13 @@ _ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 # outside of ENVIRONMENT=development — see that check for why.
 DEFAULT_JWT_SECRET = "dev-secret-change-me"
 
+# Every PR preview shares the single production API (see
+# .github/workflows/preview.yml) at pr-N.athenaindex.app, so a fixed
+# frontend_url isn't enough — CORS (main.py) and the ORCID redirect origin
+# (api/auth.py) both need to recognize any preview subdomain, not just
+# production, without opening up to arbitrary origins.
+ALLOWED_FRONTEND_ORIGIN_PATTERN = r"^https://(pr-\d+\.)?athenaindex\.app$|^http://localhost:\d+$"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

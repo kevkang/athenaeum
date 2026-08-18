@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from athenaeum.api.deps import SessionDep
-from athenaeum.config import get_settings
+from athenaeum.config import ALLOWED_FRONTEND_ORIGIN_PATTERN, get_settings
 from athenaeum.security import issue_session_token
 from athenaeum.storage.models import User
 
@@ -24,9 +24,7 @@ router = APIRouter(prefix="/auth/orcid", tags=["auth"])
 # initiate login, so validating against this pattern before ever trusting an
 # origin closes the obvious open-redirect risk of just honoring whatever the
 # query string says.
-_ALLOWED_FRONTEND_ORIGIN_RE = re.compile(
-    r"^https://(pr-\d+\.)?athenaindex\.app$|^http://localhost:\d+$"
-)
+_ALLOWED_FRONTEND_ORIGIN_RE = re.compile(ALLOWED_FRONTEND_ORIGIN_PATTERN)
 
 # state -> the frontend origin to send the user back to, validated at
 # /login time so an attacker can't inject an arbitrary redirect target by

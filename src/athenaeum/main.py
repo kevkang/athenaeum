@@ -32,7 +32,12 @@ from athenaeum.api import (
     zotero_find,
     zotero_local,
 )
-from athenaeum.config import DEFAULT_JWT_SECRET, Settings, get_settings
+from athenaeum.config import (
+    ALLOWED_FRONTEND_ORIGIN_PATTERN,
+    DEFAULT_JWT_SECRET,
+    Settings,
+    get_settings,
+)
 
 log = structlog.get_logger()
 
@@ -92,7 +97,7 @@ app = FastAPI(title="Athenaeum API", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[_settings.frontend_url],
+    allow_origin_regex=ALLOWED_FRONTEND_ORIGIN_PATTERN,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
