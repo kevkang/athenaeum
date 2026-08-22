@@ -29,7 +29,8 @@ after a build).
 
 ## Current status
 
-Steps 1–3 of `ZOTERO_EXTENSION_PLAN.md`'s build order: background worker with a typed local-API
-client (`browseItems`, `getCollections`, `getAnnotations`, `getItemFile`) and a content-script
-relay. `content_scripts.matches` is currently local-dev-only
-(`localhost`/`127.0.0.1`) — add Athenaeum's real production origin once one exists (step 4).
+Steps 1–4 of `ZOTERO_EXTENSION_PLAN.md`'s build order: background worker with a typed local-API
+client (`browseItems`, `getCollections`, `getAnnotations`, `getItemFile`, `getBestAttachmentFile`),
+a content-script relay, and the frontend's `zoteroExtensionApi` in `web/src/lib/zoteroExtension.ts`.
+`content_scripts.matches` covers local dev (`localhost`/`127.0.0.1`) and Athenaeum's real domain
+(`athenaindex.app` and its subdomains, which covers PR preview deploys at `pr-N.athenaindex.app`).

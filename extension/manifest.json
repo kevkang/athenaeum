@@ -10,7 +10,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost:*/*", "http://127.0.0.1:*/*"],
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "https://athenaindex.app/*",
+        "https://*.athenaindex.app/*"
+      ],
       "js": ["src/content/relay.js"],
       "run_at": "document_start"
     }

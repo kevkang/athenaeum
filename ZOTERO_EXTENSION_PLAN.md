@@ -232,11 +232,26 @@ was needed — see the decisions table's revised entry near the top of this doc.
 
 **Verification status:** typecheck (`tsc -b --noEmit`) and lint (`eslint`) both clean on the
 frontend; extension-side logic (`getItem`, `getBestAttachmentFile`, `browseItems` sort/pagination)
-already verified end to end against a real Zotero library in step 2/3's testing. **Full in-browser
-verification of the new tab itself (clicking through PapersSidebar, importing a real item via the
-UI) is not yet done** — blocked on Docker Desktop not running locally, which is needed to bring up
-Postgres + the API server for a dev session login (see `testing_readme.md`'s "Manually testing in
-a browser" section). Revisit before considering step 4 fully closed.
+already verified end to end against a real Zotero library in step 2/3's testing.
+
+**Full in-browser verification completed 2026-08-22**, against a real PR preview deploy
+(`pr-13.athenaindex.app`, real production API, real ORCID login) rather than local Docker (not
+running locally at the time). Required extending `manifest.json`'s `content_scripts.matches` to
+cover `athenaindex.app`/`*.athenaindex.app` (previously local-dev-only), which also covers PR
+preview subdomains for free. Confirmed: "Not detected" fallback message renders correctly before
+the origin was added; after adding it and reloading, the tab correctly shows the search box and
+"Browse full library →"; the browse modal shows all 3 real library items with correct
+title/creators/year/date; clicking import on a real item (no DOI already in project) correctly
+fetched its metadata + PDF bytes via the extension and called `papersApi.upload` — the paper
+appeared in the sidebar immediately with a `processing` status.
+
+One finding, not an extension bug: the imported paper's full-text ingestion ended in a `failed`
+status (visible as a red status dot + the paper's DOI shown as an error label), while the
+project's two pre-existing papers show healthy status dots. The extension's own job — fetch real
+metadata, fetch real PDF bytes, call the existing upload endpoint — completed successfully; this
+is Athenaeum's downstream ingestion pipeline (GROBID parsing, shared by all four import paths)
+failing on this specific PDF, unrelated to and outside the scope of this plan. Worth investigating
+separately, not blocking step 4.
 
 ### 5. Backend: thin new endpoint module
 
@@ -309,6 +324,26 @@ against the actual built manifest, not just intent:
 Firefox/Safari support, document-integration (citation insertion), auto-sync/background polling,
 and any write access to the user's Zotero library are all out of scope for this plan — see the
 context doc for the reasoning on each.
+
+### Possible future work: back-sync (Athenaeum → Zotero)
+
+Raised 2026-08-22, not scoped into this plan. Whether Athenaeum-authored content (highlights,
+statements) should ever get pushed back into the user's Zotero library as annotations — the
+reverse direction of everything this plan builds.
+
+**Deliberately deferred, not ruled out.** It's technically possible: Zotero's local API isn't
+inherently read-only — the real Connector extension writes to the local library for its "Save to
+Zotero" feature, so a write path is precedented, not blocked. The most natural shape for it would
+be pushing Athenaeum highlights/statements back as Zotero annotations, since annotations are
+already the one thing this plan reads in the opposite direction (step 7).
+
+**Why not now:** a write path adds real complexity this plan doesn't need yet — conflict handling
+(what happens if the same item is edited in both places), what counts as "the same" annotation
+across two systems, partial-failure recovery on a write (a failed read just retries; a failed
+write can leave Zotero and Athenaeum disagreeing). Shipping the simpler one-way bridge first and
+letting it prove itself in real use is lower-risk than designing sync semantics speculatively.
+Revisit as a follow-up plan once the read-only path here is shipped and used, not as a v1
+addition.
 
 ## Open items still worth deciding before/during step 1
 
