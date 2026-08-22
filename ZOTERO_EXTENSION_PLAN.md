@@ -1,8 +1,9 @@
 # Zotero Connector Extension — Implementation Plan
 
-Status: **not started**. Supersedes/operationalizes the investigation in
-`extension-plan-context.md` (source of the architecture and security research below) with a
-concrete build plan checked against the actual current state of the codebase (2026-08-21).
+Status: **in progress — steps 1-4 of the build order done, step 5 onward not started.**
+Supersedes/operationalizes the investigation in `extension-plan-context.md` (source of the
+architecture and security research below) with a concrete build plan checked against the actual
+current state of the codebase (2026-08-21).
 
 ## What's changed since the context doc was written
 
@@ -42,7 +43,7 @@ that doc first if you haven't.
 
 | Question | Decision | Reasoning |
 |---|---|---|
-| New backend endpoint, or reuse `papersApi.ingest`/`.upload`? | **New endpoint module**, `src/athenaeum/api/zotero_connector.py`, mirroring `zotero.py`/`zotero_local.py`'s route shape. PDF bytes still go through the *existing*, unmodified `papersApi.upload`. | Consistent with the other three paths; keeps DOI-dedup (`_existing_dois`) and project-membership checks in one place instead of re-implementing them client-side. |
+| New backend endpoint, or reuse `papersApi.ingest`/`.upload`? | **Reuse directly — no new backend endpoint.** *(Revised during step 4 implementation, 2026-08-22: the original "new endpoint module" answer below was reasoned from paths 1/2, where the backend does its own item lookup. The actually-closest precedent is path 3's `ZoteroBrowserImportModal.tsx:216-227`, which needs no Zotero-specific endpoint at all — `papersApi.upload(file, projectId, {title, doi})` when a PDF is available, else `papersApi.ingest(doi, projectId)`. Path 4 is architecturally identical to path 3 (browser holds the metadata+bytes, server holds neither), so it follows the same precedent. `already_in_project` dedup, which paths 1/2 compute server-side via `_existing_dois`, is instead computed client-side in `zoteroExtensionApi` from the project's already-loaded `papers` prop (`PapersSidebar.tsx`'s existing `alreadyInProject` Set) — no new server round-trip needed since the frontend already has that data in memory.)* | Original reasoning below, superseded — kept for the record. |
 | Extension source location | `extension/` subfolder at repo root, own `package.json`, not a workspace member of `web/` (the repo has no root `package.json`/workspace tooling — `web/` is a standalone Vite app). | Discoverable alongside the backend endpoint it depends on, versioned together, but doesn't force `web/`'s toolchain to absorb a WebExtension build target it doesn't need. |
 | Raw MV3 vs. framework (WXT/Plasmo) | **Raw MV3 + `webextension-polyfill`** for v1. | v1 is Chrome/Edge-only (identical MV3 engine) — a cross-browser framework buys nothing until the Firefox/Safari phase, and adds a build-tool dependency + learning curve now for zero v1 benefit. Revisit when Firefox milestone starts; `zotero-connectors` itself is proof this can be done in raw MV3 if kept disciplined about it. |
 | Metadata port target | Port `zotero_item_to_paper_fields` / `_hit_from_item`'s mapping logic (`ingest/zotero.py:176,300`) to TypeScript in the extension, since the local API's response shape is the same Zotero item JSON. | The context doc notes this reuse is possible; it means "reusable" as *logic ported to the extension's language*, not *imported cross-language* — Python and TS can't share source. Keep the TS port's field list in sync with the Python original by comment cross-reference (`# mirrors ingest/zotero.py:_hit_from_item`), not by abstraction. |
@@ -96,7 +97,7 @@ stopped.
 CORS-blocked. One undocumented prerequisite found that the context doc didn't mention: the local
 API is gated behind a Zotero preference, `httpServer.localAPI.enabled`, **off by default** — a
 plain webpage fetch and the unconfigured local API both fail, so this needs its own UX handling
-(step 5's extension-detection ping should distinguish "extension not installed," "Zotero not
+(step 4's extension-detection ping should distinguish "extension not installed," "Zotero not
 running," and "Zotero running but Local API disabled" — the latter needs its own message pointing
 the user at Settings → Advanced, not a generic "not detected" fallback). Confirmed via
 `server_localAPI.js`: disabled requests get `403 "Local API is not enabled"` as a plain-text body,
@@ -170,6 +171,9 @@ API → back and resolved `{ type: 'pong' }`.
 
 ### 4. Frontend: extension detection + `ZoteroBrowseClient` implementation
 
+*(Original plan, kept for context — see "Built 2026-08-22" below for what actually shipped, which
+diverges on the backend-endpoint point.)*
+
 New `web/src/lib/zoteroExtension.ts`:
 - `pingExtension(timeoutMs = 500): Promise<boolean>` — posts a ping, races against a timeout.
 - `zoteroExtensionApi: ZoteroBrowseClient` — implements `getCollections`, `browseItems`,
@@ -191,27 +195,57 @@ chooses).
 import modal in the app shows live data with no folder picker prompt; with the extension absent,
 behavior is pixel-identical to today.
 
+**Built 2026-08-22, with one architectural change from the plan above:** no new backend endpoint
+was needed — see the decisions table's revised entry near the top of this doc. Concretely:
+
+- **`extension/src/shared/protocol.ts`** gained `dateAdded` on `AthenaeumZoteroItem`, plus new
+  request/response types `getItem` and `getBestAttachmentFile` (resolves an item's best
+  downloadable attachment and returns its bytes in one relayed call — the frontend never needs to
+  separately call `getAttachments`).
+- **`extension/src/background/itemMapper.ts`** gained `pickBestAttachment`, a straight port of
+  `ingest/zotero.py:pick_best_attachment` (PDF preferred over HTML, skip `linked_file`/
+  `linked_url`) — with the `synced` check dropped, since the local API serves bytes straight off
+  disk regardless of cloud-sync state (unlike the cloud Web API this was originally written
+  against). 4 new Vitest cases; all pass.
+- **`extension/src/background/zoteroLocalClient.ts`** gained `getItem`, `getBestAttachmentFile`,
+  and real sort/direction params on `browseItems` (previously hardcoded); `browseItems` also now
+  reads Zotero's `Total-Results` response header for accurate pagination instead of
+  `items.length`.
+- **`web/src/lib/zoteroExtension.ts`** (new file) — `pingExtension()` and
+  `createZoteroExtensionApi(alreadyInProjectDois)`, a factory (not a singleton, unlike `zoteroApi`/
+  `zoteroLocalApi`) implementing `ZoteroBrowseClient`. It's a factory because `already_in_project`
+  has no server round-trip to compute it from here — the caller supplies the project's own already-
+  loaded DOIs. `importItem` calls `getItem` + `getBestAttachmentFile` through the extension, then
+  hands off to the *unmodified* `papersApi.upload`/`.ingest` — exactly
+  `ZoteroBrowserImportModal.tsx:216-227`'s pattern, just swapping a `FileSystemDirectoryHandle`
+  fetch for an extension fetch. The message envelope/payload types are a hand-kept mirror of the
+  extension's `protocol.ts` (two separate packages, no shared import across that boundary — keep
+  them in sync by hand, same caveat as `itemMapper.ts`'s port of the Python original).
+- **`web/src/components/workspace/PapersSidebar.tsx`** gained a fourth "Zotero (Connector)" tab
+  alongside DOI/Search/Upload/Zotero (Sync)/Zotero (Local), following the existing tabs' exact
+  pattern (debounced inline search, an import mutation, a "Browse full library →" link opening
+  `ZoteroBrowserModal` with `client={zoteroExtensionApi}`). Availability is a `pingExtension()`
+  React Query with `staleTime: 10_000`, not a persistent connection — consistent with the plan's
+  "user-initiated only" v1 scope constraint. `alreadyInProject` (previously a plain `const`,
+  recomputed every render) was hoisted into a `useMemo` since it's now also a dependency for the
+  extension client factory.
+
+**Verification status:** typecheck (`tsc -b --noEmit`) and lint (`eslint`) both clean on the
+frontend; extension-side logic (`getItem`, `getBestAttachmentFile`, `browseItems` sort/pagination)
+already verified end to end against a real Zotero library in step 2/3's testing. **Full in-browser
+verification of the new tab itself (clicking through PapersSidebar, importing a real item via the
+UI) is not yet done** — blocked on Docker Desktop not running locally, which is needed to bring up
+Postgres + the API server for a dev session login (see `testing_readme.md`'s "Manually testing in
+a browser" section). Revisit before considering step 4 fully closed.
+
 ### 5. Backend: thin new endpoint module
 
-`src/athenaeum/api/zotero_connector.py`, mirroring `zotero_local.py`'s shape but with no
-filesystem/sqlite dependency at all — it never talks to Zotero itself; it receives
-already-fetched item JSON from the browser (via the extension) and does exactly what
-`browser-import/parse` does for a whole sqlite, but for the single item(s) the extension already
-resolved:
-
-- `POST /zotero-connector/import` — body shaped like `ZoteroImportRequest` plus the raw mapped
-  item fields (title/creators/year/venue/doi/item_type), since there's no server-side item lookup
-  to do here (unlike `zotero_local.py`'s `/import`, which re-fetches from the mounted sqlite). Runs
-  `_require_member`, checks/reuses `_existing_dois`, creates the `Paper` row exactly like the other
-  three paths do, returns `PaperOut`. PDF upload stays entirely separate through
-  `papersApi.upload`, same as path 3 — this endpoint is metadata-only, matching
-  `browser-import/parse`'s documented boundary (`zotero_local.py:290-294`).
-
-No `GET /search|/collections|/items` needed server-side — those are served live by the extension
-itself in step 4, unlike paths 1/2 which need the backend to hold credentials or mount the
-filesystem. This endpoint exists solely as the metadata write path, which is a smaller surface
-than the context doc's "thin new endpoint" framing implied once the actual division of labor is
-worked out.
+**Superseded — not needed.** See the decisions table's revised entry: step 4's implementation
+found that path 4 is architecturally identical to path 3 (`ZoteroBrowserImportModal`), which needs
+no Zotero-specific backend endpoint at all. `zoteroExtensionApi.importItem` reuses
+`papersApi.upload`/`.ingest` directly. No `zotero_connector.py` was written. This section is kept
+only so a future reader understands why "add a backend endpoint" isn't on the remaining punch
+list.
 
 **Exit criteria:** existing backend test patterns for `zotero_local.py`'s import endpoint
 (membership check, dedup check, `Paper` row creation) ported to this module; `pytest` green.

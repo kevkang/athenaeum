@@ -75,6 +75,38 @@ export function itemFromZoteroData(data: ZoteroItemData): AthenaeumZoteroItem | 
     year: yearFromDate(data.date),
     venue: data.publicationTitle || data.websiteTitle || null,
     doi: rawDoi ? normalizeDoi(rawDoi) : null,
+    dateAdded: data.dateAdded ?? null,
     hasAttachment: false,
   };
+}
+
+// mirrors ingest/zotero.py:_DOWNLOADABLE_LINK_MODES
+const DOWNLOADABLE_LINK_MODES = new Set(['imported_file', 'imported_url']);
+
+export interface ZoteroAttachmentData {
+  itemKey: string;
+  contentType: string;
+  linkMode: string;
+}
+
+/**
+ * mirrors ingest/zotero.py:pick_best_attachment — prefers a downloadable
+ * PDF, then a downloadable HTML snapshot; skips linked_file/linked_url
+ * attachments (never reachable as bytes, local or cloud).
+ *
+ * Unlike the Python original, there's no `synced` check: that flag exists
+ * because the cloud Web API can only serve a file if the user paid for
+ * Zotero's file-storage sync, but the local API serves straight off local
+ * disk regardless of any cloud-sync state (the whole reason this extension
+ * exists) — an unsynced-to-cloud attachment is still fully downloadable
+ * here. A missing/moved local file is instead handled as a 404 by
+ * getItemFile at fetch time, not filtered out in advance.
+ */
+export function pickBestAttachment(attachments: ZoteroAttachmentData[]): ZoteroAttachmentData | null {
+  const downloadable = attachments.filter((a) => DOWNLOADABLE_LINK_MODES.has(a.linkMode));
+  return (
+    downloadable.find((a) => a.contentType === 'application/pdf') ??
+    downloadable.find((a) => a.contentType === 'text/html') ??
+    null
+  );
 }

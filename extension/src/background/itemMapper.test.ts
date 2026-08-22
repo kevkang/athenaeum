@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { itemFromZoteroData } from './itemMapper';
+import { itemFromZoteroData, pickBestAttachment } from './itemMapper';
 
 describe('itemFromZoteroData', () => {
   it('returns null for notes and attachments', () => {
@@ -19,6 +19,7 @@ describe('itemFromZoteroData', () => {
       date: '2019-03-01',
       publicationTitle: 'Journal of Studies',
       DOI: 'https://doi.org/10.1234/abcd',
+      dateAdded: '2020-01-01T00:00:00Z',
     });
 
     expect(item).toEqual({
@@ -29,6 +30,7 @@ describe('itemFromZoteroData', () => {
       year: 2019,
       venue: 'Journal of Studies',
       doi: '10.1234/abcd',
+      dateAdded: '2020-01-01T00:00:00Z',
       hasAttachment: false,
     });
   });
@@ -52,6 +54,7 @@ describe('itemFromZoteroData', () => {
       year: null,
       venue: null,
       doi: null,
+      dateAdded: null,
       hasAttachment: false,
     });
   });
@@ -65,5 +68,33 @@ describe('itemFromZoteroData', () => {
     expect(itemFromZoteroData({ key: 'X', itemType: 'book', date: '2021' })?.year).toBe(2021);
     expect(itemFromZoteroData({ key: 'X', itemType: 'book', date: 'March 2018' })?.year).toBe(2018);
     expect(itemFromZoteroData({ key: 'X', itemType: 'book', date: 'n.d.' })?.year).toBeNull();
+  });
+});
+
+describe('pickBestAttachment', () => {
+  it('prefers a downloadable PDF over an HTML snapshot', () => {
+    const best = pickBestAttachment([
+      { itemKey: 'HTML1', contentType: 'text/html', linkMode: 'imported_url' },
+      { itemKey: 'PDF1', contentType: 'application/pdf', linkMode: 'imported_file' },
+    ]);
+    expect(best?.itemKey).toBe('PDF1');
+  });
+
+  it('falls back to a downloadable HTML snapshot when no PDF exists', () => {
+    const best = pickBestAttachment([
+      { itemKey: 'HTML1', contentType: 'text/html', linkMode: 'imported_url' },
+    ]);
+    expect(best?.itemKey).toBe('HTML1');
+  });
+
+  it('skips linked_file/linked_url attachments even if a PDF', () => {
+    const best = pickBestAttachment([
+      { itemKey: 'LINKED', contentType: 'application/pdf', linkMode: 'linked_file' },
+    ]);
+    expect(best).toBeNull();
+  });
+
+  it('returns null when there is nothing downloadable', () => {
+    expect(pickBestAttachment([])).toBeNull();
   });
 });

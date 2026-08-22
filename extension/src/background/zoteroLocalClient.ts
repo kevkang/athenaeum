@@ -2,11 +2,13 @@
 // no other extension code should fetch this origin directly (least
 // privilege, see ZOTERO_EXTENSION_PLAN.md security checklist).
 
-import { itemFromZoteroData, type ZoteroItemData } from './itemMapper';
+import { itemFromZoteroData, pickBestAttachment, type ZoteroAttachmentData, type ZoteroItemData } from './itemMapper';
 import type {
   AthenaeumZoteroAnnotation,
   AthenaeumZoteroCollection,
   AthenaeumZoteroItem,
+  ZoteroSort,
+  ZoteroSortDirection,
 } from '../shared/protocol';
 
 const BASE_URL = 'http://127.0.0.1:23119/api';
@@ -63,19 +65,52 @@ export async function browseItems(opts: {
   query?: string;
   start?: number;
   limit?: number;
+  sort?: ZoteroSort;
+  direction?: ZoteroSortDirection;
 }): Promise<{ items: AthenaeumZoteroItem[]; total: number }> {
   const path = opts.collectionKey ? `/collections/${opts.collectionKey}/items/top` : '/items/top';
-  const data = (await localFetch(path, {
-    q: opts.query,
+  const params: Record<string, string | number | undefined> = {
     start: opts.start ?? 0,
     limit: opts.limit ?? 50,
-  })) as ZoteroItemDataWrapper[];
+    sort: opts.sort ?? 'dateAdded',
+    direction: opts.direction ?? 'desc',
+  };
+  if (opts.query) {
+    params.q = opts.query;
+    params.qmode = 'titleCreatorYear';
+  }
 
+  const url = new URL(`${USER_PATH}${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url, { headers: { 'X-Zotero-Connector-API-Version': '1' } });
+  const text = await response.text();
+  if (!response.ok) throw new ZoteroLocalApiError(text || `HTTP ${response.status}`, response.status);
+
+  const data = JSON.parse(text) as ZoteroItemDataWrapper[];
   const items = data
     .map((entry) => itemFromZoteroData(entry.data))
     .filter((item): item is AthenaeumZoteroItem => item !== null);
+  const total = parseInt(response.headers.get('total-results') ?? '', 10);
 
-  return { items, total: items.length };
+  return { items, total: Number.isFinite(total) ? total : items.length };
+}
+
+export async function getItem(itemKey: string): Promise<AthenaeumZoteroItem | null> {
+  const entry = (await localFetch(`/items/${itemKey}`)) as ZoteroItemDataWrapper;
+  return itemFromZoteroData(entry.data);
+}
+
+async function getAttachments(itemKey: string): Promise<ZoteroAttachmentData[]> {
+  const children = (await localFetch(`/items/${itemKey}/children`)) as ZoteroItemDataWrapper[];
+  return children
+    .filter((entry) => entry.data.itemType === 'attachment')
+    .map((entry) => ({
+      itemKey: entry.data.key,
+      contentType: entry.data.contentType ?? '',
+      linkMode: entry.data.linkMode ?? '',
+    }));
 }
 
 export async function getCollections(): Promise<AthenaeumZoteroCollection[]> {
@@ -166,6 +201,22 @@ export async function getItemFile(
   };
 }
 
+/**
+ * mirrors ingest/zotero.py:pick_best_attachment + download_attachment,
+ * combined into one call: resolves a top-level item's best downloadable
+ * attachment and fetches its bytes. Returns found:false if the item has no
+ * downloadable attachment at all (distinct from getItemFile's found:false,
+ * which means the attachment itself has no local file on disk).
+ */
+export async function getBestAttachmentFile(
+  itemKey: string,
+): Promise<{ found: false } | { found: true; filename: string; contentType: string; bytes: ArrayBuffer }> {
+  const attachments = await getAttachments(itemKey);
+  const best = pickBestAttachment(attachments);
+  if (!best) return { found: false };
+  return getItemFile(best.itemKey);
+}
+
 interface ZoteroItemDataWrapper {
   data: ZoteroItemData & {
     itemType: string;
@@ -175,6 +226,8 @@ interface ZoteroItemDataWrapper {
     annotationText?: string;
     annotationComment?: string;
     annotationColor?: string;
+    contentType?: string;
+    linkMode?: string;
   };
 }
 

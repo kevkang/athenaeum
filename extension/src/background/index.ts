@@ -24,8 +24,25 @@ async function handleRequest(request: ZoteroRequest): Promise<ZoteroResponse> {
       return { type: 'annotations', annotations };
     }
 
+    case 'getItem': {
+      const item = await zoteroLocal.getItem(request.itemKey);
+      return { type: 'item', item };
+    }
+
     case 'getItemFile': {
       const result = await zoteroLocal.getItemFile(request.itemKey);
+      if (!result.found) return { type: 'itemFile', found: false };
+      return {
+        type: 'itemFile',
+        found: true,
+        filename: result.filename,
+        contentType: result.contentType,
+        bytesBase64: arrayBufferToBase64(result.bytes),
+      };
+    }
+
+    case 'getBestAttachmentFile': {
+      const result = await zoteroLocal.getBestAttachmentFile(request.itemKey);
       if (!result.found) return { type: 'itemFile', found: false };
       return {
         type: 'itemFile',

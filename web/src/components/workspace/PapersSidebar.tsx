@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { papersApi, type Paper, type OpenAlexResult } from '../../api/papers';
 import { zoteroApi, type ZoteroSearchResult } from '../../api/zotero';
 import { zoteroLocalApi } from '../../api/zoteroLocal';
+import { pingExtension, createZoteroExtensionApi } from '../../lib/zoteroExtension';
 import ZoteroBrowserModal from '../ZoteroBrowserModal';
 import ZoteroBrowserImportModal from '../ZoteroBrowserImportModal';
 import LocalLibraryPicker from '../LocalLibraryPicker';
@@ -36,7 +37,7 @@ export default function PapersSidebar({
   const queryClient = useQueryClient();
   const openAccountModal = useUIStore((s) => s.openAccountModal);
   const [addOpen, setAddOpen] = useState(false);
-  const [addMode, setAddMode] = useState<'doi' | 'search' | 'upload' | 'zotero' | 'zotero-local'>('doi');
+  const [addMode, setAddMode] = useState<'doi' | 'search' | 'upload' | 'zotero' | 'zotero-local' | 'zotero-extension'>('doi');
   const [doi, setDoi] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -44,7 +45,9 @@ export default function PapersSidebar({
   const [debouncedZoteroQuery, setDebouncedZoteroQuery] = useState('');
   const [zoteroLocalQuery, setZoteroLocalQuery] = useState('');
   const [debouncedZoteroLocalQuery, setDebouncedZoteroLocalQuery] = useState('');
-  const [zoteroBrowser, setZoteroBrowser] = useState<'sync' | 'local' | null>(null);
+  const [zoteroExtensionQuery, setZoteroExtensionQuery] = useState('');
+  const [debouncedZoteroExtensionQuery, setDebouncedZoteroExtensionQuery] = useState('');
+  const [zoteroBrowser, setZoteroBrowser] = useState<'sync' | 'local' | 'extension' | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState('');
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +66,11 @@ export default function PapersSidebar({
     const t = setTimeout(() => setDebouncedZoteroLocalQuery(zoteroLocalQuery.trim()), 350);
     return () => clearTimeout(t);
   }, [zoteroLocalQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedZoteroExtensionQuery(zoteroExtensionQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [zoteroExtensionQuery]);
 
   const ingestMutation = useMutation({
     mutationFn: () => papersApi.ingest(doi.trim(), projectId),
@@ -151,6 +159,41 @@ export default function PapersSidebar({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
   });
 
+  const alreadyInProject = useMemo(
+    () => new Set(papers.map((p) => p.doi).filter(Boolean) as string[]),
+    [papers],
+  );
+
+  // Live-fetches from a locally running Zotero Desktop via the Athenaeum
+  // Zotero Connector browser extension, if installed — an additive fourth
+  // path alongside sync/local-mount/folder-picker (see
+  // ZOTERO_EXTENSION_PLAN.md). No server round-trip: metadata and PDF bytes
+  // both come straight from the browser, so already_in_project is computed
+  // client-side from the project's own already-loaded papers.
+  const zoteroExtensionApi = useMemo(() => createZoteroExtensionApi(alreadyInProject), [alreadyInProject]);
+
+  const { data: zoteroExtensionAvailable, isFetching: zoteroExtensionPinging } = useQuery({
+    queryKey: ['zotero-extension-ping'],
+    queryFn: () => pingExtension(),
+    enabled: addMode === 'zotero-extension',
+    staleTime: 10_000,
+    retry: false,
+  });
+
+  const { data: zoteroExtensionBrowse, isFetching: zoteroExtensionFetching } = useQuery({
+    queryKey: ['zotero-extension-search', projectId, debouncedZoteroExtensionQuery, alreadyInProject.size],
+    queryFn: () => zoteroExtensionApi.browseItems({ projectId, q: debouncedZoteroExtensionQuery, limit: 10 }),
+    enabled:
+      addMode === 'zotero-extension' && !!zoteroExtensionAvailable && debouncedZoteroExtensionQuery.length >= 3,
+    staleTime: 30_000,
+  });
+  const zoteroExtensionResults = zoteroExtensionBrowse?.items;
+
+  const importFromZoteroExtensionMutation = useMutation({
+    mutationFn: (itemKey: string) => zoteroExtensionApi.importItem(projectId, itemKey),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['papers', projectId] }),
+  });
+
   const deletePaperMutation = useMutation({
     mutationFn: (paperId: string) => papersApi.delete(paperId, projectId),
     onSuccess: (_data, paperId) => {
@@ -158,8 +201,6 @@ export default function PapersSidebar({
       if (paperId === selectedPaperId) onSelectPaper(null);
     },
   });
-
-  const alreadyInProject = new Set(papers.map((p) => p.doi).filter(Boolean) as string[]);
 
   return (
     <aside
@@ -231,6 +272,10 @@ export default function PapersSidebar({
                 className={`${styles.addModeTab} ${addMode === 'zotero-local' ? styles.addModeTabActive : ''}`}
                 onClick={() => setAddMode('zotero-local')}
               >Zotero (Local)</button>
+              <button
+                className={`${styles.addModeTab} ${addMode === 'zotero-extension' ? styles.addModeTabActive : ''}`}
+                onClick={() => setAddMode('zotero-extension')}
+              >Zotero (Connector)</button>
             </div>
 
             {addMode === 'doi' && (
@@ -467,6 +512,69 @@ export default function PapersSidebar({
                 )}
               </>
             )}
+
+            {addMode === 'zotero-extension' && (
+              <>
+                {zoteroExtensionPinging && (
+                  <div className={styles.searchHint}>Looking for the Zotero Connector extension…</div>
+                )}
+                {!zoteroExtensionPinging && !zoteroExtensionAvailable && (
+                  <div className={styles.searchHint}>
+                    Not detected. Install the Athenaeum Zotero Connector extension, make sure Zotero
+                    Desktop is running with its Local API enabled (Settings → Advanced), then reopen
+                    this tab.
+                  </div>
+                )}
+                {zoteroExtensionAvailable && (
+                  <>
+                    <input
+                      className={styles.doiInput}
+                      value={zoteroExtensionQuery}
+                      onChange={(e) => setZoteroExtensionQuery(e.target.value)}
+                      placeholder="Author, title, or keywords…"
+                      autoFocus
+                    />
+                    <div className={styles.searchHint}>
+                      <button className={styles.zoteroConnectLink} onClick={() => setZoteroBrowser('extension')}>
+                        Browse full library →
+                      </button>
+                    </div>
+                    {zoteroExtensionFetching && <div className={styles.searchHint}>Searching…</div>}
+                    {zoteroExtensionResults && zoteroExtensionResults.length === 0 && !zoteroExtensionFetching
+                      && debouncedZoteroExtensionQuery.length >= 3 && (
+                      <div className={styles.searchHint}>No results</div>
+                    )}
+                    {zoteroExtensionResults && zoteroExtensionResults.length > 0 && (
+                      <div className={styles.searchResults}>
+                        {zoteroExtensionResults.map((r: ZoteroSearchResult) => (
+                          <div key={r.item_key} className={styles.searchResultItem}>
+                            <div className={styles.searchResultTitle}>{r.title}</div>
+                            <div className={styles.searchResultMeta}>
+                              {[r.creators[0], r.year, r.venue].filter(Boolean).join(' · ')}
+                            </div>
+                            <button
+                              className={styles.searchResultAddBtn}
+                              disabled={r.already_in_project || importFromZoteroExtensionMutation.isPending}
+                              title={r.already_in_project ? 'Already in project' : 'Import via Zotero Connector'}
+                              onClick={() => importFromZoteroExtensionMutation.mutate(r.item_key)}
+                            >
+                              {r.already_in_project ? '✓' : '+'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {importFromZoteroExtensionMutation.error && (
+                      <div className={styles.formError}>
+                        {String(
+                          (importFromZoteroExtensionMutation.error as Error)?.message ?? 'Import failed',
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -503,8 +611,16 @@ export default function PapersSidebar({
         <ZoteroBrowserModal
           projectId={projectId}
           onClose={() => setZoteroBrowser(null)}
-          client={zoteroBrowser === 'local' ? zoteroLocalApi : zoteroApi}
-          title={zoteroBrowser === 'local' ? 'Browse local Zotero library' : 'Browse Zotero library'}
+          client={
+            zoteroBrowser === 'local' ? zoteroLocalApi
+            : zoteroBrowser === 'extension' ? zoteroExtensionApi
+            : zoteroApi
+          }
+          title={
+            zoteroBrowser === 'local' ? 'Browse local Zotero library'
+            : zoteroBrowser === 'extension' ? 'Browse Zotero library (Connector)'
+            : 'Browse Zotero library'
+          }
           sourceKey={zoteroBrowser}
         />
       )}
