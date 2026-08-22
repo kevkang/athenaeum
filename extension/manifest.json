@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Athenaeum Zotero Connector (dev)",
+  "version": "0.0.1",
+  "description": "Gives Athenaeum's web app live access to a locally running Zotero Desktop's library, attachment files, and annotations.",
+  "host_permissions": ["http://127.0.0.1:23119/*"],
+  "background": {
+    "service_worker": "src/background/index.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "https://athenaindex.app/*",
+        "https://*.athenaindex.app/*"
+      ],
+      "js": ["src/content/relay.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
