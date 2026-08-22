@@ -21,6 +21,10 @@ build/
 web/node_modules/
 web/dist/
 web/.env
+
+# Extension
+extension/node_modules/
+extension/dist/
 .DS_Store
 extension-plan-context.md
 PRINCIPLES.md
