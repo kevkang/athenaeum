@@ -87,16 +87,59 @@ export async function getCollections(): Promise<AthenaeumZoteroCollection[]> {
   }));
 }
 
+// mirrors ingest/zotero.py:_TEXT_ANNOTATION_TYPES
+const TEXT_ANNOTATION_TYPES = new Set(['highlight', 'underline']);
+
+const ANNOTATION_PAGE_LIMIT = 100;
+const ANNOTATION_MAX_PAGES = 20; // safety cap: 2000 annotations/library
+
+/**
+ * mirrors ingest/zotero.py:list_annotations_for_item — every highlight/
+ * underline annotation across all of a top-level item's attachments.
+ *
+ * `GET /items/:attachmentKey/children` does NOT reliably return annotation
+ * items — verified empirically against a real Zotero Desktop instance
+ * (2026-08-21/22): a highlight visible in Zotero's own UI, and returned by
+ * `GET /items?itemType=annotation`, was absent from its parent attachment's
+ * `/children` response even after a full Zotero restart. Zotero's source
+ * doesn't explicitly exclude `itemType=annotation` from that endpoint, so
+ * this is presumably an internal quirk of which relation it queries — not
+ * something this client can fix, only work around. The workaround: search
+ * `itemType=annotation` library-wide (paginated) and filter by `parentItem`
+ * matching one of this item's attachment keys.
+ */
 export async function getAnnotations(itemKey: string): Promise<AthenaeumZoteroAnnotation[]> {
-  const data = (await localFetch(`/items/${itemKey}/children`)) as ZoteroItemDataWrapper[];
-  return data
-    .filter((entry) => entry.data.itemType === 'annotation')
-    .map((entry) => ({
-      key: entry.data.key,
-      text: entry.data.annotationText ?? null,
-      comment: entry.data.annotationComment ?? null,
-      color: entry.data.annotationColor ?? null,
-    }));
+  const children = (await localFetch(`/items/${itemKey}/children`)) as ZoteroItemDataWrapper[];
+  const attachmentKeys = new Set(
+    children.filter((entry) => entry.data.itemType === 'attachment').map((entry) => entry.data.key),
+  );
+  if (attachmentKeys.size === 0) return [];
+
+  const annotations: AthenaeumZoteroAnnotation[] = [];
+  for (let page = 0; page < ANNOTATION_MAX_PAGES; page++) {
+    const batch = (await localFetch('/items', {
+      itemType: 'annotation',
+      start: page * ANNOTATION_PAGE_LIMIT,
+      limit: ANNOTATION_PAGE_LIMIT,
+    })) as ZoteroItemDataWrapper[];
+
+    for (const entry of batch) {
+      const data = entry.data;
+      if (!data.parentItem || !attachmentKeys.has(data.parentItem)) continue;
+      if (!data.annotationType || !TEXT_ANNOTATION_TYPES.has(data.annotationType)) continue;
+      if (!data.annotationText) continue;
+
+      annotations.push({
+        key: data.key,
+        text: data.annotationText,
+        comment: data.annotationComment ?? null,
+        color: data.annotationColor ?? null,
+      });
+    }
+
+    if (batch.length < ANNOTATION_PAGE_LIMIT) break;
+  }
+  return annotations;
 }
 
 export async function getItemFile(
@@ -127,6 +170,8 @@ interface ZoteroItemDataWrapper {
   data: ZoteroItemData & {
     itemType: string;
     key: string;
+    parentItem?: string;
+    annotationType?: string;
     annotationText?: string;
     annotationComment?: string;
     annotationColor?: string;

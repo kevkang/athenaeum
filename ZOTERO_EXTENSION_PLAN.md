@@ -131,11 +131,24 @@ with no attachment, an annotation on a PDF.
 `/items/:key/children`, `/items/:key/file`) and `itemMapper.ts` (ported mapping, 6 Vitest cases,
 all passing). Response-parsing fix baked in from the start: the client checks `response.ok` and
 `content-type` before ever calling `JSON.parse` — a non-ok response can be plain text (see step
-1's finding above). **Real-library verification is not yet done** — the available local Zotero
-library has 0 items (`total-results: 0`, confirmed via the raw API, not a client bug) — so the
-DOI/attachment/annotation coverage above is currently unit-test-only, not confirmed against real
-data. Revisit once real items exist locally, ideally before step 6 (attachment fetch) since that's
-the step this gap most affects.
+1's finding above).
+
+**Real-data verification, 2026-08-22.** `browseItems`/`getCollections` confirmed correct
+immediately against 3 real papers (titles, creators, DOIs, venues, years all matched Zotero).
+`getAnnotations` needed a real fix, not just a test: `GET /items/:attachmentKey/children` **does
+not reliably return annotation items**, even for a highlight visible in Zotero's own UI and
+returned by `GET /items?itemType=annotation` — confirmed after ruling out a stale-cache theory
+(full Zotero Desktop restart didn't change the result). Zotero's own source doesn't explicitly
+exclude `itemType=annotation` from `/children`'s search conditions, so this is presumably an
+internal quirk of which relation that endpoint's query actually walks, not a documented
+restriction — treat it as an opaque fact about the local API, not something worth chasing further
+upstream. **Fix:** `getAnnotations` now finds an item's attachment keys via `/children` (which
+*does* work for `itemType: attachment`/`note`), then separately paginates
+`GET /items?itemType=annotation` library-wide and filters by each annotation's `parentItem` field
+matching one of those attachment keys (capped at 20 pages / 2000 annotations as a safety bound —
+revisit if that's ever a real constraint). Verified against all 3 real annotations: correct text,
+color, and comment on the two papers they were actually added to, empty array on the one with
+none.
 
 ### 3. Content script + message protocol
 
