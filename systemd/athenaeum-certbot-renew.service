@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew athenaindex.app wildcard TLS cert and reload nginx
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/athenaeum
+ExecStart=/opt/athenaeum/renew-certs.sh
