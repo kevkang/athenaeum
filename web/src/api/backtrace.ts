@@ -85,6 +85,35 @@ export interface BacktraceHopResult {
   message: string | null;
 }
 
+/** Resolution counts for one depth level. `depth` is 1-based: depth 1 is one
+ * hop back from the origin paper. */
+export interface BacktraceDepthCoverage {
+  depth: number;
+  resolved: number;
+  unresolved: number;
+  in_flight: number;
+  attempted: number;
+  resolution_rate: number | null;
+}
+
+/** Response for /chains/:id/resolution. `attempted` counts only hops that
+ * finished looking, and it counts hops chased, not every reference the paper
+ * cites. `resolution_rate` is null, not 0, when nothing has finished, so
+ * "not measured yet" never renders as "0% resolved". */
+export interface BacktraceResolution {
+  chain_id: string | null;
+  project_id: string | null;
+  chain_count: number;
+  resolved: number;
+  unresolved: number;
+  in_flight: number;
+  attempted: number;
+  resolution_rate: number | null;
+  deepest_depth: number;
+  deepest: BacktraceDepthCoverage | null;
+  by_depth: BacktraceDepthCoverage[];
+}
+
 export const backtraceApi = {
   start: (projectId: string, paperId: string, sentenceId: string | null, claimText: string) =>
     api
@@ -134,6 +163,9 @@ export const backtraceApi = {
 
   get: (chainId: string) =>
     api.get<BacktraceChainDetail>(`/backtrace/chains/${chainId}`).then((r) => r.data),
+  /** Resolution coverage for one tree, overall and broken out by depth. */
+  resolution: (chainId: string) =>
+    api.get<BacktraceResolution>(`/backtrace/chains/${chainId}/resolution`).then((r) => r.data),
 
   /** Raw .athtrace YAML text — download it client-side (see ExportView's
    * `downloadNow` for the established blob-download pattern) rather than

@@ -39,16 +39,15 @@ Be precise. A passage can only have one primary role.
 """
 
 VERIFY_SYSTEM = """\
-You are an independent citation verifier. You have NO knowledge of how these passages
-were selected or what analysis was done with them. Your only task is to verify:
+You are an independent relevance checker. You have NO knowledge of how these passages
+were selected or what analysis was done with them.
 
-1. VERBATIM: Is the passage text consistent with verbatim text from a scientific paper?
-   (Look for: natural scientific prose, appropriate hedging, specific terminology,
-    statistical language. Flag obvious hallucinations: impossible statistics,
-    contradictory claims within the text, non-existent technical terms.)
-2. RELEVANT: Does this passage genuinely relate to the stated claim?
+Each passage is exact text copied from a stored paper, so do not judge whether it is
+verbatim. Your only task is to judge:
 
-Your verification is the last defence against hallucination. Be critical.
+RELEVANT: Does this passage genuinely relate to the stated claim?
+
+Be critical.
 """
 
 AUDIT_SYSTEM = """\
@@ -232,9 +231,7 @@ CLASSIFY_SIGNALS_TOOL: dict = {
 
 VERIFY_PASSAGES_TOOL: dict = {
     "name": "verify_passages",
-    "description": (
-        "Verify that each passage is verbatim scientific text and is relevant to the claim."
-    ),
+    "description": "Judge whether each passage genuinely relates to the claim.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -244,20 +241,13 @@ VERIFY_PASSAGES_TOOL: dict = {
                     "type": "object",
                     "properties": {
                         "passage_index": {"type": "integer"},
-                        "verbatim_plausible": {
-                            "type": "boolean",
-                            "description": (
-                                "True if the text is consistent with verbatim scientific prose "
-                                "(not paraphrased or hallucinated)."
-                            ),
-                        },
                         "relevant": {
                             "type": "boolean",
                             "description": "True if this passage genuinely relates to the claim.",
                         },
                         "note": {"type": "string"},
                     },
-                    "required": ["passage_index", "verbatim_plausible", "relevant"],
+                    "required": ["passage_index", "relevant"],
                 },
             }
         },

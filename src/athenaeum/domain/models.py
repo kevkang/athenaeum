@@ -65,13 +65,29 @@ class PublicProjectOut(BaseModel):
     statement_count: int
     locked_count: int
     synthesis_count: int
+    # Both averages cover only syntheses run on this server, not imported ones.
+    # The retired combined metric; only older syntheses have it.
     avg_verification_rate: float | None
+    avg_relevance_rate: float | None
 
 
 class VerificationRateStats(BaseModel):
+    """Deprecated: the retired combined check. Kept so the old URL still answers."""
+
     project_id: UUID | None
     synthesis_count: int
     avg_verification_rate: float | None
+
+
+class RelevanceRateStats(BaseModel):
+    """Average share of Synthesis passages an independent checker judged
+    relevant to the claim, over syntheses run on this server. `synthesis_count`
+    counts only syntheses with a measured rate, so it is the average's actual
+    sample size."""
+
+    project_id: UUID | None
+    synthesis_count: int
+    avg_relevance_rate: float | None
 
 
 class PublicPrinciplesOut(BaseModel):
@@ -267,7 +283,11 @@ class SynthesisOut(BaseModel):
     retrieval_corpus: str
     model: str
     checker_model: str | None
+    # Retired combined metric; present only on syntheses that predate relevance_rate.
     verification_rate: float | None
+    relevance_rate: float | None
+    # Non-null when this synthesis came from a .ath import (measured elsewhere).
+    imported_at: datetime | None
     status: str
     run_at: datetime
 
@@ -758,6 +778,45 @@ class BacktraceHopResult(BaseModel):
 
     hop: BacktraceHopOut
     message: str | None = None
+
+
+class BacktraceDepthCoverageOut(BaseModel):
+    """Resolution counts for one depth level. `depth` is 1-based (depth 1 is
+    one hop back from the origin paper), matching BacktraceChainSummaryOut's
+    `max_depth`."""
+
+    depth: int
+    resolved: int
+    unresolved: int
+    in_flight: int
+    attempted: int
+    resolution_rate: float | None
+
+
+class BacktraceResolutionOut(BaseModel):
+    """How much of a Backtrace tree (or of every public tree, for the
+    unauthenticated aggregate) actually reached a verbatim quote.
+
+    `attempted` counts hops that finished looking — resolved plus dead ends —
+    and excludes hops still running, so `resolution_rate` is never diluted by
+    work in progress. It counts *hops chased*, not *references available*:
+    see domain/backtrace_stats.py for why the second denominator isn't
+    currently knowable."""
+
+    chain_id: UUID | None = None
+    project_id: UUID | None = None
+    chain_count: int
+    resolved: int
+    unresolved: int
+    in_flight: int
+    attempted: int
+    resolution_rate: float | None
+    deepest_depth: int
+    # The deepest level with any finished hops. Broken out because it, not
+    # the overall rate, is what says whether a tree tip can be called an
+    # origin — see the module docstring in domain/backtrace_stats.py.
+    deepest: BacktraceDepthCoverageOut | None
+    by_depth: list[BacktraceDepthCoverageOut]
 
 
 class ZoteroLocalStatus(BaseModel):

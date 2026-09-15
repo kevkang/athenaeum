@@ -1,4 +1,22 @@
-"""Unauthenticated public endpoints: project discovery and verification rate stats."""
+"""Unauthenticated public endpoints: project discovery and the published
+measurement stats.
+
+Each number answers a different question, and none implies another (see
+README's "What is and isn't measured"):
+
+- **Synthesis relevance** (`/synthesis-relevance-rate`) — the share of
+  Synthesis passages an independent model judged relevant to the claim. A
+  model's semantic judgment, not a string check.
+- **Backtrace resolution** (`/backtrace-resolution`) — of the citation hops
+  users chased, the share that reached a verbatim quote, broken out by depth.
+
+Verbatim accuracy is not published as a rate; the README describes how it is
+established. Whether cited evidence *supports* a claim is Audit's question,
+which has no published rate yet.
+
+Synthesis rates count only syntheses run on this server. Imported ones carry
+numbers measured elsewhere, which this server cannot vouch for.
+"""
 from __future__ import annotations
 
 import uuid
@@ -7,7 +25,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 
 from athenaeum.api.compose import get_or_create
 from athenaeum.api.deps import SessionDep
@@ -18,9 +36,12 @@ from athenaeum.archive.athmd_render import (
     render_athmd_pdf,
     render_athmd_standalone_html,
 )
+from athenaeum.domain import backtrace_stats as bt_stats
 from athenaeum.domain.models import (
+    BacktraceResolutionOut,
     PublicPrinciplesOut,
     PublicProjectOut,
+    RelevanceRateStats,
     StatementOut,
     VerificationRateStats,
 )
@@ -51,19 +72,27 @@ async def _project_stats(session, project_id: uuid.UUID) -> dict[str, Any]:
         .select_from(Synthesis)
         .where(Synthesis.project_id == project_id, Synthesis.status == "done")
     )
+    # Rates average only syntheses run on this server; imported ones carry
+    # numbers measured elsewhere.
+    local_done = (
+        Synthesis.project_id == project_id,
+        Synthesis.status == "done",
+        Synthesis.imported_at.is_(None),
+    )
     avg_vr = await session.scalar(
         select(func.avg(Synthesis.verification_rate))
-        .where(
-            Synthesis.project_id == project_id,
-            Synthesis.status == "done",
-            Synthesis.verification_rate.is_not(None),
-        )
+        .where(*local_done, Synthesis.verification_rate.is_not(None))
+    )
+    avg_rr = await session.scalar(
+        select(func.avg(Synthesis.relevance_rate))
+        .where(*local_done, Synthesis.relevance_rate.is_not(None))
     )
     return {
         "statement_count": statement_total or 0,
         "locked_count": statement_locked or 0,
         "synthesis_count": synth_count or 0,
         "avg_verification_rate": float(avg_vr) if avg_vr is not None else None,
+        "avg_relevance_rate": float(avg_rr) if avg_rr is not None else None,
     }
 
 
@@ -128,42 +157,108 @@ async def list_public_project_statements(
     return list(rows)
 
 
-# ── Verification rate ──────────────────────────────────────────────────────────
+# ── Synthesis relevance rate ───────────────────────────────────────────────────
 
-@router.get("/verification-rate", response_model=VerificationRateStats)
+
+async def _public_synthesis_filters(
+    session: SessionDep, project_id: uuid.UUID | None
+) -> list[ColumnElement[bool]]:
+    """Which syntheses a public rate may count: completed, run on this server
+    rather than imported, and in a public project (or in the one public
+    project requested). Filters are applied straight to the aggregate query,
+    so the average reads exactly these rows and nothing else."""
+    filters: list[ColumnElement[bool]] = [
+        Synthesis.status == "done",
+        Synthesis.imported_at.is_(None),
+    ]
+    if project_id is not None:
+        await _require_public_project(session, project_id)
+        filters.append(Synthesis.project_id == project_id)
+    else:
+        filters.append(
+            Synthesis.project_id.in_(select(Project.id).where(Project.is_public.is_(True)))
+        )
+    return filters
+
+
+@router.get("/synthesis-relevance-rate", response_model=RelevanceRateStats)
+async def get_synthesis_relevance_rate(
+    session: SessionDep,
+    project_id: uuid.UUID | None = Query(default=None),
+) -> RelevanceRateStats:
+    """Average share of Synthesis passages an independent model judged
+    relevant to the claim, over syntheses that measured it.
+
+    This is a model's semantic judgment. It is not a check that quotes are
+    verbatim, and not a judgment that evidence supports the claim, which is
+    Audit's question. `synthesis_count` is how many syntheses the average
+    covers.
+    """
+    filters = await _public_synthesis_filters(session, project_id)
+    measured = [*filters, Synthesis.relevance_rate.is_not(None)]
+    count = await session.scalar(select(func.count()).select_from(Synthesis).where(*measured))
+    avg_rr = await session.scalar(select(func.avg(Synthesis.relevance_rate)).where(*measured))
+    return RelevanceRateStats(
+        project_id=project_id,
+        synthesis_count=count or 0,
+        avg_relevance_rate=float(avg_rr) if avg_rr is not None else None,
+    )
+
+
+# ── Retired combined rate ──────────────────────────────────────────────────────
+
+
+@router.get(
+    "/verification-rate",
+    response_model=VerificationRateStats,
+    deprecated=True,
+    summary="Deprecated: retired combined check. Use /public/synthesis-relevance-rate",
+)
 async def get_verification_rate(
     session: SessionDep,
     project_id: uuid.UUID | None = Query(default=None),
 ) -> VerificationRateStats:
-    if project_id is not None:
-        project = await session.get(Project, project_id)
-        if project is None or not project.is_public:
-            raise HTTPException(status_code=404, detail="Project not found")
-        stmt_base = select(Synthesis).where(
-            Synthesis.project_id == project_id,
-            Synthesis.status == "done",
-        )
-    else:
-        stmt_base = (
-            select(Synthesis)
-            .join(Project, Synthesis.project_id == Project.id)
-            .where(Project.is_public == True, Synthesis.status == "done")  # noqa: E712
-        )
-
-    count = await session.scalar(
-        select(func.count()).select_from(stmt_base.subquery())
-    )
+    """The retired combined metric: the share of passages a model judged both
+    "plausibly verbatim" and "relevant". New syntheses no longer record it, so
+    this reflects only older ones. Kept so the published URL still answers.
+    """
+    filters = await _public_synthesis_filters(session, project_id)
+    count = await session.scalar(select(func.count()).select_from(Synthesis).where(*filters))
     avg_vr = await session.scalar(
-        select(func.avg(Synthesis.verification_rate)).select_from(
-            stmt_base.where(Synthesis.verification_rate.is_not(None)).subquery()
-        )
+        select(func.avg(Synthesis.verification_rate))
+        .where(*filters, Synthesis.verification_rate.is_not(None))
     )
-
     return VerificationRateStats(
         project_id=project_id,
         synthesis_count=count or 0,
         avg_verification_rate=float(avg_vr) if avg_vr is not None else None,
     )
+
+
+# ── Backtrace resolution coverage ──────────────────────────────────────────────
+
+@router.get("/backtrace-resolution", response_model=BacktraceResolutionOut)
+async def get_backtrace_resolution(
+    session: SessionDep,
+    project_id: uuid.UUID | None = Query(default=None),
+) -> BacktraceResolutionOut:
+    """What share of chased citation hops reached a verbatim quote, across
+    public projects, broken out by how far back from the origin claim they
+    went.
+
+    Read the per-depth numbers, not just the headline: resolution falls off
+    with depth, so a healthy overall rate can coexist with tips that almost
+    never resolve. The denominator counts hops users actually chased, not
+    every reference that was available to chase — see
+    domain/backtrace_stats.py.
+    """
+    if project_id is not None:
+        await _require_public_project(session, project_id)
+
+    coverage = await bt_stats.load_coverage(
+        session, project_id=project_id, public_only=True
+    )
+    return bt_stats.to_out(coverage, project_id=project_id)
 
 
 # ── Principles: the .athmd proof-of-concept, shown on the home page ────────────

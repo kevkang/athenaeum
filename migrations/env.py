@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -32,8 +33,31 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _dry_run() -> bool:
+    """True for `alembic -x dry_run=true upgrade head`.
+
+    A dry run executes every pending migration for real, so the row counts
+    migrations log are genuine, then rolls the whole transaction back. That
+    only works because Postgres runs schema changes (DDL) transactionally.
+    """
+    value = context.get_x_argument(as_dictionary=True).get("dry_run", "")
+    return value.lower() in {"1", "true", "yes"}
+
+
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
+    if _dry_run():
+        # Opening the transaction here makes Alembic run inside it instead of
+        # committing its own, so the rollback also discards the version bump.
+        transaction = connection.begin()
+        try:
+            context.run_migrations()
+        finally:
+            transaction.rollback()
+        logging.getLogger("alembic.runtime.migration").warning(
+            "DRY RUN: every change above was rolled back; nothing was written."
+        )
+        return
     with context.begin_transaction():
         context.run_migrations()
 

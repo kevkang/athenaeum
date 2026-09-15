@@ -348,9 +348,26 @@ export default function FindPanel({ projectId, onStatementCreated }: { projectId
                   {activeSynth.status === 'done' && 'Done'}
                   {activeSynth.status === 'failed' && 'Failed'}
                 </span>
-                {activeSynth.verification_rate !== null && (
-                  <span className={styles.vrBadge}>
-                    {(activeSynth.verification_rate * 100).toFixed(0)}% verified
+                {activeSynth.relevance_rate !== null ? (
+                  <span
+                    className={styles.vrBadge}
+                    title="Share of passages an independent checker judged relevant to the claim"
+                  >
+                    {(activeSynth.relevance_rate * 100).toFixed(0)}% judged relevant
+                  </span>
+                ) : activeSynth.verification_rate !== null && (
+                  // Older syntheses only have the retired combined number, which
+                  // mixed relevance with a guess about verbatim wording.
+                  <span
+                    className={styles.vrBadge}
+                    title="Measured with a retired check that combined relevance with a guess about verbatim wording"
+                  >
+                    {(activeSynth.verification_rate * 100).toFixed(0)}% (retired check)
+                  </span>
+                )}
+                {activeSynth.imported_at && (
+                  <span className={styles.vrBadge} title="Imported from a .ath file; its numbers were measured elsewhere">
+                    imported
                   </span>
                 )}
                 <button

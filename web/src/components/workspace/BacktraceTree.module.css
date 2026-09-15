@@ -274,3 +274,91 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+/* ── Depth strip: resolution coverage by depth ── */
+
+.depthStrip {
+  position: absolute;
+  top: 42px;
+  left: 10px;
+  /* Under the history dropdown and error banner (z-index 200), which should
+     cover it while open, but above the canvas. */
+  z-index: 150;
+  width: 320px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.depthSummary {
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+.depthRow {
+  display: grid;
+  grid-template-columns: 22px 1fr 44px 34px auto;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.depthLabel { color: var(--text-muted); }
+
+.depthBar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.depthBarFill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.depthCount,
+.depthRate {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.depthInFlight { font-style: italic; }
+
+.depthFootnote {
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* ── Dead-end hops: looked and found nothing, so never styled like a source ── */
+
+.deadEnd {
+  opacity: 0.6;
+  outline: 1px dashed var(--border-strong);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+
+.deadEndBadge {
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tension);
+}

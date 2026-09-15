@@ -18,6 +18,7 @@ from athenaeum.storage.models import (
     Event,
     Highlight,
     Paper,
+    PaperSentence,
     Passage,
     Project,
     ProjectPaper,
@@ -37,6 +38,15 @@ def _s(v: uuid.UUID | None) -> str | None:
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+def _cited_sentence_fields(sentence: PaperSentence | None) -> dict[str, str]:
+    """Extra fields for a citation that points directly at a sentence: the
+    cited words and the paper they come from. Empty for every other citation,
+    so those export exactly as before."""
+    if sentence is None:
+        return {}
+    return {"quote": sentence.text, "paper_id": str(sentence.paper_id)}
 
 
 async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[str, Any]:
@@ -74,6 +84,22 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
             select(StatementEvidence).where(StatementEvidence.statement_id.in_(statement_ids))
         ))
     )
+    # A citation dragged from the reader points straight at a sentence id, not
+    # a Passage row. The receiving server can't use that id (it splits papers
+    # into sentences with its own ids), so the export carries the cited words
+    # and their paper, letting import check them against its own copy.
+    passage_target_ids = {r.target_id for r in statement_evidence if r.target_kind == "passage"}
+    passage_row_ids: set[uuid.UUID] = set() if not passage_target_ids else set(
+        await session.scalars(select(Passage.id).where(Passage.id.in_(passage_target_ids)))
+    )
+    sentence_target_ids = passage_target_ids - passage_row_ids
+    cited_sentences: dict[uuid.UUID, PaperSentence] = {} if not sentence_target_ids else {
+        s.id: s
+        for s in await session.scalars(
+            select(PaperSentence).where(PaperSentence.id.in_(sentence_target_ids))
+        )
+    }
+
     statement_edges: list[StatementEdge] = (
         [] if not statement_ids else list(await session.scalars(
             select(StatementEdge).where(StatementEdge.from_statement_id.in_(statement_ids))
@@ -160,6 +186,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "model": s.model,
                 "checker_model": s.checker_model,
                 "verification_rate": s.verification_rate,
+                "relevance_rate": s.relevance_rate,
                 "status": s.status,
                 "run_at": _iso(s.run_at),
                 "query_expansion_json": s.query_expansion_json,
@@ -189,6 +216,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                         "target_kind": r.target_kind,
                         "target_id": str(r.target_id),
                         "role": r.role,
+                        **_cited_sentence_fields(cited_sentences.get(r.target_id)),
                     }
                     for r in evidence_by_statement.get(s.id, [])
                 ],

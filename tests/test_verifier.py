@@ -1,21 +1,23 @@
-"""Tests for the independent citation-verification pass.
+"""Tests for the independent relevance check on Synthesis passages.
 
-verify_passages() is the single most credibility-critical function in the
-codebase: it produces the "verified" flag and verification_rate that the
-product's core claim (a measured, not claimed, citation-verification rate)
-rests on. These tests exist to protect two things: the verdict logic itself,
-and — the more important property — that the checker's context is actually
-isolated from the extraction step's reasoning, not just isolated by
-convention.
+verify_passages() produces each passage's `verified` flag and the synthesis's
+relevance_rate, which is a published number. These tests protect three things:
+that relevance alone decides the verdict (whether a quote is verbatim follows
+from how passages are built, and is not something a model is asked to judge),
+that an unmeasured rate is None rather than 0, and that the checker's context
+is actually isolated from the extraction step's reasoning.
 """
 import uuid
 
+import pytest
+
 from athenaeum.provider.base import Message
 from athenaeum.storage.models import Passage
+from athenaeum.synthesize.prompts import VERIFY_PASSAGES_TOOL
 from athenaeum.synthesize.verifier import verify_passages
 
 _TOOL: dict = {"name": "verify_passages", "input_schema": {}}
-_SYSTEM = "You are an independent fact checker."
+_SYSTEM = "You are an independent relevance checker."
 
 
 class _FakeProvider:
@@ -40,54 +42,65 @@ def _passage(verbatim_text: str, rationale: str | None = None) -> Passage:
     )
 
 
-async def test_empty_passages_short_circuits_without_calling_the_provider() -> None:
+async def test_no_passages_measures_nothing_and_skips_the_provider() -> None:
     provider = _FakeProvider(None)
 
     rate, flags = await verify_passages(provider, "claim", [], "model", _SYSTEM, _TOOL)
 
-    assert (rate, flags) == (0.0, [])
+    assert (rate, flags) == (None, [])
     assert provider.last_messages is None
 
 
-async def test_no_tool_result_marks_everything_unverified() -> None:
+async def test_checker_failure_is_unmeasured_not_zero() -> None:
+    """A checker that returns nothing has judged nothing. Recording 0% would
+    publish a failure as if it were a verdict, so the rate is None, and no
+    passage is marked as passing."""
     provider = _FakeProvider(None)
     passages = [_passage("Sentence one."), _passage("Sentence two.")]
 
     rate, flags = await verify_passages(provider, "claim", passages, "model", _SYSTEM, _TOOL)
 
-    assert rate == 0.0
+    assert rate is None
     assert flags == [False, False]
 
 
-async def test_verified_requires_both_verbatim_plausible_and_relevant() -> None:
-    passages = [_passage("A"), _passage("B"), _passage("C"), _passage("D")]
+async def test_relevance_alone_decides_the_verdict() -> None:
+    """A checker that still sends the retired verbatim_plausible field must
+    not have it counted either way."""
+    passages = [_passage("A"), _passage("B"), _passage("C")]
     provider = _FakeProvider({
         "name": "verify_passages",
         "input": {"results": [
-            {"passage_index": 0, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": 1, "verbatim_plausible": True, "relevant": False},
-            {"passage_index": 2, "verbatim_plausible": False, "relevant": True},
-            {"passage_index": 3, "verbatim_plausible": False, "relevant": False},
+            {"passage_index": 0, "relevant": True, "verbatim_plausible": False},
+            {"passage_index": 1, "relevant": False, "verbatim_plausible": True},
+            {"passage_index": 2, "relevant": True},
         ]},
     })
 
     rate, flags = await verify_passages(provider, "claim", passages, "model", _SYSTEM, _TOOL)
 
-    assert flags == [True, False, False, False]
-    assert rate == 0.25
+    assert flags == [True, False, True]
+    assert rate == pytest.approx(2 / 3)
 
 
-async def test_missing_passage_index_defaults_to_unverified() -> None:
+def test_tool_schema_no_longer_asks_about_verbatim_accuracy() -> None:
+    item = VERIFY_PASSAGES_TOOL["input_schema"]["properties"]["results"]["items"]
+
+    assert "verbatim_plausible" not in item["properties"]
+    assert item["required"] == ["passage_index", "relevant"]
+
+
+async def test_missing_passage_index_defaults_to_not_relevant() -> None:
     passages = [_passage("A"), _passage("B")]
     provider = _FakeProvider({
         "name": "verify_passages",
-        "input": {"results": [{"passage_index": 0, "verbatim_plausible": True, "relevant": True}]},
+        "input": {"results": [{"passage_index": 0, "relevant": True}]},
     })
 
     rate, flags = await verify_passages(provider, "claim", passages, "model", _SYSTEM, _TOOL)
 
-    # Passage 1 was never reported on — must default to unverified, not be
-    # skipped or crash the aggregate rate calculation.
+    # Passage 1 was never reported on: it counts as not relevant, rather than
+    # being skipped (which would inflate the rate) or crashing the aggregate.
     assert flags == [True, False]
     assert rate == 0.5
 
@@ -97,9 +110,9 @@ async def test_out_of_range_passage_index_is_ignored_not_fatal() -> None:
     provider = _FakeProvider({
         "name": "verify_passages",
         "input": {"results": [
-            {"passage_index": 0, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": 7, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": -1, "verbatim_plausible": True, "relevant": True},
+            {"passage_index": 0, "relevant": True},
+            {"passage_index": 7, "relevant": True},
+            {"passage_index": -1, "relevant": True},
         ]},
     })
 
@@ -121,7 +134,7 @@ async def test_checker_context_excludes_extraction_rationale() -> None:
     )]
     provider = _FakeProvider({
         "name": "verify_passages",
-        "input": {"results": [{"passage_index": 0, "verbatim_plausible": True, "relevant": True}]},
+        "input": {"results": [{"passage_index": 0, "relevant": True}]},
     })
 
     await verify_passages(
@@ -137,15 +150,15 @@ async def test_checker_context_excludes_extraction_rationale() -> None:
     assert provider.last_system == _SYSTEM
 
 
-async def test_verification_rate_is_the_verified_fraction() -> None:
+async def test_relevance_rate_is_the_relevant_fraction() -> None:
     passages = [_passage(f"Sentence {i}.") for i in range(4)]
     provider = _FakeProvider({
         "name": "verify_passages",
         "input": {"results": [
-            {"passage_index": 0, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": 1, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": 2, "verbatim_plausible": True, "relevant": True},
-            {"passage_index": 3, "verbatim_plausible": False, "relevant": True},
+            {"passage_index": 0, "relevant": True},
+            {"passage_index": 1, "relevant": True},
+            {"passage_index": 2, "relevant": True},
+            {"passage_index": 3, "relevant": False},
         ]},
     })
 

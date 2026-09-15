@@ -10,7 +10,12 @@ export interface Synthesis {
   retrieval_corpus: string;
   model: string;
   checker_model: string | null;
+  /** Retired combined check; only syntheses that predate relevance_rate have it. */
   verification_rate: number | null;
+  /** Share of passages an independent checker judged relevant; null when unmeasured. */
+  relevance_rate: number | null;
+  /** Set when the synthesis came from a .ath import, so its numbers were measured elsewhere. */
+  imported_at: string | null;
   status: 'running' | 'done' | 'failed';
   run_at: string;
 }

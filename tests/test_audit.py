@@ -189,7 +189,8 @@ async def test_get_audit_run_assembles_findings_and_no_evidence_statements(db_se
     )
     from athenaeum.storage.models import Passage
     passage = Passage(id=uuid.uuid4(), paper_id=paper.id, sentence_ids=[sentence.id],
-                       verbatim_text=sentence.text, verified=True)
+                       verbatim_text=sentence.text, verified=True,
+                       source_check="matches_source")
     db_session.add(passage)
     await db_session.flush()
 

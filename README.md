@@ -78,8 +78,46 @@ The following sections of the `README` were written with and reviewed by Claude 
 - **Audit** — an independent LLM pass over a Compose document that checks whether each cited piece
   of evidence actually supports the statement it's attached to, with no visibility into how that
   evidence was originally selected (same "independent checker" pattern as Synthesis's verifier).
+  Its accuracy has not yet been measured — see [What is and isn't measured](#what-is-and-isnt-measured).
 - **Archive** — whole-project export/import as `.ath` (YAML, `archive/export.py`), and a single
   citation chain as `.athtrace` (`archive/athtrace.py`).
+
+## What is and isn't measured
+
+Athenaeum runs several automated checks, and they answer different questions. Only some of them
+have a number behind them, so they are named separately here and must not be read as one claim.
+
+| Check | Question it answers | Status |
+|---|---|---|
+| **Verbatim accuracy** (`domain/source_check.py`) | Is this quote word for word what the paper says? | Not a rate; an outcome recorded on each quote. Quotes built in the app are copied from the paper's stored sentences, so they match by construction. Quotes arriving in a `.ath` import are compared with this server's own copy of the paper and recorded as `matches_source`, `differs_from_source`, or `source_unavailable` (the paper isn't on this server; the quote is re-checked if the paper is ingested later). The comparison ignores only spacing, line-break hyphens and Unicode character forms, so a `differs_from_source` result can still come from a harmless PDF-extraction difference: it marks a quote for review, not proof of fabrication. The outcome is currently stored but not shown; it will appear in Audit once Audit reports graded verdicts. |
+| **Synthesis relevance** (`synthesize/verifier.py`) | Does each passage Synthesis found actually relate to the claim? | A model's judgment. Published at `GET /public/synthesis-relevance-rate`. |
+| **Backtrace resolution** (`domain/backtrace_stats.py`) | Of the citation hops users chased, how many reached a verbatim quote at all? | Measured. Published at `GET /public/backtrace-resolution`, broken out by hop depth. |
+| **Evidence support** (Audit, `synthesize/audit.py`) | Does this quote actually support the claim it was cited for? | **Not yet evaluated.** No accuracy figure exists. |
+
+Synthesis relevance and evidence support are both semantic judgments made by a language model.
+Relevance is the easier question (is this passage on topic?); support is the harder one (does it
+establish the specific claim?). Neither judgment's error rate against known-good and known-bad
+examples has been measured. A passing Audit result is a prompt for the author to look closer, not a
+guarantee to a reader, and no trustworthiness claim should rest on it until an evaluation against a
+human-labeled set is published with a confidence interval.
+
+Published Synthesis rates count only syntheses run on the publishing server. Syntheses imported from a
+`.ath` file keep the numbers they arrived with for display, but those were measured elsewhere, so
+they are left out of public aggregates.
+
+Two caveats on the Backtrace number, both also stated in the endpoint's response docs:
+
+- The rate counts only hops that **finished** looking. Hops still running are left out of the
+  denominator; hops handed back to the user for manual import count as unresolved.
+- The denominator is references a person **chose to chase**, not every reference the paper cites.
+  It measures "when we looked, did we find it," not "how much of the literature is reachable."
+
+Resolution typically falls with depth, so read the per-depth figures rather than the overall rate
+alone: a tree's deepest hops are the ones being presented as origins.
+
+`GET /public/verification-rate` still answers but is deprecated. It reports the retired combined
+check (a model's guess that text looked verbatim, combined with relevance), which new syntheses no
+longer record.
 
 ## Domain model
 

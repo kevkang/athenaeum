@@ -22,6 +22,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from athenaeum.domain.source_check import MATCHES_SOURCE
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.ingest.openalex import (
     OpenAlexMeta,
@@ -236,6 +237,8 @@ async def search_full_text_for_claim(
         paper_id=paper_id,
         sentence_ids=sentence_uuids,
         verbatim_text=verbatim,
+        # The words were just copied from this server's sentences, so they match.
+        source_check=MATCHES_SOURCE,
         rationale=pd.get("rationale") or None,
     )
     session.add(passage)
