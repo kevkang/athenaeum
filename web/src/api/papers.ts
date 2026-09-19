@@ -12,7 +12,7 @@ export interface Paper {
   status: 'ghost' | 'full_text' | 'failed';
   created_at: string;
   zotero_item_key: string | null;
-  zotero_source: 'sync' | 'local' | null;
+  zotero_source: 'sync' | 'local' | 'extension' | null;
   found_quote: string | null;
   found_relevance_note: string | null;
   found_corpus: string | null;
@@ -104,7 +104,7 @@ export const papersApi = {
   ingest: (
     doi: string,
     projectId: string,
-    found?: { foundQuote?: string; foundRelevanceNote?: string },
+    found?: { foundQuote?: string; foundRelevanceNote?: string; zoteroItemKey?: string },
   ) =>
     api
       .post<Paper>('/papers', {
@@ -112,6 +112,7 @@ export const papersApi = {
         project_id: projectId,
         found_quote: found?.foundQuote,
         found_relevance_note: found?.foundRelevanceNote,
+        zotero_item_key: found?.zoteroItemKey,
       })
       .then((r) => r.data),
 
@@ -128,12 +129,17 @@ export const papersApi = {
       })
       .then((r) => r.data),
 
-  upload: (file: File, projectId: string, opts: { title?: string; doi?: string } = {}) => {
+  upload: (
+    file: File,
+    projectId: string,
+    opts: { title?: string; doi?: string; zoteroItemKey?: string } = {},
+  ) => {
     const form = new FormData();
     form.append('file', file);
     form.append('project_id', projectId);
     if (opts.title) form.append('title', opts.title);
     if (opts.doi) form.append('doi', opts.doi);
+    if (opts.zoteroItemKey) form.append('zotero_item_key', opts.zoteroItemKey);
     return api.post<Paper>('/papers/upload', form).then((r) => r.data);
   },
 

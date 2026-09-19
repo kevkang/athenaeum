@@ -83,6 +83,7 @@ class PaperIngest(BaseModel):
     project_id: UUID
     found_quote: str | None = None
     found_relevance_note: str | None = None
+    zotero_item_key: str | None = None
 
 
 class PaperUpdate(BaseModel):
@@ -925,3 +926,20 @@ class ZoteroHighlightImportItem(BaseModel):
 class ZoteroHighlightImportRequest(BaseModel):
     project_id: UUID
     items: list[ZoteroHighlightImportItem] = Field(min_length=1)
+
+
+class ZoteroAnnotationIn(BaseModel):
+    """A single annotation supplied by the client instead of fetched
+    server-side — used for the browser-extension path, where the backend has
+    no way to reach the user's local Zotero itself (see
+    zotero_highlights.py's preview_zotero_highlights_from_annotations)."""
+
+    item_key: str
+    text: str
+    comment: str | None = None
+    color: str | None = None
+
+
+class ZoteroHighlightPreviewFromAnnotationsRequest(BaseModel):
+    project_id: UUID
+    annotations: list[ZoteroAnnotationIn]

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { zoteroHighlightsApi, type ZoteroHighlightCandidate } from '../api/zoteroHighlights';
+import { getAnnotationsViaExtension } from '../lib/zoteroExtension';
 import styles from './ZoteroHighlightImportModal.module.css';
 
 type Phase = 'loading' | 'review' | 'importing' | 'done' | 'error';
@@ -22,10 +23,18 @@ function extractErrorMessage(err: unknown, fallback: string): string {
 export default function ZoteroHighlightImportModal({
   paperId,
   projectId,
+  zoteroSource,
+  zoteroItemKey,
   onClose,
 }: {
   paperId: string;
   projectId: string;
+  // Papers imported via the browser extension have no server-side route to
+  // the user's local Zotero, so annotations are fetched through the
+  // extension itself and posted to the preview-external endpoint instead —
+  // see ZOTERO_EXTENSION_PLAN.md step 7.
+  zoteroSource: 'sync' | 'local' | 'extension' | null;
+  zoteroItemKey: string | null;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -38,7 +47,14 @@ export default function ZoteroHighlightImportModal({
     let cancelled = false;
     (async () => {
       try {
-        const candidates = await zoteroHighlightsApi.preview(paperId, projectId);
+        const candidates =
+          zoteroSource === 'extension' && zoteroItemKey
+            ? await zoteroHighlightsApi.previewFromAnnotations(
+                paperId,
+                projectId,
+                await getAnnotationsViaExtension(zoteroItemKey),
+              )
+            : await zoteroHighlightsApi.preview(paperId, projectId);
         if (cancelled) return;
         setRows(
           candidates.map((candidate) => ({
@@ -57,7 +73,7 @@ export default function ZoteroHighlightImportModal({
     return () => {
       cancelled = true;
     };
-  }, [paperId, projectId]);
+  }, [paperId, projectId, zoteroSource, zoteroItemKey]);
 
   function toggleRow(itemKey: string) {
     setRows((prev) =>

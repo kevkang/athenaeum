@@ -220,6 +220,8 @@ export default function ReaderPane({
         <ZoteroHighlightImportModal
           paperId={paperId}
           projectId={projectId}
+          zoteroSource={paper.zotero_source}
+          zoteroItemKey={paper.zotero_item_key}
           onClose={() => setZoteroHighlightModalOpen(false)}
         />
       )}
