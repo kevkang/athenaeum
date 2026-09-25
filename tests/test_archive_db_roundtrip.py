@@ -105,6 +105,8 @@ async def _seed_project(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID, uu
     session.add(Passage(
         id=passage_id, paper_id=paper_id, sentence_ids=[uuid.uuid4()],
         verbatim_text="We seed rows and check they survive.",
+        # The seeded paper has no sentences, so these words can't be checked here.
+        source_check="source_unavailable",
         verified=True, verified_at=datetime.now(UTC), checker_model="claude-sonnet-5",
     ))
     await session.flush()
@@ -200,12 +202,39 @@ async def test_build_archive_then_import_reproduces_the_project(db_session: Asyn
 
     assert await db_session.get(Project, project_id) is None
 
-    new_project_id = await import_project(db_session, restored, owner_id)
-    assert new_project_id == project_id
+    result = await import_project(db_session, restored, owner_id)
+    assert result.project_id == project_id
 
     archive_after = await build_archive(db_session, project_id)
 
+    # The one intended difference: the archive doesn't carry the paper's text,
+    # so this server has none, and the imported paper is a ghost here until
+    # it's ingested, whatever its status was on the exporting server. It is
+    # queued for fetching for the same reason.
+    assert [p["status"] for p in archive_after["papers"]] == ["ghost"]
+    for p in archive_before["papers"]:
+        p["status"] = "ghost"
     assert _normalize(archive_after) == _normalize(archive_before)
+    assert result.papers_to_fetch == [paper_id]
+
+
+async def test_import_marks_syntheses_as_imported(db_session: AsyncSession) -> None:
+    """Rates in an archive were measured on another server, so import must
+    mark those syntheses; that mark is what keeps them out of this server's
+    public aggregates."""
+    project_id, paper_id, owner_id = await _seed_project(db_session)
+    restored = loads(dumps(await build_archive(db_session, project_id)))
+
+    await db_session.execute(delete(ProjectMember).where(ProjectMember.project_id == project_id))
+    await db_session.execute(delete(Project).where(Project.id == project_id))
+    await db_session.execute(delete(Paper).where(Paper.id == paper_id))
+    await db_session.commit()
+
+    await import_project(db_session, restored, owner_id)
+
+    synthesis = await db_session.scalar(select(Synthesis).where(Synthesis.project_id == project_id))
+    assert synthesis is not None
+    assert synthesis.imported_at is not None
 
 
 async def test_import_rejects_occupied_project_id(db_session: AsyncSession) -> None:

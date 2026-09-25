@@ -20,6 +20,8 @@ import {
   type BacktraceCandidate,
   type BacktraceChainSummary,
   type BacktraceHop,
+  type BacktraceResolution,
+  type BacktraceResolutionStatus,
 } from '../../api/backtrace';
 import { papersApi } from '../../api/papers';
 import { trunc } from '../../lib/format';
@@ -217,8 +219,18 @@ interface HopNodeData extends Record<string, unknown> {
   frontier: FrontierState;
 }
 
+// Statuses where the automatic search finished without finding supporting
+// text; mirrors UNRESOLVED_STATES in domain/backtrace_stats.py. A branch that
+// ends in one of these is a dead end and must never look like an origin.
+const DEAD_END_STATUSES: ReadonlySet<BacktraceResolutionStatus> = new Set([
+  'no_match',
+  'awaiting_manual_import',
+]);
+const DEAD_END_EDGE_COLOR = '#5a5040';
+
 function HopNodeView({ data }: NodeProps<Node<HopNodeData, 'hop'>>) {
   const { hop } = data;
+  const deadEnd = DEAD_END_STATUSES.has(hop.resolution_status);
   const placeholderQuote =
     hop.resolution_status === 'ingesting' ? 'Fetching full text…'
     : hop.resolution_status === 'awaiting_manual_import' ? 'No open-access version found automatically.'
@@ -226,8 +238,13 @@ function HopNodeView({ data }: NodeProps<Node<HopNodeData, 'hop'>>) {
     : 'Resolving…';
 
   return (
-    <div className={`${styles.nodeCardWrap} nodrag nopan`}>
+    <div className={`${styles.nodeCardWrap} ${deadEnd ? styles.deadEnd : ''} nodrag nopan`}>
       <Handle type="target" position={Position.Top} className={styles.rfHandle} />
+      {deadEnd && (
+        <div className={styles.deadEndBadge}>
+          ⌀ dead end · {hop.resolution_status === 'no_match' ? 'no supporting text' : 'no open-access text'} · not a source
+        </div>
+      )}
       <FindResultCard
         title={hop.to_title}
         authors={hop.to_authors_json ?? []}
@@ -276,6 +293,46 @@ function PendingNodeView({ data }: NodeProps<Node<PendingNodeData, 'pending'>>) 
         committing={data.committing}
         onContinue={data.onContinue}
       />
+    </div>
+  );
+}
+
+function formatRate(rate: number | null): string {
+  return rate == null ? '—' : `${Math.round(rate * 100)}%`;
+}
+
+/** Resolution coverage by depth, pinned under the header. Each bar is resolved
+ * over attempted for one level, so the fall-off with depth is visible at a
+ * glance. The summary names the deepest measured level because that rate, not
+ * the overall one, decides whether the tree's tips can be called origins. */
+function DepthStrip({ resolution }: { resolution: BacktraceResolution }) {
+  const { deepest } = resolution;
+  return (
+    <div className={styles.depthStrip}>
+      <div className={styles.depthSummary}>
+        {resolution.resolved} of {resolution.attempted} hops chased resolved ({formatRate(resolution.resolution_rate)})
+        {deepest && (
+          <> · deepest measured, depth {deepest.depth}: {deepest.resolved}/{deepest.attempted} ({formatRate(deepest.resolution_rate)})</>
+        )}
+      </div>
+      {resolution.by_depth.map((d) => (
+        <div key={d.depth} className={styles.depthRow}>
+          <span className={styles.depthLabel}>d{d.depth}</span>
+          <span className={styles.depthBar}>
+            <span
+              className={styles.depthBarFill}
+              style={{ width: d.attempted ? `${(d.resolved / d.attempted) * 100}%` : '0%' }}
+            />
+          </span>
+          <span className={styles.depthCount}>{d.attempted ? `${d.resolved}/${d.attempted}` : '—'}</span>
+          <span className={styles.depthRate}>{formatRate(d.resolution_rate)}</span>
+          {d.in_flight > 0 && <span className={styles.depthInFlight}>{d.in_flight} resolving</span>}
+        </div>
+      ))}
+      <div className={styles.depthFootnote}>
+        Counts hops that finished looking, out of the references chosen to chase. Tips are the
+        earliest reachable given corpus coverage, not proven originals.
+      </div>
     </div>
   );
 }
@@ -370,6 +427,20 @@ function BacktraceTreeInner({
     enabled: !!chainId,
     refetchInterval: (q) =>
       q.state.data?.hops.some((h) => h.resolution_status === 'ingesting') ? 3000 : false,
+  });
+
+  // Coverage comes from the server instead of being recounted from `hops`, so
+  // the tree shows exactly the definition the public endpoint publishes.
+  // Putting every hop's status in the query key refetches it whenever the
+  // chain changes (a new hop, or one finishing) without extra invalidation.
+  const statusSignature = detail?.hops.map((h) => `${h.id}:${h.resolution_status}`).join('|') ?? '';
+  const { data: resolution } = useQuery({
+    queryKey: ['backtrace-resolution', chainId, statusSignature],
+    queryFn: () => backtraceApi.resolution(chainId!),
+    enabled: !!chainId && !!detail,
+    // Keep the previous strip on screen while a refetch runs, but never
+    // carry one chain's numbers over into a different chain.
+    placeholderData: (prev) => (prev?.chain_id === chainId ? prev : undefined),
   });
 
   const { data: originPaper } = useQuery({
@@ -627,10 +698,14 @@ function BacktraceTreeInner({
     for (const h of hops) {
       if (hiddenHopIds.has(h.id)) continue;
       const source = h.parent_hop_id && !hiddenHopIds.has(h.parent_hop_id) ? h.parent_hop_id : ORIGIN_NODE_ID;
+      const deadEnd = DEAD_END_STATUSES.has(h.resolution_status);
+      const stroke = deadEnd ? DEAD_END_EDGE_COLOR : EDGE_COLOR;
       list.push({
         id: `e-${h.id}`, source, target: h.id, type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR },
-        style: { stroke: EDGE_COLOR },
+        markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+        // Dotted rather than the dashed pattern pending candidates use, so a
+        // dead end reads as "looked and found nothing", not "not looked yet".
+        style: deadEnd ? { stroke, strokeDasharray: '1 4' } : { stroke },
       });
     }
     for (const c of visiblePendingFor(ORIGIN_NODE_ID)) {
@@ -721,6 +796,10 @@ function BacktraceTreeInner({
           }}
         />
       </div>
+
+      {chainId && resolution && resolution.by_depth.length > 0 && (
+        <DepthStrip resolution={resolution} />
+      )}
 
       {historyOpen && (
         <div className={styles.historyPanel}>

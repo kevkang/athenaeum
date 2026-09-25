@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from athenaeum.config import Settings
 from athenaeum.domain.models import SentenceHit
+from athenaeum.domain.source_check import MATCHES_SOURCE
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.provider.base import Message, Provider
 from athenaeum.provider.resolver import get_provider_for_user
@@ -198,6 +199,8 @@ async def _step_extract(
             paper_id=paper_id,
             sentence_ids=sentence_uuids,
             verbatim_text=verbatim,
+            # The words were just copied from this server's sentences, so they match.
+            source_check=MATCHES_SOURCE,
             rationale=pd.get("rationale") or None,
         )
         session.add(passage)
@@ -327,9 +330,9 @@ async def run_synthesis(
             await _publish(session, redis, synthesis_id, step_ord, "signal", signal_payload)
             step_ord += 1
 
-            # ── 5. Independent verification ────────────────────────────────────
+            # ── 5. Independent relevance check ─────────────────────────────────
             # checker has NO access to provider, expansion, hits, or classifications
-            verification_rate, verified_flags = await verify_passages(
+            relevance_rate, relevant_flags = await verify_passages(
                 checker=checker,
                 claim=synthesis.claim_text,
                 passages=passages,
@@ -338,15 +341,17 @@ async def run_synthesis(
                 tool=VERIFY_PASSAGES_TOOL,
             )
 
-            synthesis.verification_rate = verification_rate
+            # verification_rate is deliberately left unset: it's the retired
+            # combined metric, kept only on syntheses that predate this one.
+            synthesis.relevance_rate = relevance_rate
             synthesis.checker_model = settings.checker_model
 
-            # Mark passages as verified / not verified. strict=True: verify_passages()
-            # always returns one flag per passage by construction — a mismatch would
-            # mean flags got silently misassigned to the wrong passages.
-            for passage, verified in zip(passages, verified_flags, strict=True):
-                passage.verified = verified
-                if verified:
+            # A passage's `verified` flag now means "judged relevant by the
+            # checker". strict=True: verify_passages() returns one flag per
+            # passage by construction, so a mismatch would mean misassigned flags.
+            for passage, relevant in zip(passages, relevant_flags, strict=True):
+                passage.verified = relevant
+                if relevant:
                     from datetime import datetime
                     passage.verified_at = datetime.now(UTC)
                     passage.checker_model = settings.checker_model
@@ -355,20 +360,20 @@ async def run_synthesis(
             await session.commit()
 
             verify_payload = {
-                "verification_rate": verification_rate,
-                "verified": sum(verified_flags),
-                "total": len(verified_flags),
+                "relevance_rate": relevance_rate,
+                "relevant": sum(relevant_flags),
+                "total": len(relevant_flags),
             }
             await _publish(session, redis, synthesis_id, step_ord, "verify", verify_payload)
 
             await redis.publish(
                 f"synthesis:{synthesis_id}:steps",
-                json.dumps({"kind": "done", "verification_rate": verification_rate}),
+                json.dumps({"kind": "done", "relevance_rate": relevance_rate}),
             )
             log.info(
                 "synthesis.done",
                 synthesis_id=str(synthesis_id),
-                verification_rate=verification_rate,
+                relevance_rate=relevance_rate,
                 n_passages=len(passages),
             )
 

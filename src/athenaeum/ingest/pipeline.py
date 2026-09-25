@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from athenaeum.config import Settings
+from athenaeum.domain.source_check import recheck_paper
 from athenaeum.ingest.acquire import acquire_pdf
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.ingest.grobid import Section, parse_pdf
@@ -189,6 +190,13 @@ async def _finalize_sections(
             global_sentence_ord += 1
 
         global_char_offset = sec_end + 2  # account for "\n\n" between sections
+
+    # This server now has the paper's text, so check every passage quoting it
+    # against that text, including quotes imported while the paper was missing.
+    await session.flush()
+    recheck = await recheck_paper(session, paper.id)
+    if recheck:
+        log.info("ingest.source_recheck", paper_id=str(paper.id), **recheck)
 
     paper.status = "full_text"
     if paper.doi and not paper.openalex_id:

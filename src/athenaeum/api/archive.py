@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
@@ -52,6 +52,7 @@ async def import_project(
     file: UploadFile,
     session: SessionDep,
     user: CurrentUserDep,
+    request: Request,
 ) -> dict:
     raw = await file.read()
     try:
@@ -66,8 +67,27 @@ async def import_project(
         )
 
     try:
-        project_id = await arc_import.import_project(session, data, user.id)
+        result = await arc_import.import_project(session, data, user.id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    return {"project_id": str(project_id)}
+    # Try to fetch papers this server has no text for. Their quotes were
+    # imported as source_unavailable and get re-checked when ingestion
+    # finishes. Best effort: the import itself has already been committed.
+    papers_fetching = 0
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is None and result.papers_to_fetch:
+        log.warning("import.fetch_skipped_no_queue", n_papers=len(result.papers_to_fetch))
+    elif arq_pool is not None:
+        for paper_id in result.papers_to_fetch:
+            try:
+                await arq_pool.enqueue_job("ingest_paper", str(paper_id), oa_pdf_url=None)
+                papers_fetching += 1
+            except Exception:
+                log.warning("import.fetch_enqueue_failed", paper_id=str(paper_id))
+
+    return {
+        "project_id": str(result.project_id),
+        "papers_fetching": papers_fetching,
+        "warnings": result.warnings,
+    }

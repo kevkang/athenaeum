@@ -99,16 +99,20 @@ async def test_build_athmd_worked_example(db_session) -> None:
 
     passage_kowalski_1 = Passage(id=uuid.UUID(int=1), paper_id=kowalski_paper_id,
                                   sentence_ids=[sentence_kowalski_1.id],
-                                  verbatim_text=QUOTE_KOWALSKI_1, verified=True)
+                                  verbatim_text=QUOTE_KOWALSKI_1, verified=True,
+                                  source_check="matches_source")
     passage_kowalski_2 = Passage(id=uuid.UUID(int=3), paper_id=kowalski_paper_id,
                                   sentence_ids=[sentence_kowalski_2.id],
-                                  verbatim_text=QUOTE_KOWALSKI_2, verified=True)
+                                  verbatim_text=QUOTE_KOWALSKI_2, verified=True,
+                                  source_check="matches_source")
     passage_nakamura_1 = Passage(id=uuid.UUID(int=2), paper_id=sentence_nakamura_1.paper_id,
                                   sentence_ids=[sentence_nakamura_1.id],
-                                  verbatim_text=QUOTE_NAKAMURA_1, verified=True)
+                                  verbatim_text=QUOTE_NAKAMURA_1, verified=True,
+                                  source_check="matches_source")
     passage_zhou_1 = Passage(id=uuid.UUID(int=4), paper_id=sentence_zhou_1.paper_id,
                               sentence_ids=[sentence_zhou_1.id],
-                              verbatim_text=QUOTE_ZHOU_1, verified=True)
+                              verbatim_text=QUOTE_ZHOU_1, verified=True,
+                              source_check="matches_source")
     db_session.add_all(
         [passage_kowalski_1, passage_kowalski_2, passage_nakamura_1, passage_zhou_1]
     )

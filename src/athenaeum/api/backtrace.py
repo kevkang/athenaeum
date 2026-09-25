@@ -47,6 +47,7 @@ from athenaeum.archive import athtrace as arc_athtrace
 from athenaeum.archive.export import dumps as ath_dumps
 from athenaeum.archive.export import loads as ath_loads
 from athenaeum.config import get_settings
+from athenaeum.domain import backtrace_stats as bt_stats
 from athenaeum.domain.models import (
     BacktraceCandidateOut,
     BacktraceChainDetailOut,
@@ -57,6 +58,7 @@ from athenaeum.domain.models import (
     BacktraceHopResult,
     BacktraceRankRequest,
     BacktraceRankResult,
+    BacktraceResolutionOut,
     BacktraceStartRequest,
 )
 from athenaeum.ingest.openalex import fetch_metadata_by_id
@@ -82,7 +84,9 @@ from athenaeum.synthesize.backtrace import (
 log = structlog.get_logger()
 router = APIRouter(prefix="/backtrace", tags=["backtrace"])
 
-_RESOLVED_STATES = {"abstract_match", "full_text_match"}
+# Re-exported from domain/backtrace_stats.py so the "did this hop resolve?"
+# question has exactly one answer shared with the coverage statistics.
+_RESOLVED_STATES = bt_stats.RESOLVED_STATES
 
 
 async def _publish_step(arq_pool: AsyncRedis | None, stream_id: str | None, kind: str) -> None:
@@ -516,6 +520,20 @@ async def get_chain(
         chain=BacktraceChainOut.model_validate(chain),
         hops=[BacktraceHopOut.model_validate(h) for h in hops],
     )
+
+
+@router.get("/chains/{chain_id}/resolution", response_model=BacktraceResolutionOut)
+async def get_chain_resolution(
+    chain_id: uuid.UUID, session: SessionDep, user: CurrentUserDep,
+) -> BacktraceResolutionOut:
+    """Resolution coverage for one tree, overall and per depth — what the
+    tree view's depth rail renders. Goes through _load_chain_and_hops purely
+    for its ownership check; the counts come from a separate aggregate rather
+    than from the loaded hops, so the definition stays shared with the public
+    endpoint instead of being re-derived here."""
+    chain, _hops = await _load_chain_and_hops(session, chain_id, user.id)
+    coverage = await bt_stats.load_coverage(session, chain_id=chain.id)
+    return bt_stats.to_out(coverage, chain_id=chain.id, project_id=chain.project_id)
 
 
 @router.get("/chains", response_model=list[BacktraceChainSummaryOut])

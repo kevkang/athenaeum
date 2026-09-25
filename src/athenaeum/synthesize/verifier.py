@@ -1,4 +1,12 @@
-"""Independent checker pass — runs in a fresh context with no synthesis trace."""
+"""Independent relevance check for Synthesis passages, run in a fresh context
+with no synthesis trace.
+
+It does not judge whether a passage is verbatim. A model can't usefully answer
+that about real text, and for passages Synthesis builds it is settled by
+construction: the text is copied from stored sentences by id. What remains is a
+semantic judgment — does each passage genuinely relate to the claim? — and the
+share of passages that do is the synthesis's relevance_rate.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -18,27 +26,26 @@ async def verify_passages(
     checker_model_name: str,
     system_prompt: str,
     tool: dict[str, Any],
-) -> tuple[float, list[bool]]:
-    """Run the independent verification pass.
+) -> tuple[float | None, list[bool]]:
+    """Ask an independent checker whether each passage is relevant to the claim.
 
-    The checker receives ONLY the claim text and the verbatim passage text from DB.
-    It has no access to the synthesis trace, retrieval hits, or signal classifications.
+    The checker sees only the claim and each passage's stored text — never the
+    extraction step's rationale, retrieval hits, or signal labels — so it can't
+    simply agree with the extractor's own reasoning.
 
-    Returns (verification_rate, per_passage_bool_list).
+    Returns (relevance_rate, per-passage flags). The rate is None when nothing
+    was measured: no passages, or a checker that returned no result. A passage
+    the checker didn't report on counts as not relevant.
     """
     if not passages:
-        return 0.0, []
+        return None, []
 
-    # Build the checker's view: claim + numbered passages (text from DB only)
-    passage_lines = "\n\n".join(
-        f"[{i}] {p.verbatim_text}"
-        for i, p in enumerate(passages)
-    )
+    # The checker's whole view: the claim plus numbered passage text from the DB.
+    passage_lines = "\n\n".join(f"[{i}] {p.verbatim_text}" for i, p in enumerate(passages))
     user_msg = (
-        f"CLAIM TO VERIFY AGAINST:\n{claim}\n\n"
+        f"CLAIM:\n{claim}\n\n"
         f"PASSAGES ({len(passages)} total):\n{passage_lines}\n\n"
-        "For each passage, report whether the text is plausibly verbatim scientific "
-        "prose and whether it is relevant to the claim."
+        "For each passage, report whether it genuinely relates to the claim."
     )
 
     _, tool_result = await checker.complete(
@@ -49,27 +56,23 @@ async def verify_passages(
     )
 
     if tool_result is None:
-        log.warning("verifier.no_tool_result", n_passages=len(passages))
-        return 0.0, [False] * len(passages)
+        log.warning(
+            "verifier.no_tool_result", n_passages=len(passages), checker_model=checker_model_name
+        )
+        return None, [False] * len(passages)
 
     results: list[dict[str, Any]] = tool_result["input"].get("results", [])
 
-    # Map back by passage_index
-    verdict: dict[int, bool] = {}
+    # Map verdicts back to passages by index; out-of-range indices are ignored
+    # rather than fatal, and any passage left unreported defaults to False.
+    relevant: dict[int, bool] = {}
     for r in results:
         idx = r.get("passage_index", -1)
         if 0 <= idx < len(passages):
-            # A passage is "verified" if the checker believes it is both
-            # verbatim plausible AND relevant to the claim.
-            verdict[idx] = bool(r.get("verbatim_plausible")) and bool(r.get("relevant"))
+            relevant[idx] = bool(r.get("relevant"))
 
-    verified_flags = [verdict.get(i, False) for i in range(len(passages))]
-    rate = sum(verified_flags) / len(verified_flags) if verified_flags else 0.0
+    flags = [relevant.get(i, False) for i in range(len(passages))]
+    rate = sum(flags) / len(flags)
 
-    log.info(
-        "verifier.done",
-        verified=sum(verified_flags),
-        total=len(verified_flags),
-        rate=rate,
-    )
-    return rate, verified_flags
+    log.info("verifier.done", relevant=sum(flags), total=len(flags), relevance_rate=rate)
+    return rate, flags

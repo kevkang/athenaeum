@@ -57,7 +57,9 @@ export default function FindResultCard({
           {venue && <span className={styles.evidenceVenue}> · {venue}</span>}
         </span>
         {roleLabel && <span className={styles.evidenceRole}>{roleLabel}</span>}
-        {verified && <span className={styles.verifiedDot} title="verified" />}
+        {verified && (
+          <span className={styles.verifiedDot} title="Judged relevant to the claim by an independent checker" />
+        )}
         <div className={styles.findCardActions}>
           {visitUrl && (
             <a className={styles.visitBtn} href={visitUrl} target="_blank" rel="noreferrer">

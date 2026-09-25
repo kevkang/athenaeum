@@ -200,6 +200,12 @@ class PaperSentence(Base):
 
 class Passage(Base):
     __tablename__ = "passages"
+    __table_args__ = (
+        CheckConstraint(
+            "source_check IN ('matches_source', 'differs_from_source', 'source_unavailable')",
+            name="passages_source_check_chk",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     paper_id: Mapped[uuid.UUID] = mapped_column(
@@ -209,6 +215,11 @@ class Passage(Base):
         ARRAY(UUID(as_uuid=True)), nullable=False
     )
     verbatim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Whether this quote's words were found in this server's own copy of the
+    # paper (see domain/source_check.py). Every path that creates a passage
+    # sets it explicitly; there is deliberately no default, so a new path that
+    # forgets fails loudly instead of silently claiming a match.
+    source_check: Mapped[str] = mapped_column(String(30), nullable=False)
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checker_model: Mapped[str | None] = mapped_column(String(100))
@@ -237,7 +248,16 @@ class Synthesis(Base):
     )
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     checker_model: Mapped[str | None] = mapped_column(String(100))
+    # Historical only, no longer written: the share of passages a checker judged
+    # both "plausibly verbatim" and "relevant". The verbatim half measured
+    # nothing for passages rebuilt from stored sentences.
     verification_rate: Mapped[float | None] = mapped_column(Float)
+    # Share of passages an independent checker judged relevant to the claim.
+    # None when nothing was measured (no passages, or the checker failed).
+    relevance_rate: Mapped[float | None] = mapped_column(Float)
+    # Set when the synthesis arrived in a .ath import instead of running on this
+    # server. Its rates were measured elsewhere, so public aggregates skip it.
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
     run_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

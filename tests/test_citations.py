@@ -139,7 +139,7 @@ async def test_resolve_evidence_reference_passage_resolves_to_verbatim_text(db_s
     )
     passage = Passage(
         id=uuid.uuid4(), paper_id=paper.id, sentence_ids=[sentence.id],
-        verbatim_text=sentence.text, verified=True,
+        verbatim_text=sentence.text, verified=True, source_check="matches_source",
     )
     db_session.add(passage)
     await db_session.flush()
@@ -284,11 +284,11 @@ async def test_build_reference_numbering_groups_by_reference_and_assigns_subids(
     await db_session.flush()
 
     passage_a1 = Passage(id=uuid.uuid4(), paper_id=paper_a.id, sentence_ids=[sentence_a1.id],
-                          verbatim_text=quote_a1, verified=True)
+                          verbatim_text=quote_a1, verified=True, source_check="matches_source")
     passage_a2 = Passage(id=uuid.uuid4(), paper_id=paper_a.id, sentence_ids=[sentence_a2.id],
-                          verbatim_text=quote_a2, verified=True)
+                          verbatim_text=quote_a2, verified=True, source_check="matches_source")
     passage_b1 = Passage(id=uuid.uuid4(), paper_id=paper_b.id, sentence_ids=[sentence_b1.id],
-                          verbatim_text=quote_b1, verified=True)
+                          verbatim_text=quote_b1, verified=True, source_check="matches_source")
     db_session.add_all([passage_a1, passage_a2, passage_b1])
     await db_session.flush()
 
@@ -345,7 +345,8 @@ async def test_build_reference_numbering_same_evidence_cited_by_two_statements_s
         db_session, owner, project, title="Shared Evidence Paper", text="A shared quote.",
     )
     passage = Passage(id=uuid.uuid4(), paper_id=paper.id, sentence_ids=[sentence.id],
-                       verbatim_text=sentence.text, verified=True)
+                       verbatim_text=sentence.text, verified=True,
+                       source_check="matches_source")
     db_session.add(passage)
     await db_session.flush()
 
@@ -380,7 +381,8 @@ async def test_get_compose_document_citations_endpoint_wires_response_correctly(
         db_session, owner, project, title="Endpoint Wiring Paper", text="A quoted sentence.",
     )
     passage = Passage(id=uuid.uuid4(), paper_id=paper.id, sentence_ids=[sentence.id],
-                       verbatim_text=sentence.text, verified=True)
+                       verbatim_text=sentence.text, verified=True,
+                       source_check="matches_source")
     db_session.add(passage)
     await db_session.flush()
 

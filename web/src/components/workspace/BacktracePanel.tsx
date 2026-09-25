@@ -495,7 +495,15 @@ export default function BacktracePanel({
       />
 
       {stopped && (
-        <div className={styles.searchHint}>✓ Chain stopped — this is marked as the source.</div>
+        // A stopped hop is only a source if it actually found supporting
+        // text. Stopping on a dead end must not read as reaching an origin,
+        // and even a resolved stop is only the earliest point reachable with
+        // the papers available, not a proven original.
+        <div className={styles.searchHint}>
+          {last?.resolution_status === 'abstract_match' || last?.resolution_status === 'full_text_match'
+            ? '✓ Chain stopped here: the earliest source reachable given corpus coverage, not necessarily the original.'
+            : 'Chain stopped at a dead end: no supporting text was found here, so this is not a source.'}
+        </div>
       )}
     </div>
   );
