@@ -41,7 +41,7 @@ async def apply_event(
         ),
         {"pid": str(project_id)},
     )
-    seq = seq_row.scalar_one()
+    seq: int = seq_row.scalar_one()
     event = Event(
         id=uuid.uuid4(),
         project_id=project_id,
