@@ -248,9 +248,16 @@ field is binary until the production set-level verdict lands ("both": a set-leve
 the per-citation findings, per the 2026-09-16 decision). That is a real gap, not a blocker: build the
 node field against the binary engine and widen it when the graded production path exists.
 
-Prerequisites 3.1 (Zotero position capture) and 3.2 (TextQuoteSelector) are **not started** — no
-`selector` or position-capture code exists anywhere in `src/`. 3.1 is small, independent, and on an
-expiring window.
+Prerequisite 3.1 (Zotero position capture) is **done** 2026-09-26: migration 0029 adds
+`zotero_annotation_key` / `zotero_position_json` / `zotero_sort_index` / `zotero_page_label` to
+`highlights`, and both Zotero readers now parse the `position` JSON string they previously discarded.
+Position is taken from a server-side re-read of the annotation at import, never from the request
+body, because its purpose is to record where the highlight demonstrably was. A failed or impossible
+lookup still imports the highlight and still records the annotation key, which is what leaves the row
+backfillable.
+
+Prerequisite 3.2 (TextQuoteSelector) is **not started** — no `selector` code exists anywhere in
+`src/`.
 
 ---
 
@@ -260,7 +267,7 @@ No phase is now blocked on a decision.
 
 1. **Land the uncommitted audit-evaluation work.** Done 2026-09-26. Note it does not include the
    production set-level verdict; see "Also noted" above.
-2. **Phase 3.1 — Zotero position capture.** Independent, small, expiring window.
+2. **Phase 3.1 — Zotero position capture.** Done 2026-09-26.
 3. **Tab reorganization.** Retire the canvas and Find (D-N4), reshape Read to
    `papers │ reader`, promote Backtrace to a tab, add the Audit tab with its pasted-draft backend
    path, keep Compose as-is.

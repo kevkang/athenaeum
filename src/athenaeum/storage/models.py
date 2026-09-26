@@ -787,6 +787,27 @@ class Highlight(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # ── Zotero provenance, captured at import (see api/zotero_highlights.py) ──
+    # All four are NULL for a highlight the user made in Athenaeum's own reader,
+    # and for Zotero imports predating migration 0029.
+    #
+    # The annotation this highlight was imported from. Stored because it is the
+    # only stable way to recognise the same annotation again: matching on
+    # sentence span collides whenever two annotations land on one sentence, and
+    # it is also what lets position be backfilled later for a row imported
+    # while Zotero was unreachable.
+    zotero_annotation_key: Mapped[str | None] = mapped_column(String(50))
+    # Zotero's own position object, {"pageIndex": int, "rects": [[...]]}, kept
+    # unreshaped so it can be handed back to a Zotero-compatible reader as-is.
+    # Capturing it at import is not an optimization: an annotation edited or
+    # deleted in Zotero afterwards takes its coordinates with it.
+    zotero_position_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Zotero's document-order key, which sorts annotations within one PDF
+    # without interpreting the position rectangles.
+    zotero_sort_index: Mapped[str | None] = mapped_column(String(50))
+    # The page as printed in the document ("iv", "S3", "1247"), which is not
+    # position_json's zero-based pageIndex and cannot be derived from it.
+    zotero_page_label: Mapped[str | None] = mapped_column(String(50))
 
 
 class AuditRun(Base):

@@ -988,6 +988,12 @@ class ZoteroHighlightPreviewResponse(BaseModel):
 class ZoteroHighlightImportItem(BaseModel):
     sentence_ids: list[UUID] = Field(min_length=1)
     verbatim_text: str = Field(min_length=1)
+    # Which annotation this row came from, echoed back from the preview. The
+    # import stores it as provenance and uses it to look the annotation's
+    # position up server-side — the position itself is deliberately not
+    # accepted from the client, since its whole purpose is to record where the
+    # highlight demonstrably was.
+    annotation_item_key: str = Field(min_length=1)
 
 
 class ZoteroHighlightImportRequest(BaseModel):

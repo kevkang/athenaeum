@@ -40,7 +40,8 @@ CREATE TABLE itemAttachments (
 );
 CREATE TABLE itemAnnotations (
     itemID INTEGER, parentItemID INTEGER, type INTEGER,
-    text TEXT, comment TEXT, color TEXT, pageLabel TEXT
+    text TEXT, comment TEXT, color TEXT, pageLabel TEXT,
+    sortIndex TEXT, position TEXT
 );
 CREATE TABLE deletedItems (itemID INTEGER);
 """
@@ -112,16 +113,18 @@ def _build_db(path: Path) -> None:
     conn.execute(
         "INSERT INTO itemAnnotations VALUES "
         "(6, 2, 1, 'Chemosynthesis sustains vent ecosystems via symbiotic bacteria.', "
-        "'key finding', '#ffd400', '3')"
+        "'key finding', '#ffd400', '3', '00002|000412|00310', "
+        '\'{"pageIndex": 2, "rects": [[72.1, 480.5, 523.4, 492.0]]}\')'
     )
     conn.execute("INSERT INTO items VALUES (7, 4, 'ANNOT0002', '2024-02-01 00:00:01')")
     conn.execute(
-        "INSERT INTO itemAnnotations VALUES (7, 2, 2, NULL, 'just a sticky note', NULL, NULL)"
+        "INSERT INTO itemAnnotations VALUES "
+        "(7, 2, 2, NULL, 'just a sticky note', NULL, NULL, NULL, NULL)"
     )
     conn.execute("INSERT INTO items VALUES (8, 4, 'ANNOT0003', '2024-02-01 00:00:02')")
     conn.execute(
         "INSERT INTO itemAnnotations VALUES "
-        "(8, 2, 1, 'Should not appear, trashed', NULL, NULL, NULL)"
+        "(8, 2, 1, 'Should not appear, trashed', NULL, NULL, NULL, NULL, NULL)"
     )
     conn.execute("INSERT INTO deletedItems VALUES (8)")
 
@@ -172,6 +175,17 @@ async def test_list_local_annotations_only_returns_text_bearing_ones(zotero_dir:
     assert ann.text == "Chemosynthesis sustains vent ecosystems via symbiotic bacteria."
     assert ann.comment == "key finding"
     assert ann.color == "#ffd400"
+
+
+async def test_list_local_annotations_captures_position_and_sort_index(zotero_dir: Path) -> None:
+    """Zotero stores position as a JSON string; the reader parses it so both
+    import paths hand the same structure to the Highlight row."""
+    annotations = await list_local_annotations(str(zotero_dir), "ITEM0001")
+    ann = annotations[0]
+
+    assert ann.page_label == "3"
+    assert ann.sort_index == "00002|000412|00310"
+    assert ann.position == {"pageIndex": 2, "rects": [[72.1, 480.5, 523.4, 492.0]]}
 
 
 async def test_list_local_annotations_empty_for_item_without_attachment(zotero_dir: Path) -> None:

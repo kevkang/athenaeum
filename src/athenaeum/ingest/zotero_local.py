@@ -30,6 +30,7 @@ from athenaeum.ingest.zotero import (
     ZoteroSearchHit,
     _hit_from_item,
     _year_from_date,
+    parse_annotation_position,
 )
 from athenaeum.storage.models import ZoteroLocalConfig
 
@@ -551,6 +552,7 @@ async def list_local_annotations(data_dir: str, item_key: str) -> list[ZoteroAnn
             """
             SELECT ann.text AS text, ann.comment AS comment, ann.color AS color,
                    ann.pageLabel AS pageLabel, ann.type AS type,
+                   ann.sortIndex AS sortIndex, ann.position AS position,
                    i.key AS key, attach.key AS attachKey
             FROM itemAttachments ia
             JOIN items attach ON attach.itemID = ia.itemID
@@ -576,6 +578,11 @@ async def list_local_annotations(data_dir: str, item_key: str) -> list[ZoteroAnn
                     comment=row["comment"],
                     color=row["color"],
                     page_label=row["pageLabel"],
+                    # itemAnnotations stores position as a JSON string, the same
+                    # shape the Web API returns — parsed by the shared helper so
+                    # both import paths capture identical structures.
+                    position=parse_annotation_position(row["position"]),
+                    sort_index=row["sortIndex"],
                 )
             )
         return annotations
