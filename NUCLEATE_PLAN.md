@@ -160,6 +160,22 @@ exist. A tab that leads nowhere is worse than a tab that is not there yet.
 "⠿ Drag to workspace" affordance, and the `cytoscape` / `cytoscape-dagre` dependencies.
 `components/workspace/FindResultCard.tsx` stays — both Backtrace views render it.
 
+**Browser-verified 2026-09-26** against the running docker-compose stack and a real project
+(5 papers, 20 backtrace chains), driven with Playwright:
+
+| Check | Result |
+|---|---|
+| Nav bar | Read / Backtrace / Compose / Export, correct tab highlighted on each route |
+| Read, no selection | Papers sidebar + full-width reader empty state |
+| Read, paper open | Metadata, status, Passages, expandable Body section render full width |
+| Reader selection tooltip | `★ Highlight` and `🔍 Backtrace` only — "Drag to workspace" gone |
+| Backtrace | Tree renders a real chain: 4 nodes, 3 edges, year axis, History picker, coverage panel |
+| Compose | Unchanged — toolbar, citation marker, References, Sources panel, Audit button |
+| Export | Loads |
+| `/workspace` | Redirects to `/read` |
+| `GET /projects/{id}/graph` | 404 |
+| Console | No errors on any route |
+
 **Known follow-up, not done:** 83 of the 188 class names in `pages/Workspace.module.css` are now
 unreferenced (statement panels, canvas chrome, history, synthesis). They were left in place
 deliberately: `FindResultCard` and `PapersSidebar` both index that stylesheet dynamically
