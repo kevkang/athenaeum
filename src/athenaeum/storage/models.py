@@ -822,6 +822,19 @@ class AuditRun(Base):
     __table_args__ = (
         CheckConstraint("status IN ('running', 'done', 'failed')", name="audit_runs_status_chk"),
         CheckConstraint(
+            "kind IN ('compose_document', 'pasted_draft')", name="audit_runs_kind_chk"
+        ),
+        # The two triggers carry different payloads and neither may borrow the
+        # other's: a compose run points at a document, a draft run carries the
+        # text it was handed.
+        CheckConstraint(
+            "(kind = 'compose_document' AND compose_document_id IS NOT NULL "
+            "AND draft_text IS NULL) OR "
+            "(kind = 'pasted_draft' AND compose_document_id IS NULL "
+            "AND draft_text IS NOT NULL)",
+            name="audit_runs_kind_payload_chk",
+        ),
+        CheckConstraint(
             "quotes_checked IS NULL OR quotes_checked >= 0",
             name="audit_runs_quotes_checked_chk",
         ),
@@ -836,9 +849,18 @@ class AuditRun(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    compose_document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("compose_documents.id", ondelete="CASCADE"), nullable=False
+    # Which trigger produced this run (domain/draft_audit.py). The handoff
+    # requires the triggers stay distinguishable in the run records; this is
+    # that distinction, and Nucleate's automatic audit becomes a third value
+    # rather than a third table.
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="compose_document")
+    # NULL for a pasted-draft run, which has no document behind it.
+    compose_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("compose_documents.id", ondelete="CASCADE")
     )
+    # The text submitted to a pasted-draft run, kept so a finding can always be
+    # read back against the words it was made about. NULL for compose runs.
+    draft_text: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -859,6 +881,78 @@ class AuditRun(Base):
     )
 
 
+class AuditDraftCitation(Base):
+    """One citation extracted from a pasted draft, with the claim it was
+    attached to and whatever work it was matched to.
+
+    This is the row a draft audit's finding hangs off, in place of the
+    Statement a compose-document audit uses. It exists as its own table rather
+    than as columns on AuditFinding because a citation outlives its finding: a
+    citation that could not be resolved, or that resolved to something with no
+    readable text, never produces a finding at all and still has to be shown to
+    the user. Collapsing the two would make "not checked" indistinguishable
+    from "checked and fine" by absence.
+
+    The matched work is stored denormalised (openalex_id, doi, title, year)
+    rather than as a Paper row: resolving a citation should not silently add
+    papers to the user's project, least of all for someone auditing a
+    manuscript without a corpus. `paper_id` is set only when the project
+    already happened to hold that paper.
+    """
+
+    __tablename__ = "audit_draft_citations"
+    __table_args__ = (
+        CheckConstraint(
+            "resolution IN ('exact', 'needs_confirmation', 'confirmed', 'not_found')",
+            name="audit_draft_citations_resolution_chk",
+        ),
+        CheckConstraint(
+            "evidence_source IS NULL OR evidence_source IN "
+            "('project_full_text', 'abstract', 'no_text')",
+            name="audit_draft_citations_evidence_source_chk",
+        ),
+        # An unresolved citation has nothing to point at; a resolved one must.
+        CheckConstraint(
+            "(resolution = 'not_found' AND openalex_id IS NULL) OR "
+            "(resolution <> 'not_found')",
+            name="audit_draft_citations_not_found_chk",
+        ),
+        UniqueConstraint("audit_run_id", "ord", name="audit_draft_citations_run_ord_uq"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    audit_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The claim the citation is attached to, and the citation as it appears in
+    # the draft ("(Koch et al. 2018)"). Both verbatim from the submitted text,
+    # so a finding can be shown against the author's own words.
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    citation_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # domain/draft_audit.py. Only 'exact' and 'confirmed' proceed to an audit.
+    resolution: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The matched work. NULL together when resolution is 'not_found'.
+    openalex_id: Mapped[str | None] = mapped_column(String(50))
+    doi: Mapped[str | None] = mapped_column(String(255))
+    matched_title: Mapped[str | None] = mapped_column(Text)
+    matched_year: Mapped[int | None] = mapped_column(Integer)
+    matched_authors_json: Mapped[Any | None] = mapped_column(JSONB)
+    # The ranked alternatives, kept so the confirm step has something to offer
+    # and so a later reader can see what else was on the table.
+    candidates_json: Mapped[Any | None] = mapped_column(JSONB)
+    # Set only when this project already holds the resolved paper.
+    paper_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="SET NULL")
+    )
+    # Which text the claim was checked against (domain/draft_audit.py). NULL
+    # until the citation reaches the evidence step at all.
+    evidence_source: Mapped[str | None] = mapped_column(String(30))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class AuditFinding(Base):
     """One checked piece of evidence: does `quote` actually support the
     statement it's attached to? `sub_id` (e.g. "1.2") is a snapshot of
@@ -871,8 +965,19 @@ class AuditFinding(Base):
     __tablename__ = "audit_findings"
     __table_args__ = (
         CheckConstraint(
-            "target_kind IN ('paper','passage','dataset','statement')",
+            "target_kind IS NULL OR target_kind IN ('paper','passage','dataset','statement')",
             name="audit_findings_target_kind_chk",
+        ),
+        # A finding belongs to exactly one kind of thing: a statement in a
+        # compose document (which always has a real evidence row behind it), or
+        # a citation extracted from a pasted draft (which has no statement and
+        # no StatementEvidence identity to mirror).
+        CheckConstraint(
+            "(statement_id IS NOT NULL AND target_kind IS NOT NULL AND target_id IS NOT NULL "
+            "AND draft_citation_id IS NULL) OR "
+            "(draft_citation_id IS NOT NULL AND statement_id IS NULL "
+            "AND target_kind IS NULL AND target_id IS NULL)",
+            name="audit_findings_anchor_chk",
         ),
         CheckConstraint(
             "verdict IS NULL OR verdict IN ('supported', 'misread', 'overreach', "
@@ -890,12 +995,16 @@ class AuditFinding(Base):
         UUID(as_uuid=True), ForeignKey("audit_runs.id", ondelete="CASCADE"), nullable=False
     )
     ord: Mapped[int] = mapped_column(Integer, nullable=False)
-    statement_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE"), nullable=False
+    statement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("statements.id", ondelete="CASCADE")
+    )
+    # Set instead of statement_id on a pasted-draft run.
+    draft_citation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("audit_draft_citations.id", ondelete="CASCADE")
     )
     sub_id: Mapped[str] = mapped_column(String(20), nullable=False)
-    target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    target_kind: Mapped[str | None] = mapped_column(String(20))
+    target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     quote: Mapped[str | None] = mapped_column(Text)
     # Pass/fail result from before graded verdicts. The Audit panel still reads
     # it until it switches to `verdict`.

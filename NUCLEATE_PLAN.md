@@ -337,8 +337,15 @@ No phase is now blocked on a decision.
 2. **Phase 3.1 — Zotero position capture.** Done 2026-09-26.
 3. **Tab reorganization.** Read and Backtrace done 2026-09-26. The Audit tab is split out as its
    own item below, since D-N9 makes it a feature rather than a panel move.
-4. **Audit tab** (D-N9): citation extraction from pasted prose, OpenAlex resolution, text fetch,
-   then the existing audit engine — with each stage's failures reported distinctly.
+4. **Audit tab** (D-N9). Data model done 2026-09-26: `domain/draft_audit.py`, migration 0030,
+   `AuditRun.kind`, `AuditDraftCitation`, findings anchored to a statement *or* a citation.
+   Remaining: citation extraction from prose, OpenAlex resolution, evidence selection, the worker
+   job, the API, and the tab itself.
+
+   Resolution vocabulary, settled by the D-N9 answers and recorded here because it is new:
+   `exact` / `needs_confirmation` / `confirmed` / `not_found`, of which only `exact` and `confirmed`
+   proceed to an audit — `exact` is a deterministic string match, never a model's ranking. Evidence
+   source is `project_full_text` / `abstract` / `no_text`.
 5. **Phase 3.2 — TextQuoteSelector** on passages, before the archivist starts generating quotes at
    scale.
 6. **Node schema** — nuclei, corpus nodes keyed by DOI, lineage edges, evidence, relevance,

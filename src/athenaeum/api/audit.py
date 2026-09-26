@@ -80,8 +80,17 @@ async def _assert_audit_member(
 
 
 async def _statements_with_no_evidence(
-    session: AsyncSession, compose_document_id: uuid.UUID
+    session: AsyncSession, compose_document_id: uuid.UUID | None
 ) -> list[uuid.UUID]:
+    """Statements in the audited document that cite nothing at all.
+
+    Empty for a pasted-draft run, which has no compose document and no
+    statements: its equivalent concern — a claim whose citation could not be
+    resolved — is carried on the AuditDraftCitation rows instead, where it can
+    say *why* nothing was checked.
+    """
+    if compose_document_id is None:
+        return []
     doc = await session.get(ComposeDocument, compose_document_id)
     if doc is None:
         return []
