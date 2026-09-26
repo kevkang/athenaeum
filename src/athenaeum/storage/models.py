@@ -202,6 +202,11 @@ class Passage(Base):
             "source_check IN ('matches_source', 'differs_from_source', 'source_unavailable')",
             name="passages_source_check_chk",
         ),
+        CheckConstraint(
+            "source_check_corrected IS NULL OR source_check_corrected IN "
+            "('matches_source', 'differs_from_source', 'source_unavailable')",
+            name="passages_source_check_corrected_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -217,6 +222,12 @@ class Passage(Base):
     # sets it explicitly; there is deliberately no default, so a new path that
     # forgets fails loudly instead of silently claiming a match.
     source_check: Mapped[str] = mapped_column(String(30), nullable=False)
+    # The same quote re-checked by migration 0027 with the corrected
+    # comparison, kept beside the original rather than overwriting it: the
+    # first comparison had a bug that flagged genuine quotes, and the
+    # difference between the two verdicts has to stay inspectable. NULL on
+    # every passage the migration did not re-check.
+    source_check_corrected: Mapped[str | None] = mapped_column(String(30))
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checker_model: Mapped[str | None] = mapped_column(String(100))
@@ -789,6 +800,15 @@ class AuditRun(Base):
     __tablename__ = "audit_runs"
     __table_args__ = (
         CheckConstraint("status IN ('running', 'done', 'failed')", name="audit_runs_status_chk"),
+        CheckConstraint(
+            "quotes_checked IS NULL OR quotes_checked >= 0",
+            name="audit_runs_quotes_checked_chk",
+        ),
+        CheckConstraint(
+            "malformed_entries IS NULL OR (malformed_entries >= 0 "
+            "AND malformed_entries <= quotes_checked)",
+            name="audit_runs_malformed_entries_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -803,6 +823,12 @@ class AuditRun(Base):
     )
     model: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    # How much evidence this run put to the checker, and how many entries in
+    # its responses could not be used (synthesize/audit.py). NULL, not 0, on
+    # runs from before this was counted: they were never measured, and a 0
+    # would claim a clean response rate nobody observed.
+    quotes_checked: Mapped[int | None] = mapped_column(Integer)
+    malformed_entries: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -827,6 +853,15 @@ class AuditFinding(Base):
             "target_kind IN ('paper','passage','dataset','statement')",
             name="audit_findings_target_kind_chk",
         ),
+        CheckConstraint(
+            "verdict IS NULL OR verdict IN ('supported', 'misread', 'overreach', "
+            "'indeterminate', 'differs_from_source')",
+            name="audit_findings_verdict_chk",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="audit_findings_confidence_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -841,7 +876,18 @@ class AuditFinding(Base):
     target_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     quote: Mapped[str | None] = mapped_column(Text)
+    # Pass/fail result from before graded verdicts. The Audit panel still reads
+    # it until it switches to `verdict`.
     supported: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Graded verdict (domain/audit_verdicts.py). NULL on findings recorded
+    # before grading whose pass/fail result can't be split into misread,
+    # overreach or indeterminate after the fact.
+    verdict: Mapped[str | None] = mapped_column(String(30))
+    # Separate from the verdict: the quoted passage itself cites another work.
+    secondhand: Mapped[bool | None] = mapped_column(Boolean)
+    # The model's own stated confidence in its verdict, 0 to 1. Self-reported,
+    # so only meaningful once evaluation shows how well it tracks accuracy.
+    confidence: Mapped[float | None] = mapped_column(Float)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

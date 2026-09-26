@@ -307,6 +307,11 @@ class AuditRunOut(BaseModel):
     created_by: UUID | None
     model: str | None
     status: str
+    # How much evidence the checker was asked about, and how many of its
+    # answers could not be attached to a quote. Both None on runs from before
+    # the counting existed: unmeasured, which is not the same as zero.
+    quotes_checked: int | None = None
+    malformed_entries: int | None = None
     created_at: datetime
 
 
@@ -321,6 +326,10 @@ class AuditFindingOut(BaseModel):
     target_id: UUID
     quote: str | None
     supported: bool
+    # Graded fields (domain/audit_verdicts.py); null on findings recorded before grading.
+    verdict: str | None = None
+    secondhand: bool | None = None
+    confidence: float | None = None
     rationale: str
     created_at: datetime
 

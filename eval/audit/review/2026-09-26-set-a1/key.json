@@ -1,0 +1,892 @@
+{
+  "seed": 20260926,
+  "stratum_sizes_in_set": {
+    "disagreement": 43,
+    "support_agreement": 57,
+    "contradict_agreement": 100
+  },
+  "items": [
+    {
+      "review_id": "r001",
+      "item_id": "scifact-867-14340571-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that oats-avenin-specific and -reactive intestinal T-cell lines were established from patients who tolerated oats, which is direct evidence that oat-specific inflammatory (T-)cells can be present in the small bowel mucosa of oat-tolerant coeliac patients."
+    },
+    {
+      "review_id": "r002",
+      "item_id": "scifact-1390-2890952-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states, nearly verbatim, that mcm5s2U is required for proper decoding of NNR codons in eukaryotes, matching the claim exactly."
+    },
+    {
+      "review_id": "r003",
+      "item_id": "scifact-873-1180972-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote shows a correlation between adoptees' BMI and their biological full siblings' BMI, which actually indicates a genetic influence on body weight, not an environmental one. It directly contradicts, rather than supports, the claim that obesity is determined solely by environmental factors. | This quote reports a weaker but still present correlation between adoptees' weight and half-siblings' BMI, again pointing to a genetic (degree-of-relatedness) effect on body weight. This is evidence for genetic influence, not evidence that environment alone determines obesity, so it does not support the claim as stated."
+    },
+    {
+      "review_id": "r004",
+      "item_id": "scifact-951-21414718-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quoted text only reports a physical interaction between TFF1 and Piezo1 (via co-IP and co-localisation) in GES-1 cells. It says nothing about cell migration, mechanosensing, or Piezo1 functioning as a sensor for migratory behavior. To support the claim, evidence would need to show Piezo1 activity or expression being required for or correlated with epithelial cell migration (e.g., via functional migration assays, channel activation studies, or knockdown/knockout effects on migration)."
+    },
+    {
+      "review_id": "r005",
+      "item_id": "scifact-106-5151024-set1-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote says the opposite of the claim: it states that ambulatory monitoring would REDUCE misdiagnosis and save costs, implying it is a more accurate diagnostic strategy than clinic-only readings, not that it is 'inaccurate.' This evidence actually supports the accuracy/utility of ambulatory monitoring, contradicting the claim it is cited for."
+    },
+    {
+      "review_id": "r006",
+      "item_id": "scifact-612-9638032-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote actually indicates the opposite relationship: increasing microtubule acetylation prevents mutant LRRK2 from associating with microtubules and restores axonal transport, implying a beneficial/protective effect rather than exacerbation. It says nothing about locomotor deficits or a worsening phenotype in vivo. This evidence contradicts, or at least does not support, the claim that increased acetylation exacerbates locomotor deficits caused by Roc-COR domain mutations."
+    },
+    {
+      "review_id": "r007",
+      "item_id": "scifact-306-7821634-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote states the opposite relationship: DUSP4 overexpression INCREASED apoptosis (in response to chemotherapy), while DUSP4 depletion dampened this apoptotic response. This directly contradicts the claim that DUSP4 decreases apoptosis. The cited evidence actually supports DUSP4 promoting/increasing apoptosis, not decreasing it."
+    },
+    {
+      "review_id": "r008",
+      "item_id": "scifact-1259-24341590-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly demonstrates that CYP2D6 genotype-based metabolizer status (a genetic trait affecting tamoxifen metabolism) is associated with differences in clinical outcomes (event-free and disease-free survival), which supports the claim that the relationship between tamoxifen metabolism capacity and outcome depends on genetic make-up. Note, however, that the quote shows no significant effect on overall survival, so the evidence only partially and non-uniformly supports the claim across all outcome measures."
+    },
+    {
+      "review_id": "r009",
+      "item_id": "scifact-278-14376683-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim states the ComYMV genome is 2140 base pairs, but the cited quote explicitly states the genome is 7489 bp in size. This is a direct numerical contradiction, not support \u2014 the evidence actually refutes the claim's figure rather than substantiating it."
+    },
+    {
+      "review_id": "r010",
+      "item_id": "scifact-356-6144337-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote shows that AgDscam splice-form expression changes in response to specific pathogens, which supports the idea that Dscam1 is hypervariable and pathogen-responsive. However, it does not establish that Dscam1 functions as a 'pattern-recognition receptor'\u2014a term implying direct binding/recognition of conserved pathogen-associated molecular patterns. The cited evidence describes transcriptional/splicing specificity, not receptor-ligand binding or recognition function. To support the specific claim, evidence demonstrating that Dscam1 isoforms physically bind pathogen surface molecules or mediate recognition (e.g., opsonization, agglutination, binding assays) would be needed."
+    },
+    {
+      "review_id": "r011",
+      "item_id": "scifact-977-39264456-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This fragment only reports that a marker (unspecified which one, likely a cytokine) is significantly higher in NSCLC patients than controls. It does not identify the marker as a pro-inflammatory cytokine, does not describe its behavior 'during tumor development' (progression/stages), and does not establish a general claim about pro-inflammatory cytokine upregulation in tumorigenesis\u2014only a single cross-sectional comparison between patients and controls for one unnamed analyte. | This is merely the numeric continuation of the previous sentence (the control group mean and p-value). It contains no additional information about cytokines, inflammation, or tumor development, and thus cannot support the broad claim about pro-inflammatory cytokines being upregulated during tumor development."
+    },
+    {
+      "review_id": "r012",
+      "item_id": "scifact-197-2177022-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote explicitly refers to CCL19 as 'the second CCR7 ligand,' directly stating that CCL19 is a ligand for CCR7, which matches the claim exactly."
+    },
+    {
+      "review_id": "r013",
+      "item_id": "scifact-111-13513790-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote asserts that AG-haESCs can be used as a fertilization agent via oocyte injection to produce live animals\u2014it speaks to their downstream application, not to the claim that they 'can be derived and genetically manipulated in vitro.' It presupposes derivation and genetic tractability rather than demonstrating or describing the derivation process or the in vitro genetic manipulation methodology itself. A quote describing successful derivation of AG-haESC lines and/or specific genetic modification (e.g., gene targeting, CRISPR editing) performed in these cells in vitro would be needed to support this specific claim."
+    },
+    {
+      "review_id": "r014",
+      "item_id": "scifact-860-16066726-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote actually contradicts the claim. It states that in the absence of TNF, granuloma formation was accelerated and subsequently led to necrotic death of macrophages and granuloma breakdown, indicating an abnormal, pathological process rather than 'normal' granuloma formation. The cited evidence shows TNF is required for stable, normal granuloma formation, not that normal granulomas form without it."
+    },
+    {
+      "review_id": "r015",
+      "item_id": "scifact-67-21295300-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim states that Cdk5 directly phosphorylates ATM, but the quoted text only says Cdk5 activation 'serves as a critical signal to initiate the ATM response' - it does not mention phosphorylation of ATM or specify the biochemical mechanism by which Cdk5 acts on ATM. This is a much weaker and more general statement than the specific molecular claim of phosphorylation, and could refer to indirect signaling rather than direct enzymatic modification."
+    },
+    {
+      "review_id": "r016",
+      "item_id": "scifact-1334-11899391-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts subtle perturbations in Treg *development* in Type 1 Diabetes, but the quoted evidence discusses Treg *function* (impaired ability to control proinflammatory responses) rather than developmental abnormalities. Functional deficiency and developmental perturbation are related but distinct concepts \u2014 the quote does not address how Tregs develop (e.g., thymic selection, differentiation pathways) in T1D patients, only that mature Tregs isolated from patients behave differently in suppression assays. A citation supporting a developmental claim should reference data on Treg ontogeny, numbers arising from developmental processes, or phenotypic/epigenetic markers of developmental origin, not just functional suppression assays."
+    },
+    {
+      "review_id": "r017",
+      "item_id": "scifact-1266-37480103-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote does show increased breast cancer risk with higher placental weight across two pregnancies, supporting the first part of the claim (dose-response with placental weight). However, it says nothing about menopausal status or comparing premenopausal vs postmenopausal breast cancer risk, so it does not substantiate the specific claim that the association is strongest for premenopausal breast cancer. A separate stratified analysis by menopausal status would be needed to support that part of the claim."
+    },
+    {
+      "review_id": "r018",
+      "item_id": "scifact-121-31460499-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that antimicrobial agents are becoming LESS EFFECTIVE due to usage pressure (i.e., a statement about resistance emerging/increasing from selective pressure). The quoted passage does not make this assertion at all - instead it explicitly frames overuse as historically 'seen as the main culprit' and 'the answer' as reducing use, then the title itself signals the article is pushing back against this view ('Overusing antibiotics is not the only cause and reducing use is not the only solution'). The quote is describing a prior consensus view that the article appears to be complicating or challenging, not asserting the claim as fact. It does not directly state that antimicrobial effectiveness has declined due to usage pressure - it references 'warning signs of antimicrobial resistance' and reports 'signalling dangers,' which is related to the topic but doesn't support the specific causal claim being made. Additionally, the source seems to argue against treating overuse as the primary driver, which undermines rather than supports the claim as stated."
+    },
+    {
+      "review_id": "r019",
+      "item_id": "scifact-792-3610080-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote discusses the cause of misunderstandings (lack of patient participation), not their consequence. It does not mention adherence or outcomes, so it doesn't support the specific claim that misunderstandings lead to non-adherence. | This quote directly states that the misunderstandings (referred to as 'They') were associated with adverse outcomes including non-adherence to treatment, which directly substantiates the claim linking misunderstandings to non-adherence."
+    },
+    {
+      "review_id": "r020",
+      "item_id": "scifact-1110-13770184-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote actually contradicts the claim rather than supporting it. It lists nutrition-related risk factors (high BMI, childhood undernutrition, high total cholesterol, diets high in sodium) among the top ten global contributors to disease burden (DALYs), which demonstrates that suboptimal nutrition IS strongly associated with/predictive of chronic disease burden. The evidence shows the opposite of what the claim asserts\u2014it should not be cited to support a claim that nutrition is NOT predictive of chronic disease."
+    },
+    {
+      "review_id": "r021",
+      "item_id": "scifact-990-16472469-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote states the opposite of the claim: it says pyridostatin INCREASES telomere fragility in BRCA2-deficient cells, not decreases it. This citation directly contradicts the claim rather than supporting it."
+    },
+    {
+      "review_id": "r022",
+      "item_id": "scifact-177-9669099-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that p53BERs produce p53-dependent eRNAs required for transcriptional enhancement of target genes and for p53-dependent cell-cycle arrest, which matches the claim's assertion that p53BER binding regulates p53 transcriptional activity and cell cycle arrest via eRNA production."
+    },
+    {
+      "review_id": "r023",
+      "item_id": "scifact-837-15928989-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote is about Lrh-1 (Nr5a2) function in the ovary (corpus luteum maintenance) and in uterine decidualization/placenta formation during pregnancy\u2014processes related to reproductive physiology, not to the developmental formation of endometrial tissue itself. 'Decidualization' refers to hormone-driven remodeling of already-formed endometrial stromal cells in adult cycling/pregnant tissue, not endometrial tissue development (e.g., embryonic/uterine gland development). The claim as stated implies a role in tissue development, which this evidence does not directly demonstrate; it shows a role in cyclical/pregnancy-associated function of already-differentiated endometrium. If the intended claim is about NR5A2's role in decidualization/reproductive function rather than developmental morphogenesis, the wording should be revised to match what the evidence actually supports."
+    },
+    {
+      "review_id": "r024",
+      "item_id": "scifact-130-27768226-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that OA articles are more immediately recognized and cited than non-OA articles, which matches the claim that open access articles are more likely to be cited than traditional (non-OA) journal articles. The correspondence is close, though 'more immediately recognized and cited' emphasizes citation speed/timing as well as volume, so if the claim is specifically about overall citation likelihood rather than speed, the author should confirm the underlying source's data covers citation counts/likelihood, not just citation timing."
+    },
+    {
+      "review_id": "r025",
+      "item_id": "scifact-565-16120395-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote states that RNA surveillance pathways play a role in preventing toxicity from inappropriate expression of the iron starvation response under iron-replete (i.e., high iron) conditions. This directly implies that loss of these pathways would lead to sensitivity under high iron conditions, matching the specific claim about absence of RNA surveillance causing iron sensitivity in S. cerevisiae."
+    },
+    {
+      "review_id": "r026",
+      "item_id": "scifact-1019-11603066-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quoted sentence is a generic closing statement noting that the study offers insight into specificity in two-component signaling. It says nothing about phosphotransfer rates, their speed, or how rapid kinetics specifically govern fidelity. To support this claim, the citation would need a quote presenting data or discussion linking fast phosphotransfer rates to signaling specificity/fidelity, which this excerpt does not provide."
+    },
+    {
+      "review_id": "r027",
+      "item_id": "scifact-340-7098463-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote states that participants randomized to surgical therapy (laparoscopic adjustable gastric banding, per the study context) were more likely to achieve diabetes remission than those on conventional therapy, which directly supports the claim that remission occurs less frequently with conventional therapy than with surgical treatment."
+    },
+    {
+      "review_id": "r028",
+      "item_id": "scifact-1005-2734421-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly shows that ligation of RANK (part of the RANK-RANKL pathway) on fetal thymic stroma induces mTEC development, which substantiates the claim that RANK-RANKL signalling is linked to mTEC development. However, the quote does not explicitly mention Aire-expressing mTECs specifically, only 'mTEC development' generally, so it partially supports but doesn't fully confirm the Aire-specific aspect of the claim."
+    },
+    {
+      "review_id": "r029",
+      "item_id": "scifact-940-12258338-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote reports a 66% DECREASE in preventable adverse drug events after an intervention (pharmacist participation in rounds), which directly contradicts the claim that pharmacist attendance INCREASES adverse events. The evidence actually supports the opposite conclusion \u2014 that pharmacist attendance on rounds reduces adverse events \u2014 so it cannot be cited to support this claim as stated."
+    },
+    {
+      "review_id": "r030",
+      "item_id": "scifact-184-12827098-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote describes a specific experimental finding about host macrophages retaining proliferative capacity when donor macrophage development is compromised after bone marrow transplantation. This is a narrow, conditional observation about competitive dynamics under a specific experimental perturbation\u2014it does not establish the broad, general claim that bone marrow cells don't contribute to adult macrophage compartments. In fact, the quote implicitly acknowledges that donor (bone marrow-derived) macrophages can and do develop and populate tissues under normal conditions, which is the opposite of what the claim asserts. The quote is about a specific competitive/compensatory scenario, not a general statement on the lack of bone marrow contribution to macrophage pools."
+    },
+    {
+      "review_id": "r031",
+      "item_id": "scifact-902-10648422-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that triggering of PD-1 on monocytes by PD-L1 induced IL-10 production, which matches the specific claim that PD-1 triggering on monocytes enhances IL-10 production by monocytes."
+    },
+    {
+      "review_id": "r032",
+      "item_id": "scifact-1114-12824568-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly supports the core mechanistic claim: it describes surfactin-producing cells reducing friction to help matrix (exopolymer)-producing cells form bundles, which is the cooperative interaction described in the claim. However, the quote does not mention 'sliding abilities on specialized media' or the term 'Van Gogh bundles' specifically, so while the cooperative bundle-formation mechanism is supported, the specific terminology and the sliding-on-specialized-media detail are not directly evidenced by this quote alone."
+    },
+    {
+      "review_id": "r033",
+      "item_id": "scifact-32-12428497-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote states the opposite of the claim: it explicitly says GAVI eligibility IS associated with accelerated decisions to adopt Hib vaccine, whereas the claim asserts GAVI eligibility is NOT indicative of accelerated adoption. This evidence contradicts rather than supports the stated claim."
+    },
+    {
+      "review_id": "r034",
+      "item_id": "scifact-1128-33499189-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote discusses a reversible conformational change at CD3 upon ligand binding/dissociation and its requirement for T cell activation. It says nothing about TCR/CD3 microdomains or their role in inducing the immunologic synapse - these are distinct concepts (a conformational change in a receptor vs. spatial clustering/microdomain formation needed for synapse assembly). The cited evidence does not address microdomains or synapse formation at all, so it does not substantiate the specific claim made."
+    },
+    {
+      "review_id": "r035",
+      "item_id": "scifact-1090-17628888-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote only describes that scanning force microscopy shows the Smc5-Mms21 heterodimer undergoes ATP-dependent physical remodeling. It says nothing about Mms21's SUMO E3 ligase activity being halted, activated, or otherwise regulated by this remodeling. The claim asserts a specific functional consequence (inhibition of Mms21 ligase activation) that is not addressed by this structural observation, which is consistent with many outcomes (activation, inhibition, or no effect on enzymatic activity)."
+    },
+    {
+      "review_id": "r036",
+      "item_id": "scifact-1379-27123743-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim generalizes the birthweight-breast cancer link to women overall ('later in life'), but the quote specifically states the positive association was found for premenopausal breast cancer, not postmenopausal cancer. Since 'later in life' typically implies postmenopausal risk, the evidence actually undercuts rather than supports the claim as stated. The claim should be qualified to specify premenopausal breast cancer risk."
+    },
+    {
+      "review_id": "r037",
+      "item_id": "scifact-1009-1982286-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote establishes that RUNX1 acts as a tumor-suppressor gene in T-ALL and that TLX1/TLX3 sit atop an oncogenic network, but it does not state that RUNX1 is specifically downregulated or mutated in TLX1 T-ALL. The claim requires evidence of a specific molecular alteration (downregulation or mutation) tied to TLX1-driven leukemia, which this general summary statement does not provide."
+    },
+    {
+      "review_id": "r038",
+      "item_id": "scifact-71-1127562-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote establishes that SRGP-1 is a GAP for CED-10/Rac1 in engulfing cells, which is relevant background but does not address the claim that activation of CED-10 kills viable cells in srgp-1 mutants. It says nothing about cell killing or viability outcomes. | This quote describes srgp-1 loss-of-function promoting removal of cells brought 'to the verge of death' by sublethal insults, i.e., clearance of already-compromised cells. It does not state that CED-10 activation kills otherwise viable, healthy cells; it describes enhanced engulfment of cells already damaged by external insults, which is a different and weaker claim than actively killing viable cells."
+    },
+    {
+      "review_id": "r039",
+      "item_id": "scifact-108-6191684-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote compares combined therapy (antidepressant + stress management) against antidepressant alone, stress management alone, and placebo, but does not report how antidepressant monotherapy (i.e., amitriptyline alone) compared to placebo. In fact, the antidepressant-alone success rate (38%) is not shown to be statistically superior to placebo (29%) in this excerpt\u2014no p-value is given for that specific comparison. Also, the quote doesn't specify that the antidepressant used was amitriptyline. As cited, this evidence supports a claim about combined therapy being superior to monotherapy, not the claim that amitriptyline alone is an effective treatment for tension-type headache."
+    },
+    {
+      "review_id": "r040",
+      "item_id": "scifact-1297-9167230-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote reports hospital admissions for severe (11.9 million) and very severe (3.0 million) acute lower respiratory infection (ALRI) episodes in young children in 2010, not 30 million total pneumonia cases. Neither figure matches or sums to 30 million, and the quote concerns hospitalized severe cases, not overall pneumonia incidence. This evidence does not substantiate the claim of 30 million total pneumonia cases; a different source estimating total pneumonia incidence would be needed."
+    },
+    {
+      "review_id": "r041",
+      "item_id": "scifact-971-27873158-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The claim asserts that HPV-based primary screening has higher longitudinal sensitivity than cytology for detecting CIN2+. The cited quote states HPV-based screening is more effective at preventing invasive cancer by detecting persistent high-grade lesions earlier and providing a longer low-risk period. This is a related but broader/different endpoint (cancer prevention and protection duration) rather than a direct statement about comparative longitudinal sensitivity for CIN2 detection specifically. The quote implies earlier detection of high-grade lesions, which is consistent with higher sensitivity, but it does not explicitly quantify or state 'higher longitudinal sensitivity' nor specifically reference CIN2 (as opposed to CIN3+ or invasive cancer). The author should cite a source or portion of the source that directly reports sensitivity/specificity comparisons for CIN2 detection over multiple screening rounds, rather than relying on the general effectiveness conclusion."
+    },
+    {
+      "review_id": "r042",
+      "item_id": "scifact-979-11659421-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim states that progerin induces premature aging 'in stem cells,' but the quoted evidence describes effects in iPSC-derived fibroblasts and neurons\u2014i.e., differentiated cell types derived from stem cells, not in the stem cells themselves. The quote supports a claim about progerin inducing aging markers in differentiated iPSC-derived cells, not in stem cells per se. To support the stated claim, evidence showing aging induction directly in undifferentiated stem cells (e.g., iPSCs or ESCs) would be needed."
+    },
+    {
+      "review_id": "r043",
+      "item_id": "scifact-499-26064662-set2-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote shows that HbA1c-defined prevalence of prediabetes/diabetes was LOWER in SCT participants than non-SCT participants. This suggests HbA1c-based diagnosis under-detects dysglycemia in SCT individuals (i.e., HbA1c underestimates glycemic abnormality, or equivalently underestimates blood glucose levels for a given glycemic state), which is the opposite direction of the claim that HbA1c 'overestimates glycemic control.' Actually, if HbA1c underestimates true glucose levels (biasing low), that would mean it makes people look more healthy than they are, which is consistent with 'overestimating glycemic control' (i.e., falsely suggesting better control than actual glucose levels indicate). But the quote alone reports only a difference in prevalence rates between SCT and non-SCT groups using HbA1c; it does not establish that this difference reflects a bias in HbA1c relative to true glycemic status (e.g., compared to fasting glucose or OGTT). Without a reference standard comparison, the quote cannot support the specific mechanistic claim that HbA1c overestimates glycemic control in black individuals with SCT it merely shows an association, not the direction or cause of a measurement bias."
+    },
+    {
+      "review_id": "r044",
+      "item_id": "scifact-210-13794374-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote states that the COPI complex is required for limiting lipid storage, which is a specific example of involvement in lipid homeostasis (regulation of lipid storage levels). This directly substantiates the general claim that COPI coatmer plays a role in lipid homeostasis, though the claim is broader than the single function (limiting storage) described in the quote."
+    },
+    {
+      "review_id": "r045",
+      "item_id": "scifact-621-1642727-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The cited study population was adults with 'subjective memory impairment,' not individuals with Alzheimer's disease. Subjective memory impairment is a distinct and much milder condition (self-perceived memory issues without diagnosed dementia), often considered a possible risk factor for future decline, but it is not the same as having Alzheimer's. The claim overstates the evidence by extending findings from a non-Alzheimer's population to Alzheimer's patients specifically."
+    },
+    {
+      "review_id": "r046",
+      "item_id": "scifact-1333-1649738-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that two variants at chromosome 6q21 were identified as associated with second malignant neoplasms (SMNs) in Hodgkin's lymphoma survivors treated with radiation as children, matching the claim's specificity about locus, number of variants, radiation therapy, and pediatric population."
+    },
+    {
+      "review_id": "r047",
+      "item_id": "scifact-1231-13905670-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that the minor G allele of rs12212067 in FOXO3A is associated with a milder course of Crohn's disease, which matches the claim of 'less severe symptoms' of Crohn's Disease."
+    },
+    {
+      "review_id": "r048",
+      "item_id": "scifact-521-34873974-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that the method (HSCT-T dosage, per context) may not be appropriate for patients presenting less than three hours after symptom onset, which matches the claim's assertion that HSCT-T may not be diagnostic if symptom onset is less than 3 hours before AMI. The timing threshold and the limitation on diagnostic appropriateness align well."
+    },
+    {
+      "review_id": "r049",
+      "item_id": "scifact-355-12800122-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that supracellular actomyosin structures (i.e., multicellular cable-like actomyosin assemblies) are found at boundaries in wing imaginal discs. The quoted evidence only states that local increases in Myosin II-dependent cell bond tension direct cell sorting at compartment boundaries. This speaks to increased tension at individual cell bonds and its role in sorting, but does not mention or describe a 'supracellular' actomyosin structure (a cable spanning multiple cells) or its presence at boundaries. The quote supports a related but narrower/different claim about bond tension and sorting mechanism, not the existence of supracellular actomyosin structures at boundaries."
+    },
+    {
+      "review_id": "r050",
+      "item_id": "scifact-314-4347374-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote only describes APOBEC1's role in RNA editing of apoB mRNA (a cytosine-to-uracil edit in a completely different biological context). It says nothing about deamination of cytidine on minus-strand viral DNA or G-to-A mutation in viral genomes, so it does not support the specific mechanistic claim being made. | This quote directly confirms the core claim: APOBEC3G acts during reverse transcription to cause G-to-A hypermutation in nascent retroviral DNA, which is the functional consequence of cytidine deamination on the minus strand. It supports the outcome described in the claim, though it doesn't explicitly mention 'minus strand' terminology."
+    },
+    {
+      "review_id": "r051",
+      "item_id": "scifact-227-26973393-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote confirms that patients eventually develop resistance to EGFR-targeted therapies, but it says nothing about the mechanisms by which this resistance occurs. The claim specifically asserts that resistance arises 'through several mechanisms,' which is not addressed or supported by this quote at all\u2014the quote only establishes that resistance happens universally, not how or why."
+    },
+    {
+      "review_id": "r052",
+      "item_id": "scifact-1028-13923140-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote discusses reduced IL-2 production and its link to autoimmune dysregulation, but it does not address 'responsiveness to IL-2' in regulatory T cells\u2014i.e., how Tregs sense or react to IL-2 signaling. The claim specifically concerns Treg responsiveness/sensitivity to IL-2, whereas this evidence concerns IL-2 production levels, a related but distinct mechanism. | This quote links reduced IL-2 production to reduced regulatory T cell function, and connects to immune homeostasis generally, but does not specifically mention reduced Treg responsiveness to IL-2 (i.e., IL-2 signaling/sensitivity in Tregs) nor does it explicitly tie this to Type 1 Diabetes or autoimmune disease. It supports a claim about IL-2 production affecting Treg function, not about Treg IL-2 responsiveness per se or its specific link to T1D."
+    },
+    {
+      "review_id": "r053",
+      "item_id": "scifact-1239-4427392-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that myocardial progenitors are of exclusively endodermal origin, but the quoted text states the opposite: cardiovascular lineages (including presumably myocardial) arise from a Flk-1+ progenitor derived from mesoderm specification, not endoderm. This evidence directly contradicts the claim rather than supporting it."
+    },
+    {
+      "review_id": "r054",
+      "item_id": "scifact-189-4421578-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that 10E8 did not bind phospholipids, which matches the claim (aside from a likely typo '10EB' vs '10E8'). This directly substantiates the specific assertion of no phospholipid affinity."
+    },
+    {
+      "review_id": "r055",
+      "item_id": "scifact-298-39381118-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that MOMP during the mitochondrial apoptotic pathway is responsible for release of cytochrome c and other intermembrane space proteins, which explicitly confirms cytochrome c release from the intermembrane space during apoptosis, matching the claim."
+    },
+    {
+      "review_id": "r056",
+      "item_id": "scifact-779-13001323-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim is about Sirt1 knockout (loss-of-function) in Sf1 neurons increasing susceptibility to diet-induced obesity and insulin resistance. The quoted evidence instead describes SIRT1 overexpression (gain-of-function) in SF1 neurons conferring resistance to diet-induced obesity and insulin resistance. This is the opposite manipulation and phenotype direction; it does not report data on Sirt1-deficient mice. While one might infer a symmetric effect, the quote does not actually state or demonstrate the knockout phenotype claimed, so it does not substantiate the specific assertion made."
+    },
+    {
+      "review_id": "r057",
+      "item_id": "scifact-1263-3981729-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote establishes that TAL effectors recognize DNA via tandem repeats generally, but it says nothing about the RVD specifically or its role in specifying nucleotide-amino acid contact. It supports the broader topic but not the specific mechanistic claim about RVDs. | This quote directly states that each repeat uses two hypervariable residues (RVDs at positions 12/13) to target a specific base pair, which is precisely the nucleotide-amino acid specificity claim being made."
+    },
+    {
+      "review_id": "r058",
+      "item_id": "scifact-1171-18956141-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that NEMO prevents intestinal inflammation by inhibiting RIPK1 kinase activity-mediated IEC (intestinal epithelial cell) death, which matches the claim essentially verbatim in substance, using standard abbreviations for the same terms (NEMO = NF-\u03baB essential modulator, IEC = epithelial cell)."
+    },
+    {
+      "review_id": "r059",
+      "item_id": "scifact-93-2692522-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote only shows that macrophages lacking caspase-1, ASC, or NLRP3 (NALP3) fail to produce IL-1\u03b2 in response to crystals in vitro. This supports the narrower claim that NLRP3 inflammasome components are required for crystal-induced IL-1\u03b2 activation, but it does not address 'aggravated inflammation' as an in vivo or pathological outcome, nor does it demonstrate that inflammation severity (beyond IL-1\u03b2 processing) depends on NLRP3 activation. The claim conflates IL-1\u03b2 processing with the broader, more specific concept of aggravated/exacerbated inflammation, which the quote does not directly establish."
+    },
+    {
+      "review_id": "r060",
+      "item_id": "scifact-30-24341590-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote shows a clear gradient: recurrence and mortality rates increase progressively from extensive to intermediate to poor metabolizer status. Since metabolizer status directly reflects the patient's capacity to metabolize tamoxifen, and the data show this status correlates with worse treatment outcomes (higher recurrence and mortality), this directly substantiates the claim that metabolic capacity influences tamoxifen treatment outcome."
+    },
+    {
+      "review_id": "r061",
+      "item_id": "scifact-1260-24341590-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that the metabolism-outcome relationship is INDEPENDENT of genetic make-up, but the quoted evidence directly contradicts this: it shows outcome differences (recurrence risk) stratified by CYP2D6 genotype categories (extensive/intermediate heterozygotes, poor metabolizers), which are genetically defined metabolizer phenotypes. This quote actually demonstrates that metabolism-outcome relationships are driven by genetic variation, not independent of it."
+    },
+    {
+      "review_id": "r062",
+      "item_id": "scifact-951-21414718-set3-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote is about Piezo1 acting as a binding partner for TFF1 in gastric cancer cell migration, not about Piezo1 functioning as a mechanosensor for migration broadly in epithelial cells. It supports a narrower, cancer-specific claim about a protein-protein interaction driving migration, not the general claim that Piezo1 channels serve as mechanosensory sensors for epithelial cell migration. To support the stated claim, evidence demonstrating Piezo1's role as a mechanosensitive channel detecting mechanical cues during migration in epithelial cells (not just its binding to TFF1) would be needed."
+    },
+    {
+      "review_id": "r063",
+      "item_id": "scifact-746-11291348-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that GSK-3-mediated phosphorylation of MafA on specific residues induces its ubiquitination (and degradation), which matches the claim that phosphorylation enhances ubiquitination."
+    },
+    {
+      "review_id": "r064",
+      "item_id": "scifact-1024-5373138-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote supports a general claim that CTCF anchor regions are frequently mutated in cancer cells and are conserved/functionally important, but it does not specifically mention 'recurrent' mutations (i.e., the same mutation or hotspot recurring across samples) nor does it tie these anchor sites specifically to being 'adjacent to oncogenes.' The claim adds two specific qualifiers\u2014recurrence and oncogene adjacency\u2014that are not addressed in the cited text."
+    },
+    {
+      "review_id": "r065",
+      "item_id": "scifact-39-13497630-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly shows that in a population not selected for infertility, women with elevated urinary FSH (a marker of diminished ovarian reserve) had statistically similar probabilities of conceiving over 6 and 12 cycles compared to women with normal FSH values. This directly substantiates the claim that diminished ovarian reserve does not by itself indicate infertility in an a priori non-infertile population, since the biomarker did not meaningfully predict reduced fecundability in this group."
+    },
+    {
+      "review_id": "r066",
+      "item_id": "scifact-242-2212067-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote reports a tight, reproducible 1:1 mode-locked relationship between the circadian clock and cell division, with mitosis occurring consistently 5h before the Rev-Erb\u03b1-YFP peak. This directly demonstrates predictability of mitosis timing from the circadian clock phase, which contradicts (not supports) the claim that cellular clocks are not predictive of mitosis timing. The cited evidence actually supports the opposite conclusion."
+    },
+    {
+      "review_id": "r067",
+      "item_id": "scifact-1158-12584053-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that the programme showed no difference in lifestyle outcomes at three years, which matches the claim that DESMOND demonstrates no significant impact on lifestyle outcomes. This is a direct, on-point citation."
+    },
+    {
+      "review_id": "r068",
+      "item_id": "scifact-1289-21239672-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote states macrolide antibiotic treatment in young infants was strongly associated with IHPS (infantile hypertrophic pyloric stenosis). Since erythromycin is a macrolide antibiotic, this supports the claim of an association between erythromycin use and hypertrophic pyloric stenosis, though note the quote refers to macrolides broadly rather than erythromycin specifically, so it's slightly less precise than a claim citing erythromycin alone would ideally warrant."
+    },
+    {
+      "review_id": "r069",
+      "item_id": "scifact-123-4883040-set1-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote states the opposite of the claim: it says ART is associated with a REDUCTION in TB incidence across CD4 strata, not an increase. The claim appears to have inverted the direction of the finding."
+    },
+    {
+      "review_id": "r070",
+      "item_id": "scifact-748-11291348-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that MafA UBIQUITINATION increases P/CAF recruitment, but the quoted evidence is about MafA PHOSPHORYLATION increasing transcriptional activity via P/CAF recruitment. These are different post-translational modifications, and the quote makes no mention of ubiquitination at all. This citation does not substantiate a claim about ubiquitination's effect on P/CAF recruitment."
+    },
+    {
+      "review_id": "r071",
+      "item_id": "scifact-108-22995579-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that amitriptyline significantly reduced headache frequency, duration, and analgesic use specifically in chronic tension-type headache patients, which matches the claim's specific assertion about efficacy in this population."
+    },
+    {
+      "review_id": "r072",
+      "item_id": "scifact-1228-25641414-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote directly contradicts the claim. It states the suicide rate after birth was 5.9 (lower than the general population), while the rate after miscarriage was 18.1 (higher than the population and higher than the birth rate). This means suicide rate after miscarriage is actually HIGHER than after live birth, not lower as the claim asserts."
+    },
+    {
+      "review_id": "r073",
+      "item_id": "scifact-370-1550937-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote describes signaling abnormalities (hyperactive STAT1/STAT3, impaired AP-1 activation) in Egr2/Egr3-deficient B and T cells, but it does not directly state or demonstrate that Egr2 regulates B/T cell homeostasis (e.g., cell numbers, survival, proliferation, or turnover). The claim is about homeostatic regulation, while the evidence is about intracellular signaling pathway alterations. A more direct citation would report effects on cell counts, apoptosis, or accumulation/autoimmunity phenotypes tied explicitly to homeostasis."
+    },
+    {
+      "review_id": "r074",
+      "item_id": "scifact-144-10582939-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quoted data report rates of biopsy-confirmed acute rejection (an efficacy endpoint related to rejection episodes), not measures of 'graft function' (e.g., serum creatinine, GFR, or renal function scores). The claim is specifically about graft function being better with MSC therapy than with anti-IL-2 receptor antibody induction, but the cited quote does not mention graft function at all, nor does it directly compare MSC therapy to anti-IL-2 receptor antibody induction\u2014the comparator group is simply 'controls,' whose induction regimen is not specified in this excerpt. To support the claim, the citation would need to explicitly identify the control group as receiving anti-IL-2 receptor antibody induction and report a graft function metric showing superiority for the MSC group."
+    },
+    {
+      "review_id": "r075",
+      "item_id": "scifact-709-22442133-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote reports a lower percentage of infants with atopic eczema in the n-3 LCPUFA supplemented group vs control (7% vs 12%, unadjusted RR 0.61, p=0.04), directly supporting the claim of an association between LCPUFA supplementation and lower rates of atopic eczema. Note however that the adjusted analysis (RR 0.64, p=0.06) did not reach conventional significance, so the association is somewhat borderline/mixed rather than robustly confirmed, which the claim should ideally qualify."
+    },
+    {
+      "review_id": "r076",
+      "item_id": "scifact-292-15048300-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote shows a concrete mismatch between real-world usage patterns (only 34.5%/44.2% using drugs long-term and daily) and the trial protocols (requiring daily use for 6-9 months) underlying coxib RCTs. This discrepancy between the population/usage conditions studied in the cRCTs and those seen in actual practice is a textbook example of an external validity problem, and since cost-effectiveness evaluations are typically built on such RCT data, this supports the claim that such evaluations lack external validity. However, the quote itself doesn't explicitly mention 'cost effectiveness' - it only supports the external validity portion of the claim, which is the more contestable part, so it is reasonably supportive though not a complete demonstration of the full claim."
+    },
+    {
+      "review_id": "r077",
+      "item_id": "scifact-788-4740447-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that biochemical evidence points to inhibition occurring at the level of NTP uptake or NTP binding by RNAP, which matches the claim that Microcin J25 inhibits NTP binding (assuming the surrounding text establishes Microcin J25 as the inhibitor in question)."
+    },
+    {
+      "review_id": "r078",
+      "item_id": "scifact-1187-52873726-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts a specific mechanistic sequence: the YAP1-TEAD complex forms, translocates into the nucleus, and then interacts with additional transcription factors and DNA-binding proteins to modulate transcription. The quoted evidence only states that YAP/TAZ act as transcription co-activators by interacting with TEAD family transcription factors\u2014it says nothing about nuclear translocation of the complex, nor does it mention any interaction with other transcription factors or DNA-binding proteins beyond TEAD itself. The quote supports a much narrower claim (YAP/TAZ-TEAD interaction drives gene expression) than the one being made, which requires evidence on nuclear translocation and downstream interactions with other regulatory proteins."
+    },
+    {
+      "review_id": "r079",
+      "item_id": "scifact-1368-2425364-set2-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that vitamin D deficiency affects the term of delivery (i.e., timing of birth, such as preterm vs. full-term). The cited conclusion instead lists associations with gestational diabetes, pre-eclampsia, and small-for-gestational-age infants\u2014none of which directly address delivery timing or gestational length. Preterm birth or 'term of delivery' is not mentioned at all in this quote, so it does not substantiate the specific claim being made. A citation explicitly linking vitamin D status to preterm birth or gestational age at delivery would be needed."
+    },
+    {
+      "review_id": "r080",
+      "item_id": "scifact-141-14437255-set5-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote states that auditory speech representation (i.e., auditory entrainment/tracking) is enhanced when visual speech shares the same timing, which directly matches the claim that congruent audiovisual information strengthens auditory entrainment. The 'shared timing' condition corresponds to congruence, and 'enhanced representation' corresponds to strengthened entrainment, so the quote substantiates the specific claim rather than just a related topic."
+    },
+    {
+      "review_id": "r081",
+      "item_id": "scifact-972-9764256-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that HPV-based primary screening has LOWER longitudinal sensitivity than cytology for detecting CIN2. The cited quote reports the opposite: significantly MORE cases of CIN2 or worse were detected in the intervention (presumably HPV) group than the control (cytology) group, with a relative risk above 1 favoring the intervention. This directly contradicts, rather than supports, the claim as stated."
+    },
+    {
+      "review_id": "r082",
+      "item_id": "scifact-857-43334921-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote shows that aspirin/NSAID use is associated with a substantially lower risk of colorectal cancer in the majority genotype group (OR 0.66, highly significant), which does support the general claim that NSAIDs have anticancer potential. However, the claim as stated is broad ('anticancer indications' in general), while the evidence is narrowly about colorectal cancer risk and is genotype-dependent, even showing increased risk in a minority subgroup. The citation should be qualified to specify colorectal cancer and genotype-dependence rather than presented as general support for NSAIDs as anticancer agents across cancer types."
+    },
+    {
+      "review_id": "r083",
+      "item_id": "scifact-443-10165258-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "This quote directly demonstrates that loss of Gata3 reduces LT-HSC numbers and cycling, which is direct experimental evidence that GATA-3 is important for HSC function. | This shows Gata3 mutant progenitors fail to respond properly to myelosuppressive stress by increasing cycling, supporting the claim that GATA-3 is functionally important for HSC/progenitor behavior under stress conditions. | This is a direct summary statement asserting GATA-3's requirement for normal LT-HSC number and cell cycle entry, which directly and explicitly supports the claim."
+    },
+    {
+      "review_id": "r084",
+      "item_id": "scifact-795-8551160-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote only mentions in passing that mitochondria 'participate in... apoptosis' alongside other functions like metabolism and calcium signaling. It does not establish or elaborate that this role is 'major' or central compared to other apoptotic mechanisms\u2014it's a brief, general listing rather than substantive evidence of the specific claim of a major/dominant role in apoptosis. To support this claim, a citation should discuss the extent or centrality of mitochondrial involvement in apoptotic pathways (e.g., cytochrome c release, caspase activation), not just note participation as one of several functions."
+    },
+    {
+      "review_id": "r085",
+      "item_id": "scifact-60-13899137-set1-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote directly contradicts the claim. It states that ART scale-up in South Africa is estimated to have reduced HIV incidence by 17-32% compared to a no-ART scenario, which implies ART reduces transmission (i.e., reduces infectiousness of HIV-positive people on treatment). This is the opposite of the claim that ART has 'no effect' on infectiousness."
+    },
+    {
+      "review_id": "r086",
+      "item_id": "scifact-1102-3874000-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that on stiff matrices, hESCs show elevated integrin-dependent GSK3/Src activity that promotes beta-catenin degradation and inhibits differentiation, which matches the claim's assertion of stiffness inhibiting (mesodermal) differentiation via integrin-dependent beta-catenin degradation. One caveat: the quote does not specify 'mesodermal' differentiation explicitly, so if the source's context of 'differentiation' isn't specifically mesodermal, this claim slightly overstates specificity."
+    },
+    {
+      "review_id": "r087",
+      "item_id": "scifact-1089-17628888-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote only shows that scanning force microscopy revealed ATP-dependent physical remodeling of the Smc5-Mms21 heterodimer's shape/structure. It does not mention Mms21's SUMO E3 ligase activity being activated, nor does it establish a causal link between the observed remodeling and enzymatic activation. The claim that this remodeling 'drives the activation' of Mms21 as a SUMO ligase is an inferential leap not directly supported by this structural observation alone."
+    },
+    {
+      "review_id": "r088",
+      "item_id": "scifact-394-11360768-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts an association between excess gestational weight gain and obesity-related pregnancy outcomes, but the quoted conclusion is about the effectiveness of dietary/lifestyle interventions in reducing weight gain and improving outcomes. It does not establish or even directly state an association between excess weight gain and obesity-related outcomes; that link is merely implied, not demonstrated, by evidence about intervention efficacy. A citation more directly supporting this claim would report an observed association (e.g., epidemiological data linking excess GWG to outcomes like macrosomia, cesarean delivery, or postpartum weight retention) rather than intervention trial conclusions."
+    },
+    {
+      "review_id": "r089",
+      "item_id": "scifact-1135-33370-set1-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The cited quote directly contradicts the claim. It explicitly states that A20 (TNFAIP3) mutations found in lymphoma (supporting a tumor suppressor role there) have NOT been found in glioma, and that the authors' own data suggest A20 acts as a 'tumor enhancer' in glioma by promoting glioma stem cell (GSC) survival\u2014the opposite of a tumor suppressor role. This evidence should not be cited to support 'TNFAIP3 is a glioblastoma tumor suppressor'; if anything it supports the reverse conclusion for glioma specifically."
+    },
+    {
+      "review_id": "r090",
+      "item_id": "scifact-1274-4406819-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "This quote describes PAAR proteins sharpening the VgrG spike and attaching effector domains to the spike/tip apparatus generally, but it does not specifically discuss the E. coli T6SS antibacterial effector or confirm that toxic effector proteins are carried at the inner tube tip in E. coli. The claim specifies E. coli and 'inner tube' tip, while the quote is about the VgrG spike (not explicitly the Hcp inner tube) in a general, unspecified organismal context. | This quote confirms PAAR proteins sharpen the T6SS spike tip via crystal structures, but does not mention E. coli specifically, nor does it state that toxic effector proteins are carried at this tip. It supports a structural claim about PAAR-VgrG complexes, not the specific claim about toxic effector cargo on the inner tube tip in E. coli."
+    },
+    {
+      "review_id": "r091",
+      "item_id": "scifact-963-4162857-set0-contradict",
+      "stratum": "contradict_agreement",
+      "source_label": "CONTRADICT",
+      "source_verdict": "misread",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim asserts that pre-mRNAs bound by spliceosomal components are LESS stable than unassociated substrates, but the quoted text says the opposite: it proposes that coupling transcription to splicing GUARANTEES AN EXTENDED half-life of nascent pre-mRNAs. This directly contradicts the direction of the claim rather than supporting it. To support the claim as stated, evidence would need to show spliceosome-associated pre-mRNAs are degraded faster or are less stable than free/unassociated substrates."
+    },
+    {
+      "review_id": "r092",
+      "item_id": "scifact-367-27099731-set1-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that early screening echocardiography (before day 3) was associated with lower in-hospital mortality in extremely preterm infants, which matches the claim. Note the quote uses 'associated with' (observational cohort finding), so the claim's causal-sounding phrase 'decreases' slightly overstates the evidence's correlational nature, but the core substance\u2014early PDA screening linked to lower in-hospital mortality\u2014is directly supported."
+    },
+    {
+      "review_id": "r093",
+      "item_id": "scifact-1378-2488880-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quote specifically limits the increased female mortality risk to hospital-acquired pneumonia, not pneumonia in general, and even explicitly notes that gender may not be predictive of mortality for infections broadly. The claim as stated is a general assertion about pneumonia mortality by sex, which overstates what this evidence shows. To fully support the claim, the author should either narrow the claim to hospital-acquired pneumonia specifically or cite additional evidence covering community-acquired or general pneumonia cases."
+    },
+    {
+      "review_id": "r094",
+      "item_id": "scifact-152-15488881-set1-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quoted sentence only asserts that EBI2 adds a new dimension to B cell migration important for coordinating rapid versus long-term antibody responses. It says nothing about plasmablast differentiation requiring 'continuous' expression of EBI2, nor does it address the specific mechanism of antibody production via sustained EBI2 expression. The claim is about a specific temporal/mechanistic requirement (continuous expression driving plasmablast differentiation and antibody production), while the quote is a general summary statement about EBI2's role in migration and timing of responses. This is a mismatch between a broad topic-level statement and a specific mechanistic claim."
+    },
+    {
+      "review_id": "r095",
+      "item_id": "scifact-272-11614737-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The claim states combination NRT with varenicline OR bupropion is more effective than varenicline monotherapy, but the quote only compares a single 'combination therapy' group to varenicline monotherapy - it does not specify what the combination consists of (whether it's NRT+varenicline vs NRT+bupropion, or something else), so it cannot substantiate a claim about two distinct combination arms (varenicline combo and bupropion combo) both outperforming varenicline alone. Additionally, the point-prevalence abstinence result (56.2% vs 48.6%) was not statistically significant (P=.09), so even for the single comparison shown, only one of the two outcome measures supports 'more effective,' while the other shows a non-significant trend. The evidence does not address a bupropion-combination arm at all."
+    },
+    {
+      "review_id": "r096",
+      "item_id": "scifact-1104-3898784-set2-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that prior NOAC (direct oral anticoagulant) users had lower in-hospital mortality than prior warfarin users, with statistically significant ARD and AOR values, which precisely matches the claim being made."
+    },
+    {
+      "review_id": "r097",
+      "item_id": "scifact-971-46695481-set0-support",
+      "stratum": "disagreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "not_supported",
+      "audit_rationale": "The quoted background statement only establishes that HPV-based screening increases cross-sectional/single-round sensitivity for detecting CIN2/3 compared to cytology\u2014it explicitly states the longitudinal implications (overdiagnosis vs. genuine protective effect over time) are 'unknown.' The claim asserts a specific finding about 'longitudinal sensitivity,' which is a distinct concept (cumulative detection over repeated screening rounds) that this background sentence does not address or support; it merely frames the open question the study aims to investigate, not a result confirming higher longitudinal sensitivity."
+    },
+    {
+      "review_id": "r098",
+      "item_id": "scifact-529-25413327-set0-support",
+      "stratum": "support_agreement",
+      "source_label": "SUPPORT",
+      "source_verdict": "supported",
+      "audit_verdict": "supported",
+      "audit_rationale": "The quote directly states that human ES cell lines derived from blastocysts can form derivatives of all three embryonic germ layers, which matches the claim precisely."
+    }
+  ]
+}

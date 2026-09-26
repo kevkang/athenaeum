@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     # summarize_model/zotero_find_model below: this is the credibility-
     # critical path, not a place to economize.
     checker_model: str = "claude-sonnet-5"
+    # An audit fails rather than reports when more than this share of its
+    # evidence checks come back unusable (synthesize/audit.py). A skipped
+    # check leaves a citation recorded as unsupported without anything having
+    # judged it, so past some rate the findings accuse an author's citations
+    # on the strength of a broken response. 5% is a starting point, not a
+    # measured value: nothing yet says what rate is normal for this model.
+    audit_malformed_threshold: float = 0.05
     summarize_model: str = "claude-haiku-4-5-20251001"
     zotero_find_model: str = "claude-haiku-4-5-20251001"
 

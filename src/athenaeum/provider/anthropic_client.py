@@ -13,6 +13,10 @@ class AnthropicProvider:
     def __init__(self, api_key: str, model: str) -> None:
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
         self.model = model
+        # Running token totals across every call made through this provider, so
+        # a batch job (an evaluation run, say) can report what it actually used.
+        self.input_tokens = 0
+        self.output_tokens = 0
 
     async def complete(
         self,
@@ -32,6 +36,7 @@ class AnthropicProvider:
             kwargs["tool_choice"] = {"type": "any"}
 
         response = await self._client.messages.create(**kwargs)
+        self._record_usage(response)
 
         for block in response.content:
             if block.type == "tool_use":
@@ -40,6 +45,12 @@ class AnthropicProvider:
                 return block.text, None
 
         return None, None
+
+    def _record_usage(self, response: AnthropicMessage) -> None:
+        """Add one response's billed tokens to the running totals. Output tokens
+        include any thinking the model did, which is billed as output."""
+        self.input_tokens += response.usage.input_tokens
+        self.output_tokens += response.usage.output_tokens
 
     async def complete_raw(
         self,
@@ -66,7 +77,9 @@ class AnthropicProvider:
         )
         if tools:
             kwargs["tools"] = tools
-        return await self._client.messages.create(**kwargs)
+        response = await self._client.messages.create(**kwargs)
+        self._record_usage(response)
+        return response
 
 
 async def validate_api_key(api_key: str) -> None:

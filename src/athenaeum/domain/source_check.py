@@ -13,10 +13,10 @@ which is why a differing quote is flagged for a person rather than rejected.
 """
 from __future__ import annotations
 
-import re
 import unicodedata
 import uuid
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -38,28 +38,98 @@ SOURCE_CHECK_STATES: tuple[SourceCheck, ...] = (
     SOURCE_UNAVAILABLE,
 )
 
-# Characters are written as code points so nothing invisible or lookalike sits
-# in the source: U+00AD is the soft hyphen, U+2010 the Unicode hyphen.
-_SOFT_HYPHEN = chr(0x00AD)
-# A hyphen immediately followed by whitespace is a word broken across a line:
-# "ef- flux" is "efflux". Covers ASCII "-" and the Unicode hyphen, which NFKC
-# leaves in place (the non-breaking hyphen folds to it).
-_LINE_BREAK_HYPHEN = re.compile("[-" + chr(0x2010) + r"]\s+")
-_WHITESPACE = re.compile(r"\s+")
+# Invisible characters that carry no meaning in a quote: the soft hyphen
+# (U+00AD), zero-width space/non-joiner/joiner, word joiner, and byte-order
+# mark. Written as code points so nothing invisible sits in this source file.
+_INVISIBLE = frozenset({
+    chr(0x00AD), chr(0x200B), chr(0x200C), chr(0x200D), chr(0x2060), chr(0xFEFF),
+})
+
+# Dash-like characters that typesetting and PDF extraction use interchangeably,
+# all folded to the plain hyphen-minus: hyphen, non-breaking hyphen, figure
+# dash, en dash, em dash, horizontal bar, minus sign.
+_DASHES = dict.fromkeys(
+    [chr(0x2010), chr(0x2011), chr(0x2012), chr(0x2013), chr(0x2014), chr(0x2015), chr(0x2212)],
+    "-",
+)
+
+# Typographic quotation marks folded to their ASCII forms.
+_QUOTES = {
+    **dict.fromkeys([chr(0x2018), chr(0x2019), chr(0x201A), chr(0x201B), chr(0x2032)], "'"),
+    **dict.fromkeys([chr(0x201C), chr(0x201D), chr(0x201E), chr(0x201F), chr(0x2033)], '"'),
+}
+
+_FOLDED = {**_DASHES, **_QUOTES}
+
+
+def _is_line_break_hyphen(chars: list[str], i: int) -> bool:
+    """True when the hyphen at `i` is a word broken across a line: a letter or
+    digit, the hyphen, whitespace, then another letter or digit ("ef- flux" is
+    "efflux"). A hyphen with a space before it ("a - b") or next to punctuation
+    ("15.1 +/- 14.3") is left alone, so a dash between words and a hyphen that
+    belongs to the text are never silently deleted."""
+    if i == 0 or not chars[i - 1].isalnum():
+        return False
+    j = i + 1
+    if j >= len(chars) or not chars[j].isspace():
+        return False
+    while j < len(chars) and chars[j].isspace():
+        j += 1
+    return j < len(chars) and chars[j].isalnum()
+
+
+def _normalize_with_owners(parts: Sequence[str]) -> tuple[str, list[int]]:
+    """Normalize `parts` as one text joined by single spaces, recording which
+    part each surviving character came from.
+
+    Normalizing the joined text, rather than each part on its own, is what keeps
+    part boundaries honest. A source sentence can end in a hyphen with the next
+    one continuing the text ("... 15.1 +/-" then "14.3 pg/mL"); once joined, that
+    is a hyphen followed by a space, exactly as in a quote built from the same
+    sentences, so both sides must drop or keep it the same way.
+    """
+    chars: list[str] = []
+    owners: list[int] = []
+    for index, part in enumerate(parts):
+        if index:
+            chars.append(" ")
+            owners.append(-1)
+        # NFKC first: it folds ligatures ("ﬁ"), subscript and superscript
+        # digits, full-width letters and non-breaking spaces to plain forms.
+        for ch in unicodedata.normalize("NFKC", part):
+            if ch in _INVISIBLE:
+                continue
+            chars.append(_FOLDED.get(ch, ch))
+            owners.append(index)
+
+    kept: list[str] = []
+    kept_owners: list[int] = []
+    for i, ch in enumerate(chars):
+        if ch.isspace():
+            continue
+        if ch == "-" and _is_line_break_hyphen(chars, i):
+            continue
+        kept.append(ch)
+        kept_owners.append(owners[i])
+    return "".join(kept), kept_owners
 
 
 def normalize(text: str) -> str:
-    """Reduce text to the characters that must match.
+    """Reduce text to the characters that must match, folding only the
+    differences that come from how text was rendered or extracted.
 
-    NFKC folds compatibility forms (subscript digits, ligatures such as "ﬁ",
-    full-width letters) to their plain equivalents. Soft hyphens and
-    line-break hyphens are dropped, then all whitespace is removed, so spacing
-    and line-wrapping can never cause a mismatch while every other character
-    still has to agree.
+    Normalized away: Unicode compatibility forms (ligatures, subscript and
+    superscript digits, full-width letters, non-breaking spaces) via NFKC;
+    invisible characters (soft hyphen, zero-width space, joiners, byte-order
+    mark); dashes of every width, folded to a plain hyphen; curly quotes,
+    folded to straight ones; hyphenation at a line break; and all whitespace,
+    since extraction routinely splits or joins words ("CO 2" for "CO2").
+
+    Deliberately kept, because a quote that differs here is a different quote:
+    letter case, digits, punctuation inside a sentence, and hyphens that are
+    part of the text ("long-term", "15.1 +/- 14.3").
     """
-    text = unicodedata.normalize("NFKC", text).replace(_SOFT_HYPHEN, "")
-    text = _LINE_BREAK_HYPHEN.sub("", text)
-    return _WHITESPACE.sub("", text)
+    return _normalize_with_owners([text])[0]
 
 
 @dataclass(frozen=True)
@@ -89,26 +159,15 @@ def check_quote(quote: str, sentences: list[tuple[uuid.UUID, str]]) -> SourceChe
     if not target:
         return SourceCheckResult(DIFFERS_FROM_SOURCE)
 
-    # Normalize sentence by sentence, recording where each one starts in the
-    # joined string, so a match position can be mapped back to sentences.
-    pieces = [normalize(text) for _sid, text in sentences]
-    starts: list[int] = []
-    offset = 0
-    for piece in pieces:
-        starts.append(offset)
-        offset += len(piece)
-
-    position = "".join(pieces).find(target)
+    # Normalize the paper's sentences as one joined text, remembering which
+    # sentence every character came from, so a match maps back to sentences.
+    haystack, owners = _normalize_with_owners([text for _sid, text in sentences])
+    position = haystack.find(target)
     if position == -1:
         return SourceCheckResult(DIFFERS_FROM_SOURCE)
 
-    end = position + len(target)
-    covering = tuple(
-        sid
-        for (sid, _text), start, piece in zip(sentences, starts, pieces, strict=True)
-        if start < end and start + len(piece) > position
-    )
-    return SourceCheckResult(MATCHES_SOURCE, covering)
+    touched = sorted(set(owners[position : position + len(target)]))
+    return SourceCheckResult(MATCHES_SOURCE, tuple(sentences[i][0] for i in touched))
 
 
 # ── Applying the check to stored rows ────────────────────────────────────────

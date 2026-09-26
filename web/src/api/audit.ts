@@ -8,6 +8,11 @@ export interface AuditRun {
   created_by: string | null;
   model: string | null;
   status: 'running' | 'done' | 'failed';
+  /** How many quotes went to the checker, and how many of its answers could
+   * not be attached to one. Null on runs from before this was counted —
+   * unmeasured, which is not the same as none. */
+  quotes_checked: number | null;
+  malformed_entries: number | null;
   created_at: string;
 }
 

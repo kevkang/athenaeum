@@ -102,6 +102,10 @@ export default function AuditPanel({ projectId }: { projectId: string }) {
   });
 
   const findings: Finding[] = status === 'running' ? liveFindings : (runDetail?.findings ?? []);
+  // A skipped check leaves its citation marked "not supported" with nothing
+  // having judged it, which on screen is indistinguishable from a real
+  // rejection. Saying so is the only way a reader can tell them apart.
+  const skipped = runDetail?.run.malformed_entries ?? 0;
   const grouped = groupByStatement(findings);
   const noEvidenceIds = status === 'running' ? [] : (runDetail?.statements_with_no_evidence ?? []);
 
@@ -128,6 +132,14 @@ export default function AuditPanel({ projectId }: { projectId: string }) {
 
       {status === 'failed' && (
         <div className={styles.failedBanner}>Audit failed to complete. Try running it again.</div>
+      )}
+
+      {skipped > 0 && (
+        <div className={styles.skippedBanner}>
+          {skipped} of {runDetail?.run.quotes_checked} evidence checks came back without a usable
+          verdict. Those citations appear below as not supported, but nothing actually judged
+          them — run the audit again before reading anything into them.
+        </div>
       )}
 
       <div className={styles.findingsList}>
