@@ -10,7 +10,8 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
-import WorkspaceView from './pages/WorkspaceView';
+import ReadView from './pages/ReadView';
+import BacktraceView from './pages/BacktraceView';
 import ComposeView from './pages/ComposeView';
 import ExportView from './pages/ExportView';
 import AppShell from './components/AppShell';
@@ -45,19 +46,35 @@ const projectsRoute = createRoute({
   component: ProjectListPage,
 });
 
-// Bare /projects/$projectId has no view of its own — land on Workspace by default.
+// Bare /projects/$projectId has no view of its own — land on Read by default.
 const projectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId',
   beforeLoad({ params }) {
-    throw redirect({ to: '/projects/$projectId/workspace', params });
+    throw redirect({ to: '/projects/$projectId/read', params });
   },
 });
 
-const workspaceRoute = createRoute({
+const readRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/read',
+  component: ReadView,
+});
+
+// Read was called Workspace until the statement graph was retired. Kept as a
+// redirect so existing links and bookmarks still land somewhere sensible.
+const workspaceRedirectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/workspace',
-  component: WorkspaceView,
+  beforeLoad({ params }) {
+    throw redirect({ to: '/projects/$projectId/read', params });
+  },
+});
+
+const backtraceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/backtrace',
+  component: BacktraceView,
 });
 
 const composeRoute = createRoute({
@@ -93,7 +110,9 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     projectsRoute,
     projectRoute,
-    workspaceRoute,
+    readRoute,
+    workspaceRedirectRoute,
+    backtraceRoute,
     composeRoute,
     exportRoute,
   ]),

@@ -347,8 +347,8 @@ export default function BacktraceTree(props: {
   visible: boolean;
   /** Called when the user picks a chain from history or successfully
    * imports a .athtrace file — chainId itself is owned by the parent
-   * (WorkspaceView), since it's independent of whatever the left panel's
-   * linear stepper is doing with its own activeBacktrace chain. */
+   * (BacktraceView), deliberately separate from the chain Read's own linear
+   * stepper is walking, so opening one here never retargets the other. */
   onChainLoaded?: (chainId: string) => void;
 }) {
   return (

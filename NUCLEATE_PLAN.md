@@ -100,6 +100,38 @@ take `.athmd`'s citation grammar with it, because that grammar *is* statement nu
 draft, which has no `Statement` rows by definition — its citations are parsed out of the submitted
 text. The Audit tab is statement-free by design, so only Compose holds the tables open.
 
+### D-N8 — Backtrace splits: stepper stays in Read, tree gets the tab
+
+**Decided:** the Backtrace tab is `BacktraceTree` alone. `BacktracePanel`, the single-path stepper,
+stays as a mode of Read's reader pane.
+
+**Why the split rather than moving both:** the two are complementary by design, and the code says so.
+`BacktracePanel`'s own comment: "This panel deliberately stays a single-path stepper … Exploring
+several branches at once (the tree view) lives in BacktraceTree.tsx instead; this is the 'quick trace
+while reading' tool." Its whole reason to exist is tracing without leaving the paper being read, which
+only works if it lives in the reading tab. The tree needed no chrome to move: it already owns its
+chain-history picker, its candidate cards, and its own empty state.
+
+The two chain selections are deliberately independent — starting a trace in Read does not retarget a
+tree left open in the Backtrace tab. Read invalidates the shared `backtrace-chains` query so the new
+chain appears there, and that is the only coupling.
+
+### D-N9 — The Audit tab takes pasted text and resolves its citations
+
+**Decided:** parse claim-and-citation pairs out of pasted prose, resolve each citation via OpenAlex,
+fetch what text is available, then audit with the existing engine.
+
+**Why not the smaller version:** auditing an uploaded `.athmd` would reuse today's engine almost
+unchanged, but it only serves people who already export from Athenaeum — which is not the
+"zero-commitment entry point" the handoff asks for. It would also mean parsing the `## References`
+section, which `archive/athmd.py` explicitly says "is never parsed back … never trusted as source of
+truth", and a foreign project's statement ids degrade to plain text anyway.
+
+**What this obliges.** Resolution, fetching and extraction are each new failure modes, and each has to
+be reported as plainly as the audit's own response-integrity counts already are. A citation that
+could not be resolved is not a citation that failed its audit, and the UI must never let those two
+read the same way. Not built yet.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
@@ -111,12 +143,31 @@ After:
 
 | Tab | Content | Status |
 |---|---|---|
-| **Read** | `PapersSidebar │ ReaderPane`, full screen, resizable | Reshaped from Workspace: graph and Find removed, Backtrace promoted out |
-| **Nucleate** | Left panel (nucleus switcher, stages, chat, needs-full-text queue, prompt) │ canvas │ node drawer | New |
-| **Backtrace** | `BacktracePanel` / `BacktraceTree`, unchanged | Promoted from a reader sub-mode to a tab |
-| **Audit** | Pasted or uploaded draft → audit run | New backend path; the existing panel is nested under the compose document |
-| **Export** | `.ath` v2 corpus export | Reshaped per D-N3 |
+| **Read** | `PapersSidebar │ ReaderPane`, full screen | **Built** 2026-09-26. `pages/ReadView.tsx`. Reader keeps a Backtrace sub-mode per D-N8; Find and the graph are gone |
+| **Nucleate** | Left panel │ canvas │ node drawer | Not built |
+| **Backtrace** | `BacktraceTree`, full screen | **Built** 2026-09-26. `pages/BacktraceView.tsx` |
+| **Audit** | Pasted draft → resolve citations → audit run | Not built; D-N9 settles the input |
+| **Export** | `.ath` v2 corpus export | Existing exporter; v2 per D-N3 not built |
 | **Compose** | Unchanged | Kept per D-N1, frozen per D-N5 |
+
+The visible tab bar is therefore **Read / Backtrace / Compose / Export** until Nucleate and Audit
+exist. A tab that leads nowhere is worse than a tab that is not there yet.
+
+`/projects/$id/workspace` redirects to `/projects/$id/read`, so old links still land somewhere.
+
+**Retired in the same pass:** `pages/WorkspaceView.tsx` (1,656 lines) and
+`components/workspace/FindPanel.tsx` are deleted, along with `GET /projects/{id}/graph`, the reader's
+"⠿ Drag to workspace" affordance, and the `cytoscape` / `cytoscape-dagre` dependencies.
+`components/workspace/FindResultCard.tsx` stays — both Backtrace views render it.
+
+**Known follow-up, not done:** 83 of the 188 class names in `pages/Workspace.module.css` are now
+unreferenced (statement panels, canvas chrome, history, synthesis). They were left in place
+deliberately: `FindResultCard` and `PapersSidebar` both index that stylesheet dynamically
+(`styles[p.status]`, `styles[roleLabel]`), so a bulk prune risks a visual regression that neither
+`tsc` nor `eslint` would catch and that was not browser-verifiable in this pass. `lib/format.ts`'s
+`typeClass()` is likewise now unused. Also still dead, as noted under D-N4:
+`GET /projects/{id}/ghost_papers`, `GET /papers/{id}/co_citation_neighbors`, `web/src/api/links.ts`,
+and the `StatementEdge` write endpoints in `api/statements.py`.
 
 ---
 
@@ -268,16 +319,17 @@ No phase is now blocked on a decision.
 1. **Land the uncommitted audit-evaluation work.** Done 2026-09-26. Note it does not include the
    production set-level verdict; see "Also noted" above.
 2. **Phase 3.1 — Zotero position capture.** Done 2026-09-26.
-3. **Tab reorganization.** Retire the canvas and Find (D-N4), reshape Read to
-   `papers │ reader`, promote Backtrace to a tab, add the Audit tab with its pasted-draft backend
-   path, keep Compose as-is.
-4. **Phase 3.2 — TextQuoteSelector** on passages, before the archivist starts generating quotes at
+3. **Tab reorganization.** Read and Backtrace done 2026-09-26. The Audit tab is split out as its
+   own item below, since D-N9 makes it a feature rather than a panel move.
+4. **Audit tab** (D-N9): citation extraction from pasted prose, OpenAlex resolution, text fetch,
+   then the existing audit engine — with each stage's failures reported distinctly.
+5. **Phase 3.2 — TextQuoteSelector** on passages, before the archivist starts generating quotes at
    scale.
-5. **Node schema** — nuclei, corpus nodes keyed by DOI, lineage edges, evidence, relevance,
+6. **Node schema** — nuclei, corpus nodes keyed by DOI, lineage edges, evidence, relevance,
    selection reasoning, run records with per-stage cost. Unblocked by D-N6.
-6. **Retrieval pipeline and stage event stream.**
-7. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
-8. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
+7. **Retrieval pipeline and stage event stream.**
+8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
+9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
    the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the
    `KnowledgeLink` migration.
-9. **`.ath` v2 (D-N3)** and its published JSON Schema.
+10. **`.ath` v2 (D-N3)** and its published JSON Schema.

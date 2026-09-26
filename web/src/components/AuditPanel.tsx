@@ -92,9 +92,8 @@ export default function AuditPanel({ projectId }: { projectId: string }) {
   useAuditStream(runId, status === 'running', handleFinding, handleTerminal);
 
   // Once the run reaches a terminal state, re-fetch from the DB rather than
-  // trusting the WS-streamed list as final — same reasoning as
-  // FindPanel.tsx's LiveTrace: the persisted rows are the source of truth,
-  // the live stream is just progress feedback while running.
+  // trusting the WS-streamed list as final: the persisted rows are the source
+  // of truth, the live stream is just progress feedback while running.
   const { data: runDetail } = useQuery({
     queryKey: ['audit-run', runId],
     queryFn: () => auditApi.get(runId!),
