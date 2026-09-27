@@ -25,9 +25,36 @@ const loginRoute = createRoute({
   component: LoginPage,
 });
 
+// Where the API sends the browser after ORCID sign-in, carrying the session
+// token in the query string. Handled in beforeLoad rather than in an effect
+// inside AuthCallbackPage: React StrictMode runs effects twice in development,
+// and the old effect erased the query string on its first run, so its second
+// run found no token and sent the user back to /login — a login loop that
+// only ever appeared locally. beforeLoad runs once per navigation, outside
+// React's effect lifecycle, and nothing here mutates the URL it reads.
 const authCallbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/auth/callback',
+  beforeLoad({ location }) {
+    // The raw query string, not the router's parsed `search`: the parsed form
+    // JSON-decodes values, which could reinterpret an ORCID display name.
+    const params = new URLSearchParams(location.searchStr);
+    const token = params.get('token');
+    const orcid = params.get('orcid');
+    const userId = params.get('user_id');
+
+    if (token && orcid && userId) {
+      useAuthStore.getState().login(token, {
+        id: userId,
+        orcid,
+        name: params.get('name') || orcid,
+      });
+      // replace, so the URL carrying the token never becomes a history entry
+      // the back button could return to.
+      throw redirect({ to: '/projects', replace: true });
+    }
+    throw redirect({ to: '/login', replace: true });
+  },
   component: AuthCallbackPage,
 });
 
