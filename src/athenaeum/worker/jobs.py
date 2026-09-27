@@ -27,6 +27,7 @@ from athenaeum.storage.models import (
 )
 from athenaeum.synthesize.audit import run_audit
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
+from athenaeum.synthesize.draft_audit import run_draft_audit
 from athenaeum.synthesize.orchestrator import run_synthesis
 
 log = structlog.get_logger()
@@ -320,6 +321,25 @@ async def run_audit_job(
         requesting_user_id=uuid.UUID(requesting_user_id),
     )
     log.info("job.audit.done", audit_run_id=audit_run_id)
+
+
+async def run_draft_audit_job(
+    ctx: dict,
+    audit_run_id: str,
+    requesting_user_id: str,
+) -> None:
+    """The Audit tab's pasted-draft run. Separate from run_audit_job so the two
+    triggers stay distinguishable in the job log as well as in the run record."""
+    settings = get_settings()
+    log.info("job.draft_audit.start", audit_run_id=audit_run_id)
+    await run_draft_audit(
+        audit_run_id=uuid.UUID(audit_run_id),
+        engine=ctx["engine"],
+        redis=ctx["redis"],
+        settings=settings,
+        requesting_user_id=uuid.UUID(requesting_user_id),
+    )
+    log.info("job.draft_audit.done", audit_run_id=audit_run_id)
 
 
 # ── Graph sync ─────────────────────────────────────────────────────────────────

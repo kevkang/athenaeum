@@ -303,7 +303,13 @@ class AuditRunOut(BaseModel):
 
     id: UUID
     project_id: UUID
-    compose_document_id: UUID
+    # Which trigger produced this run (domain/draft_audit.py). Older rows
+    # predate the column and are compose-document runs by construction.
+    kind: str = "compose_document"
+    # Null on a pasted-draft run, which has no document behind it.
+    compose_document_id: UUID | None = None
+    # The submitted text, on a pasted-draft run only.
+    draft_text: str | None = None
     created_by: UUID | None
     model: str | None
     status: str
@@ -320,10 +326,13 @@ class AuditFindingOut(BaseModel):
 
     id: UUID
     ord: int
-    statement_id: UUID
+    # A finding anchors to a statement (compose run) or a draft citation
+    # (pasted-draft run), never both — see storage/models.py's CHECK.
+    statement_id: UUID | None = None
+    draft_citation_id: UUID | None = None
     sub_id: str
-    target_kind: str
-    target_id: UUID
+    target_kind: str | None = None
+    target_id: UUID | None = None
     quote: str | None
     supported: bool
     # Graded fields (domain/audit_verdicts.py); null on findings recorded before grading.
@@ -334,12 +343,59 @@ class AuditFindingOut(BaseModel):
     created_at: datetime
 
 
+class AuditDraftCitationOut(BaseModel):
+    """One citation pulled out of a pasted draft.
+
+    Carries its own outcome rather than relying on a finding existing, because
+    the outcomes that produce no finding — unresolved, awaiting confirmation,
+    no readable text — are exactly the ones a reader must not mistake for a
+    citation that was checked and failed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ord: int
+    claim_text: str
+    citation_text: str
+    resolution: str
+    openalex_id: str | None
+    doi: str | None
+    matched_title: str | None
+    matched_year: int | None
+    matched_authors_json: Any | None = None
+    # Offered only when resolution is needs_confirmation.
+    candidates_json: Any | None = None
+    paper_id: UUID | None
+    evidence_source: str | None
+    created_at: datetime
+
+
+class AuditDraftCreate(BaseModel):
+    # A draft short enough to have no citations is allowed; the run simply
+    # reports none. An empty body is not.
+    text: str = Field(min_length=1, max_length=200_000)
+
+
+class AuditDraftConfirm(BaseModel):
+    """Pick one of a citation's candidates. Identified by OpenAlex id rather
+    than list position, so a re-ranking between read and write cannot silently
+    confirm a different work."""
+
+    openalex_id: str = Field(min_length=1)
+
+
 class AuditRunDetailOut(BaseModel):
     run: AuditRunOut
     findings: list[AuditFindingOut]
     statements_with_no_evidence: list[UUID] = Field(
         description="Statements with zero attached evidence — computed fresh from "
         "domain/citations.py at read time, not persisted as findings"
+    )
+    draft_citations: list[AuditDraftCitationOut] = Field(
+        default_factory=list,
+        description="Every citation found in a pasted draft, including those that "
+        "produced no finding. Empty for a compose-document run.",
     )
 
 

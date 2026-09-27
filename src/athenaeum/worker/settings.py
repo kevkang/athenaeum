@@ -10,6 +10,7 @@ from athenaeum.worker.jobs import (
     ingest_paper,
     ingest_zotero_item,
     run_audit_job,
+    run_draft_audit_job,
     run_synthesis_job,
     shutdown,
     startup,
@@ -29,6 +30,7 @@ class WorkerSettings:
         ingest_local_zotero_item,
         run_synthesis_job,
         run_audit_job,
+        run_draft_audit_job,
         sync_project_graph,
     ]
     on_startup = startup

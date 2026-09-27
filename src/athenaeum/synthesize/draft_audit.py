@@ -20,17 +20,22 @@ they came from.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
+import redis.asyncio as aioredis
 import structlog
 from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from athenaeum.config import Settings
 from athenaeum.domain.draft_audit import (
     ABSTRACT,
+    AUDITABLE_RESOLUTIONS,
     EXACT,
     NEEDS_CONFIRMATION,
     NO_TEXT,
@@ -41,7 +46,9 @@ from athenaeum.domain.draft_audit import (
 )
 from athenaeum.ingest.openalex import OpenAlexSearchHit, search_works
 from athenaeum.provider.base import Message, Provider
-from athenaeum.storage.models import Paper, ProjectPaper
+from athenaeum.provider.resolver import get_provider_for_user
+from athenaeum.storage.models import AuditDraftCitation, AuditFinding, AuditRun, Paper, ProjectPaper
+from athenaeum.synthesize.audit import audit_evidence, malformed_rate
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
 from athenaeum.synthesize.find_ranking import FindCandidate, rank_candidates
 from athenaeum.synthesize.prompts import EXTRACT_CITATIONS_SYSTEM, EXTRACT_CITATIONS_TOOL
@@ -277,3 +284,209 @@ async def select_evidence(
             return matches[0].quote, ABSTRACT
 
     return None, NO_TEXT
+
+
+def _citation_event(citation: AuditDraftCitation) -> dict[str, Any]:
+    """The wire shape for one resolved citation.
+
+    Published before any verdict exists, so the reader sees what was matched
+    and what is still waiting on them, rather than only the citations that got
+    as far as being judged.
+    """
+    return {
+        "id": str(citation.id),
+        "ord": citation.ord,
+        "claim_text": citation.claim_text,
+        "citation_text": citation.citation_text,
+        "resolution": citation.resolution,
+        "openalex_id": citation.openalex_id,
+        "doi": citation.doi,
+        "matched_title": citation.matched_title,
+        "matched_year": citation.matched_year,
+        "evidence_source": citation.evidence_source,
+    }
+
+
+def _candidate_payload(hits: list[OpenAlexSearchHit]) -> list[dict[str, Any]]:
+    """The alternatives offered for a citation awaiting confirmation."""
+    return [
+        {
+            "openalex_id": h.openalex_id,
+            "doi": h.doi,
+            "title": h.title,
+            "first_author": h.first_author,
+            "venue": h.venue,
+            "year": h.year,
+            "cited_by_count": h.cited_by_count,
+        }
+        for h in hits
+    ]
+
+
+async def run_draft_audit(
+    audit_run_id: uuid.UUID,
+    engine: AsyncEngine,
+    redis: aioredis.Redis,
+    settings: Settings,
+    requesting_user_id: uuid.UUID,
+) -> None:
+    """Audit a pasted draft end to end.
+
+    Mirrors run_audit()'s shape — same channel, same per-row publish-then-commit,
+    same response-integrity threshold — but every claim needs its citation found
+    and resolved first, and each of those steps can fail in a way that is *not*
+    a failed citation. Those outcomes are recorded on the citation row and
+    produce no finding at all, so nothing in the results can be mistaken for a
+    verdict that was never reached.
+    """
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        audit_run = await session.get(AuditRun, audit_run_id)
+        if audit_run is None:
+            log.error("draft_audit.not_found", audit_run_id=str(audit_run_id))
+            return
+
+        channel = f"audit:{audit_run_id}:steps"
+        ord_counter = 0
+        quotes_checked = 0
+        malformed_entries = 0
+        try:
+            provider = await get_provider_for_user(
+                session, requesting_user_id, settings.checker_model, settings
+            )
+            log.info("draft_audit.start", audit_run_id=str(audit_run_id))
+
+            citations = await extract_citations(provider, audit_run.draft_text or "")
+            log.info(
+                "draft_audit.extracted",
+                audit_run_id=str(audit_run_id),
+                citations=len(citations),
+            )
+
+            for ord_, extracted in enumerate(citations):
+                resolved = await resolve_citation(extracted)
+                match = resolved.match
+
+                row = AuditDraftCitation(
+                    id=uuid.uuid4(),
+                    audit_run_id=audit_run_id,
+                    ord=ord_,
+                    claim_text=extracted.claim_text,
+                    citation_text=extracted.citation_text,
+                    resolution=resolved.resolution,
+                    openalex_id=match.openalex_id if match else None,
+                    doi=match.doi if match else None,
+                    matched_title=match.title if match else None,
+                    matched_year=match.year if match else None,
+                    matched_authors_json=(
+                        [match.first_author] if match and match.first_author else None
+                    ),
+                    candidates_json=(
+                        _candidate_payload(resolved.candidates)
+                        if resolved.resolution == NEEDS_CONFIRMATION
+                        else None
+                    ),
+                )
+
+                # Only a deterministic or confirmed match is audited. Anything
+                # awaiting confirmation stops here with its candidates attached.
+                if resolved.resolution in AUDITABLE_RESOLUTIONS and match is not None:
+                    quote, source = await select_evidence(
+                        provider,
+                        session,
+                        audit_run.project_id,
+                        extracted.claim_text,
+                        match,
+                        embed_model=settings.embed_model,
+                    )
+                    row.evidence_source = source
+                    paper = await find_project_paper(session, audit_run.project_id, match)
+                    row.paper_id = paper.id if paper else None
+                else:
+                    quote, source = None, None
+
+                session.add(row)
+                await session.flush()
+                await redis.publish(
+                    channel, json.dumps({"kind": "citation", "payload": _citation_event(row)})
+                )
+
+                if quote is None:
+                    # Nothing to check this claim against. Deliberately no
+                    # finding: the citation row already says why, and inventing
+                    # an unsupported verdict here would accuse a citation that
+                    # was never actually examined.
+                    await session.commit()
+                    continue
+
+                checked = await audit_evidence(
+                    checker=provider,
+                    assertion=extracted.claim_text,
+                    quotes=[quote],
+                    checker_model_name=settings.checker_model,
+                )
+                quotes_checked += 1
+                malformed_entries += checked.malformed_entries
+                supported, rationale = checked.results[0]
+
+                finding = AuditFinding(
+                    id=uuid.uuid4(),
+                    audit_run_id=audit_run_id,
+                    ord=ord_counter,
+                    draft_citation_id=row.id,
+                    sub_id=str(ord_ + 1),
+                    quote=quote,
+                    supported=supported,
+                    rationale=rationale,
+                )
+                session.add(finding)
+                await session.flush()
+                await redis.publish(channel, json.dumps({
+                    "kind": "finding",
+                    "ord": ord_counter,
+                    "payload": {
+                        "draft_citation_id": str(row.id),
+                        "sub_id": finding.sub_id,
+                        "quote": quote,
+                        "evidence_source": source,
+                        "supported": supported,
+                        "rationale": rationale,
+                    },
+                }))
+                ord_counter += 1
+                await session.commit()
+
+            audit_run.quotes_checked = quotes_checked
+            audit_run.malformed_entries = malformed_entries
+            await session.commit()
+
+            rate = malformed_rate(malformed_entries, quotes_checked)
+            log.info(
+                "draft_audit.response_integrity",
+                audit_run_id=str(audit_run_id),
+                quotes_checked=quotes_checked,
+                malformed_entries=malformed_entries,
+                malformed_rate=rate,
+            )
+            if rate is not None and rate > settings.audit_malformed_threshold:
+                raise RuntimeError(
+                    f"draft audit aborted: {malformed_entries} of {quotes_checked} evidence "
+                    f"checks returned an unusable verdict ({rate:.1%}), above the "
+                    f"{settings.audit_malformed_threshold:.1%} threshold"
+                )
+
+            audit_run.status = "done"
+            audit_run.model = settings.checker_model
+            await session.commit()
+            await redis.publish(channel, json.dumps({"kind": "done"}))
+            log.info("draft_audit.done", audit_run_id=str(audit_run_id))
+
+        except Exception as exc:
+            log.exception("draft_audit.failed", audit_run_id=str(audit_run_id))
+            await session.rollback()
+            audit_run = await session.get(AuditRun, audit_run_id)
+            if audit_run is not None:
+                audit_run.status = "failed"
+                await session.commit()
+            await redis.publish(
+                channel, json.dumps({"kind": "failed", "payload": {"error": str(exc)[:500]}})
+            )
