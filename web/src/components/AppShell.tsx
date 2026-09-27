@@ -47,6 +47,14 @@ export default function AppShell() {
                 Backtrace
               </Link>
               <Link
+                to="/projects/$projectId/audit"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Audit
+              </Link>
+              <Link
                 to="/projects/$projectId/compose"
                 params={{ projectId }}
                 className={styles.viewBtn}

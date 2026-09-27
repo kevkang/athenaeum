@@ -12,6 +12,7 @@ import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
 import ReadView from './pages/ReadView';
 import BacktraceView from './pages/BacktraceView';
+import AuditView from './pages/AuditView';
 import ComposeView from './pages/ComposeView';
 import ExportView from './pages/ExportView';
 import AppShell from './components/AppShell';
@@ -77,6 +78,17 @@ const backtraceRoute = createRoute({
   component: BacktraceView,
 });
 
+const auditRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/audit',
+  component: AuditView,
+  // The run id lives in the URL so a finished audit survives a refresh and can
+  // be linked to. An audit can take a while and its results are the product.
+  validateSearch: (search: Record<string, unknown>): { run?: string } => ({
+    run: typeof search.run === 'string' ? search.run : undefined,
+  }),
+});
+
 const composeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/compose',
@@ -113,6 +125,7 @@ const routeTree = rootRoute.addChildren([
     readRoute,
     workspaceRedirectRoute,
     backtraceRoute,
+    auditRoute,
     composeRoute,
     exportRoute,
   ]),

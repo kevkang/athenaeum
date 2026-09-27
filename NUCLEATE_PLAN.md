@@ -132,6 +132,21 @@ be reported as plainly as the audit's own response-integrity counts already are.
 could not be resolved is not a citation that failed its audit, and the UI must never let those two
 read the same way. Not built yet.
 
+### D-N10 — Audit results are grouped by outcome, not listed in draft order
+
+**Decided:** four sections in severity order — Not supported, Needs your input, Couldn't check,
+Supported — each with a count and a one-line explanation.
+
+**Why grouping rather than per-row badges:** the feature's whole obligation is that a citation which
+was *never checked* must not read like one that *failed*. A per-row badge leaves that distinction to
+whoever is skimming. A section makes it structural, and lets the difference be stated once, in
+words, where it cannot be missed: "These citations were never examined — no match was found, or the
+matched work had no readable text. That is not the same as a citation that failed."
+
+The cost, accepted: the draft's own reading order is lost. A side-by-side draft-and-findings view
+was considered and deferred — it would need the claim located back in the submitted text, which
+extraction does not currently record.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
@@ -146,12 +161,12 @@ After:
 | **Read** | `PapersSidebar │ ReaderPane`, full screen | **Built** 2026-09-26. `pages/ReadView.tsx`. Reader keeps a Backtrace sub-mode per D-N8; Find and the graph are gone |
 | **Nucleate** | Left panel │ canvas │ node drawer | Not built |
 | **Backtrace** | `BacktraceTree`, full screen | **Built** 2026-09-26. `pages/BacktraceView.tsx` |
-| **Audit** | Pasted draft → resolve citations → audit run | Not built; D-N9 settles the input |
+| **Audit** | Pasted draft → resolve citations → audit run | **Built** 2026-09-27. `pages/AuditView.tsx`, results grouped by outcome (D-N10) |
 | **Export** | `.ath` v2 corpus export | Existing exporter; v2 per D-N3 not built |
 | **Compose** | Unchanged | Kept per D-N1, frozen per D-N5 |
 
-The visible tab bar is therefore **Read / Backtrace / Compose / Export** until Nucleate and Audit
-exist. A tab that leads nowhere is worse than a tab that is not there yet.
+The visible tab bar is therefore **Read / Backtrace / Audit / Compose / Export** until Nucleate
+exists. A tab that leads nowhere is worse than a tab that is not there yet.
 
 `/projects/$id/workspace` redirects to `/projects/$id/read`, so old links still land somewhere.
 
