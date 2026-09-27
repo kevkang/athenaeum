@@ -205,6 +205,24 @@ that neither the handoff nor the earlier answers defined. The handoff requires "
 throughout". A cancelled run is neither finished nor broken, and recording it as `failed` would
 pollute any failure rate computed from the run records.
 
+### D-N15 — Full text arrives in the background, after a node is placed
+
+**Decided:** nodes appear quickly with abstract-derived evidence, labelled as such. Open-access
+PDFs are then fetched and parsed in the background, and a node upgrades to full-text evidence when
+its PDF lands. This keeps the promise that you can read the first paper while the rest arrive,
+without an expansion taking minutes. The cost: it still downloads papers you may reject, though only
+open-access ones. Built as its own slice (7c); the expansion itself only settles what text is
+already in hand.
+
+### D-N16 — Web search is a source from the start, matched to papers deterministically
+
+**Decided:** all three sources — library, OpenAlex, web — ship together. Web results are pages, not
+papers, so each is matched to a scholarly work before it can become a node, and **only
+deterministically**: a DOI in the page's URL or title, or a single exact title match (with the same
+short-title and double-match safeguards the Audit tab uses). Pages that match nothing are dropped
+and *counted* (`web_unmatched`), never guessed at. "Matched by title" was read strictly because a
+looser match could attach a page's claims to a paper that never made them.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
@@ -465,7 +483,9 @@ No phase is now blocked on a decision.
 6. **Node schema.** Done 2026-09-27: migration 0032, `domain/nucleate.py`,
    `nucleate/corpus.py`. See D-N11..D-N14. Building it surfaced a latent bug in earlier committed
    work, fixed in 0033 — see "JSON null" below.
-7. **Retrieval pipeline and stage event stream.**
+7. **The archivist.** 7a done 2026-09-27: `nucleate/archivist.py` and `nucleate/retrieval.py`
+   run one expansion end to end, tested with a scripted model. 7b next: the worker job and the
+   API. 7c after that: the background full-text upgrade (D-N15).
 8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
 9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
    the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the

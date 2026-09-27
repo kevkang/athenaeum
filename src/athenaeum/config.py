@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # summarize_model/zotero_find_model below: this is the credibility-
     # critical path, not a place to economize.
     checker_model: str = "claude-sonnet-5"
+    # Nucleate's archivist: interprets prompts, ranks candidates, writes relevance
+    # statements. Its statements are then audited by checker_model, so the two
+    # stay separate settings even while they default to the same model.
+    archivist_model: str = "claude-sonnet-5"
     # An audit fails rather than reports when more than this share of its
     # evidence checks come back unusable (synthesize/audit.py). A skipped
     # check leaves a citation recorded as unsupported without anything having

@@ -164,6 +164,18 @@ STAGE_LABELS: dict[str, str] = {
 # How far along a stage is, as shown in the stage list — handoff Part V.
 STAGE_STATES: tuple[str, ...] = ("pending", "current", "completed", "failed")
 
+# A node's status while an expansion is working on it, shown on the node
+# itself — handoff Part V. Ephemeral: carried by the event stream, not stored
+# on the node.
+NODE_FETCHING: Final = "fetching"
+NODE_EXTRACTING: Final = "extracting"
+NODE_VERIFYING: Final = "verifying"
+NODE_READY: Final = "ready"
+NODE_NEEDS_FULL_TEXT: Final = "needs_full_text"
+NODE_RUN_STATUSES: tuple[str, ...] = (
+    NODE_FETCHING, NODE_EXTRACTING, NODE_VERIFYING, NODE_READY, NODE_NEEDS_FULL_TEXT,
+)
+
 # Default papers per expansion, configurable per project. Force-directed
 # layouts become hard to read past about fifty nodes, and unbounded expansion
 # gets there in a few steps.
