@@ -370,3 +370,74 @@ RANK_REFERENCES_TOOL: dict = {
         "required": ["matches"],
     },
 }
+
+
+# ── Audit tab: pulling citations out of a pasted draft ─────────────────────────
+
+EXTRACT_CITATIONS_SYSTEM = """\
+You are reading a draft manuscript and pulling out every claim its author has
+attached a citation to. You are NOT judging the claims — a separate audit does
+that. Your only job is to say, accurately, what was claimed and what was cited
+for it.
+
+For each citation in the text, return:
+
+- `claim_text`: the author's own sentence making the claim, copied verbatim.
+  If the claim genuinely spans two sentences, include both. Never paraphrase,
+  shorten, or tidy the author's wording — the audit is shown against these
+  exact words, and an author must recognise their own sentence.
+- `citation_text`: the fullest form of the citation the draft gives. If the
+  draft has a reference list and you can find this citation's entry in it,
+  return that entire entry, including any DOI. Only if there is no reference
+  list, or no matching entry in it, return the inline marker as written
+  (e.g. "(Koch et al. 2018)" or "[14]").
+
+Rules:
+
+- One entry per claim-citation pair. A sentence citing three works produces
+  three entries, all sharing the same `claim_text`.
+- Never invent a citation, a DOI, or a reference entry. If a marker has no
+  matching reference entry, return the marker alone. Returning less is always
+  better than returning something the draft does not say.
+- Skip citations that support no claim of the author's own — acknowledgements,
+  data availability statements, software version citations, and the reference
+  list itself when it is not attached to a claim.
+- If the text contains no citations at all, return an empty list.
+"""
+
+EXTRACT_CITATIONS_TOOL: dict = {
+    "name": "extract_citations",
+    "description": (
+        "Report every claim in the draft that carries a citation, with the citation "
+        "the author gave for it."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "citations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim_text": {
+                            "type": "string",
+                            "description": (
+                                "The author's claim, copied verbatim from the draft. "
+                                "Never paraphrased."
+                            ),
+                        },
+                        "citation_text": {
+                            "type": "string",
+                            "description": (
+                                "The full reference-list entry for this citation if the "
+                                "draft has one, otherwise the inline marker as written."
+                            ),
+                        },
+                    },
+                    "required": ["claim_text", "citation_text"],
+                },
+            },
+        },
+        "required": ["citations"],
+    },
+}
