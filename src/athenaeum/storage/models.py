@@ -207,6 +207,11 @@ class Passage(Base):
             "('matches_source', 'differs_from_source', 'source_unavailable')",
             name="passages_source_check_corrected_chk",
         ),
+        CheckConstraint(
+            "text_quote_selector IS NULL OR "
+            "text_quote_selector->>'type' = 'TextQuoteSelector'",
+            name="passages_text_quote_selector_chk",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -234,6 +239,14 @@ class Passage(Base):
     # Why the extraction step selected this passage as evidence — generated
     # by the same LLM call that produces sentence_ids/verbatim_text.
     rationale: Mapped[str | None] = mapped_column(Text)
+    # W3C Web Annotation TextQuoteSelector — {type, exact, prefix, suffix} —
+    # anchoring this quote in the paper's text by its words rather than by
+    # sentence ids, which mean nothing outside this database. Built by
+    # domain/source_check.text_quote_selector from this server's own copy, so it
+    # is NULL whenever the quote is not found there (differs_from_source,
+    # source_unavailable): a selector says where a quote is, and is never
+    # invented for one that isn't.
+    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB)
 
 
 class Synthesis(Base):
@@ -769,6 +782,13 @@ class Highlight(Base):
     the user made unilaterally while reading. Not event-logged, matching
     Annotation's precedent for personal auxiliary content."""
     __tablename__ = "highlights"
+    __table_args__ = (
+        CheckConstraint(
+            "text_quote_selector IS NULL OR "
+            "text_quote_selector->>'type' = 'TextQuoteSelector'",
+            name="highlights_text_quote_selector_chk",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -808,6 +828,11 @@ class Highlight(Base):
     # The page as printed in the document ("iv", "S3", "1247"), which is not
     # position_json's zero-based pageIndex and cannot be derived from it.
     zotero_page_label: Mapped[str | None] = mapped_column(String(50))
+    # W3C TextQuoteSelector for this highlight's words, same meaning as
+    # Passage.text_quote_selector. Distinct from the Zotero position above:
+    # that is page geometry in one PDF, this is the text, and survives a
+    # different PDF or a re-extraction.
+    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB)
 
 
 class AuditRun(Base):

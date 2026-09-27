@@ -26,6 +26,7 @@ from athenaeum.domain.models import (
     ZoteroHighlightImportRequest,
     ZoteroHighlightPreviewResponse,
 )
+from athenaeum.domain.source_check import selector_for_new_quote
 from athenaeum.ingest.highlight_match import match_annotation_to_sentences
 from athenaeum.ingest.zotero import ZoteroAnnotation, ZoteroCreds, list_annotations_for_item
 from athenaeum.ingest.zotero_local import (
@@ -204,6 +205,8 @@ async def import_zotero_highlights(
         await session.scalars(select(PaperSentence.id).where(PaperSentence.paper_id == paper_id))
     )
     annotations_by_key = await _position_lookup(session, user.id, paper)
+    # Every item here quotes the same paper; load its sentences once.
+    sentence_cache: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
 
     created: list[Highlight] = []
     for item in payload.items:
@@ -222,6 +225,9 @@ async def import_zotero_highlights(
             zotero_position_json=annotation.position if annotation else None,
             zotero_sort_index=annotation.sort_index if annotation else None,
             zotero_page_label=annotation.page_label if annotation else None,
+            text_quote_selector=await selector_for_new_quote(
+                session, paper_id, item.verbatim_text, item.sentence_ids, sentence_cache
+            ),
         )
         session.add(highlight)
         created.append(highlight)

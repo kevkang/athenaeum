@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from athenaeum.config import Settings
 from athenaeum.domain.models import SentenceHit
-from athenaeum.domain.source_check import MATCHES_SOURCE
+from athenaeum.domain.source_check import MATCHES_SOURCE, selector_for_new_quote
 from athenaeum.ingest.embed import embed_sentences
 from athenaeum.provider.base import Message, Provider
 from athenaeum.provider.resolver import get_provider_for_user
@@ -141,6 +141,9 @@ async def _step_extract(
     # Validate sentence IDs and build Passage objects
     valid_ids = {str(h.sentence_id): h for h in hits}
     passages: list[Passage] = []
+    # One synthesis can quote several passages from the same paper; load each
+    # paper's sentences once for their selectors.
+    sentence_cache: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
 
     def _clean_uuid(raw: str) -> str:
         """Strip surrounding whitespace/quotes that LLMs sometimes add."""
@@ -201,6 +204,9 @@ async def _step_extract(
             verbatim_text=verbatim,
             # The words were just copied from this server's sentences, so they match.
             source_check=MATCHES_SOURCE,
+            text_quote_selector=await selector_for_new_quote(
+                session, paper_id, verbatim, sentence_uuids, sentence_cache
+            ),
             rationale=pd.get("rationale") or None,
         )
         session.add(passage)

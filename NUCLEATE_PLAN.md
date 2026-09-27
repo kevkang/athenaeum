@@ -338,8 +338,31 @@ body, because its purpose is to record where the highlight demonstrably was. A f
 lookup still imports the highlight and still records the annotation key, which is what leaves the row
 backfillable.
 
-Prerequisite 3.2 (TextQuoteSelector) is **not started** — no `selector` code exists anywhere in
-`src/`.
+Prerequisite 3.2 (TextQuoteSelector) is **done** 2026-09-27. Every stored quote — `Passage` and
+`Highlight` — carries a W3C `text_quote_selector` `{type, exact, prefix, suffix}`, built by
+`domain/source_check.text_quote_selector` so that "the check found this quote" and "we can anchor it"
+can never disagree: one normalization serves both.
+
+- **Built at creation** from this server's sentences, preferring the quote's own sentence ids, so a
+  phrase repeated in the paper ("n = 12 cores") is anchored where it was actually taken from.
+- **Re-anchored** whenever `check_passage` / `repoint_highlight` run (import, re-ingestion), and
+  **cleared** when the words are no longer found — a selector says where a quote *is*, so a stale
+  one must not survive.
+- **Text form:** `exact`/`prefix`/`suffix` come from the text after NFKC, so `CO2` not `CO₂`.
+  Mapping back through NFKC to raw characters is fiddly and buys nothing, since anyone re-finding a
+  quote normalizes anyway; the displayed quote stays in `verbatim_text`. 32 characters of context,
+  as Hypothesis uses.
+- **Backfill:** migration 0031, with frozen logic per the 0025/0027 convention, and a test checking
+  the frozen copy still matches the live function. A passage is anchored only if its recorded
+  `source_check` is `matches_source`, so the 0027 corrected-verdict question stays undecided.
+- **Guard:** `tests/test_every_quote_is_anchored.py` reads the source and fails if any
+  `Passage(...)`/`Highlight(...)` construction lacks a selector. The column is nullable on purpose,
+  so a forgotten path would otherwise fail silently — and the first sweep for these sites did miss
+  three.
+
+Not yet: selectors are not exported (that is `.ath` v2), and draft-audit findings, whose quotes come
+from OpenAlex abstracts, carry none. `text_quote_selector_in(quote, text)` exists for exactly that
+single-text case and for Nucleate's abstract-derived evidence.
 
 ---
 
@@ -361,8 +384,7 @@ No phase is now blocked on a decision.
    `exact` / `needs_confirmation` / `confirmed` / `not_found`, of which only `exact` and `confirmed`
    proceed to an audit — `exact` is a deterministic string match, never a model's ranking. Evidence
    source is `project_full_text` / `abstract` / `no_text`.
-5. **Phase 3.2 — TextQuoteSelector** on passages, before the archivist starts generating quotes at
-   scale.
+5. **Phase 3.2 — TextQuoteSelector.** Done 2026-09-27; see "Also noted" above.
 6. **Node schema** — nuclei, corpus nodes keyed by DOI, lineage edges, evidence, relevance,
    selection reasoning, run records with per-stage cost. Unblocked by D-N6.
 7. **Retrieval pipeline and stage event stream.**
