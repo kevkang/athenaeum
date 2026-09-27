@@ -182,3 +182,29 @@ NODE_RUN_STATUSES: tuple[str, ...] = (
 DEFAULT_EXPANSION_BUDGET: Final = 6
 MIN_EXPANSION_BUDGET: Final = 5
 MAX_EXPANSION_BUDGET: Final = 8
+
+
+# ── Full-text availability, derived per D-N6 ─────────────────────────────────
+#
+# Never stored: a function of two columns that already exist on Paper, so it
+# cannot drift out of step with ingestion.
+
+FULLTEXT_AVAILABLE: Final = "available"
+FULLTEXT_ABSTRACT_ONLY: Final = "abstract_only"
+FULLTEXT_USER_MUST_SUPPLY: Final = "user_must_supply"
+
+FulltextState = Literal["available", "abstract_only", "user_must_supply"]
+FULLTEXT_STATES: tuple[FulltextState, ...] = (
+    FULLTEXT_AVAILABLE, FULLTEXT_ABSTRACT_ONLY, FULLTEXT_USER_MUST_SUPPLY,
+)
+
+
+def fulltext_state(paper_status: str, has_abstract: bool) -> FulltextState:
+    """available when the paper is ingested; abstract_only when only its
+    abstract is in hand; user_must_supply otherwise — including a failed
+    ingestion, since the user would then have to provide the paper."""
+    if paper_status == "full_text":
+        return FULLTEXT_AVAILABLE
+    if paper_status == "ghost" and has_abstract:
+        return FULLTEXT_ABSTRACT_ONLY
+    return FULLTEXT_USER_MUST_SUPPLY

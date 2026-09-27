@@ -1055,3 +1055,160 @@ class ZoteroHighlightImportItem(BaseModel):
 class ZoteroHighlightImportRequest(BaseModel):
     project_id: UUID
     items: list[ZoteroHighlightImportItem] = Field(min_length=1)
+
+
+# ── Nucleate ─────────────────────────────────────────────────────────────────
+#
+# See domain/nucleate.py for the vocabulary and NUCLEATE_PLAN.md for the
+# decisions behind these shapes.
+
+
+class NucleusCreate(BaseModel):
+    """Creating a nucleus states its question, which is also the first prompt:
+    the archivist starts proposing papers straight away."""
+
+    question: str = Field(min_length=1, max_length=2000)
+    budget: int = Field(default=6, ge=5, le=8)
+
+
+class NucleusPromptCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    # Canvas nodes selected as anchors ("Expanding from: Caro 2023").
+    anchor_node_ids: list[UUID] = Field(default_factory=list)
+    budget: int = Field(default=6, ge=5, le=8)
+
+
+class NucleusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    question: str
+    created_at: datetime
+
+
+class ExpansionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    nucleus_id: UUID
+    prompt_id: UUID
+    status: str
+    budget: int
+    stage: str | None
+    # The archivist's reply in the chat history.
+    reply_text: str | None
+    model: str | None
+    input_tokens: int
+    output_tokens: int
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class ExpansionEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ord: int
+    stage: str
+    status: str
+    node_id: UUID | None
+    counts: dict[str, Any] | None
+    message: str | None
+    input_tokens: int
+    output_tokens: int
+    at: datetime
+
+
+class ExpansionDetailOut(BaseModel):
+    expansion: ExpansionOut
+    events: list[ExpansionEventOut]
+
+
+class NucleusPromptOut(BaseModel):
+    """One entry in a nucleus's chat history: what was asked, and what the
+    archivist did about it."""
+
+    id: UUID
+    text: str
+    anchor_node_ids: list[UUID]
+    created_at: datetime
+    expansion: ExpansionOut | None
+
+
+class CanvasPaperOut(BaseModel):
+    id: UUID
+    title: str
+    authors: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+
+
+class CanvasReviewOut(BaseModel):
+    id: UUID
+    status: str
+    rejection_reason: str | None
+    relevance_text: str | None
+    # ai_proposed renders as AI text (blue italics); every other value doesn't.
+    relevance_provenance: str | None
+    selection_reasoning: str | None
+
+
+class CanvasEvidenceOut(BaseModel):
+    id: UUID
+    ord: int
+    source: str
+    verbatim_text: str
+    text_quote_selector: dict[str, str]
+
+
+class CanvasAuditOut(BaseModel):
+    """The automatic audit of the relevance statement against its evidence.
+    A boolean, because production Audit is still pass/fail per quote; graded
+    verdicts exist only in the evaluation harness so far."""
+
+    supported: bool
+    rationale: str
+    checked_at: datetime
+
+
+class CanvasNodeOut(BaseModel):
+    node_id: UUID
+    paper: CanvasPaperOut
+    # Derived per D-N6, never stored: available / abstract_only / user_must_supply.
+    fulltext: str
+    review: CanvasReviewOut
+    evidence: list[CanvasEvidenceOut]
+    audit: CanvasAuditOut | None
+    # Other nuclei this node also belongs to. Cross-nucleus nodes are often the
+    # most interesting in a corpus, so the canvas marks them.
+    other_nucleus_ids: list[UUID]
+
+
+class CanvasLineageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    from_kind: str
+    from_node_id: UUID | None
+    to_node_id: UUID
+    prompt_id: UUID | None
+    # NULL when a person added the node rather than the archivist retrieving it.
+    retrieval_source: str | None
+
+
+class NucleusDetailOut(BaseModel):
+    nucleus: NucleusOut
+    nodes: list[CanvasNodeOut]
+    lineage: list[CanvasLineageOut]
+    prompts: list[NucleusPromptOut]
+
+
+class NodeReviewUpdate(BaseModel):
+    """One action from the node drawer: accept, reject (with an optional
+    reason), pin, or edit the relevance statement. Fields left out are left
+    alone."""
+
+    status: str | None = Field(default=None, pattern="^(frontier|accepted|rejected|pinned)$")
+    rejection_reason: str | None = Field(default=None, max_length=500)
+    relevance_text: str | None = Field(default=None, max_length=2000)

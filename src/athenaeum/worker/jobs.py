@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
+from datetime import UTC, datetime
 from functools import partial
 
 import httpx
@@ -353,3 +355,66 @@ async def sync_project_graph(ctx: dict, project_id: str) -> None:
     from athenaeum.graph.sync import sync_project_graph as _sync
 
     await _sync(driver, ctx["engine"], uuid.UUID(project_id))
+
+
+async def run_expansion_job(
+    ctx: dict,
+    expansion_id: str,
+    requesting_user_id: str,
+) -> None:
+    """One Nucleate expansion (nucleate/archivist.py), wired to real sources,
+    the user's model credentials, and the Redis event channel."""
+    from athenaeum.api.nucleate import event_channel
+    from athenaeum.nucleate.archivist import ArchivistDeps, run_expansion
+    from athenaeum.nucleate.retrieval import retrieve_library, retrieve_openalex, retrieve_web
+    from athenaeum.storage.models import NucleusExpansion, NucleusExpansionEvent
+
+    settings = get_settings()
+    redis = ctx["redis"]
+    channel = event_channel(expansion_id)
+    expansion_uuid = uuid.UUID(expansion_id)
+    user_uuid = uuid.UUID(requesting_user_id)
+    log.info("job.expansion.start", expansion_id=expansion_id)
+
+    async with AsyncSession(ctx["engine"], expire_on_commit=False) as session:
+        try:
+            archivist = await get_provider_for_user(
+                session, user_uuid, settings.archivist_model, settings)
+            checker = await get_provider_for_user(
+                session, user_uuid, settings.checker_model, settings)
+        except Exception as exc:
+            # No usable model key: fail the run visibly rather than leaving it
+            # "running" forever with no event explaining why.
+            expansion = await session.get(NucleusExpansion, expansion_uuid)
+            if expansion is not None:
+                expansion.status = "failed"
+                expansion.finished_at = datetime.now(UTC)
+                session.add(NucleusExpansionEvent(
+                    id=uuid.uuid4(), expansion_id=expansion_uuid, ord=0,
+                    stage="interpreting", status="failed", message=str(exc)[:300]))
+                await session.commit()
+            await redis.publish(channel, json.dumps(
+                {"ord": 0, "stage": "interpreting", "status": "failed", "node_id": None,
+                 "message": str(exc)[:300]}))
+            log.warning("job.expansion.no_provider", expansion_id=expansion_id)
+            return
+
+        async def library(s: AsyncSession, project_id: uuid.UUID, query: str):
+            return await retrieve_library(s, project_id, query, settings.embed_model)
+
+        async def openalex(queries: list[str]):
+            return await retrieve_openalex(queries, email=settings.unpaywall_email)
+
+        async def web(query: str):
+            return await retrieve_web(archivist, query, email=settings.unpaywall_email)
+
+        async def publish(event: dict) -> None:
+            await redis.publish(channel, json.dumps(event))
+
+        deps = ArchivistDeps(
+            archivist=archivist, checker=checker, checker_model=settings.checker_model,
+            embed_model=settings.embed_model, library=library, openalex=openalex, web=web,
+            publish=publish,
+        )
+        await run_expansion(session, expansion_uuid, deps, user_uuid)
+    log.info("job.expansion.done", expansion_id=expansion_id)

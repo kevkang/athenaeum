@@ -19,6 +19,7 @@ from athenaeum.api import (
     links,
     llm_credentials,
     members,
+    nucleate,
     openalex_find,
     papers,
     passages,
@@ -147,6 +148,7 @@ app.include_router(websearch_find.router)
 app.include_router(llm_credentials.router)
 app.include_router(backtrace.router)
 app.include_router(audit.router)
+app.include_router(nucleate.router)
 
 
 @app.get("/health")

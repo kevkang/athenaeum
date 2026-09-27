@@ -65,7 +65,7 @@ class Candidate:
         return f"title:{normalize_title(self.title)}"
 
 
-def _author_names(authors_json: Any) -> list[str]:
+def author_names(authors_json: Any) -> list[str]:
     """Names from a Paper's authors_json, which holds [{"name": ...}] from
     OpenAlex but plain strings from some older import paths."""
     if not isinstance(authors_json, list):
@@ -129,7 +129,7 @@ async def retrieve_library(
         candidates.append(Candidate(
             source=LIBRARY,
             title=paper.title,
-            authors=_author_names(paper.authors_json),
+            authors=author_names(paper.authors_json),
             year=paper.year,
             venue=paper.venue,
             doi=paper.doi,

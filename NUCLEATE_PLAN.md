@@ -484,8 +484,10 @@ No phase is now blocked on a decision.
    `nucleate/corpus.py`. See D-N11..D-N14. Building it surfaced a latent bug in earlier committed
    work, fixed in 0033 — see "JSON null" below.
 7. **The archivist.** 7a done 2026-09-27: `nucleate/archivist.py` and `nucleate/retrieval.py`
-   run one expansion end to end, tested with a scripted model. 7b next: the worker job and the
-   API. 7c after that: the background full-text upgrade (D-N15).
+   run one expansion end to end, tested with a scripted model. 7b done 2026-09-27:
+   `run_expansion_job`, `api/nucleate.py` (nuclei, canvas detail, prompts, expansions, cancel,
+   review actions, and a websocket event stream mirroring the Audit tab's). 7c next: the
+   background full-text upgrade (D-N15).
 8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
 9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
    the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the
