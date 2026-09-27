@@ -90,10 +90,11 @@ SOURCES_WITH_TEXT: tuple[EvidenceSource, ...] = (PROJECT_FULL_TEXT, ABSTRACT)
 
 COMPOSE_DOCUMENT: Final = "compose_document"
 PASTED_DRAFT: Final = "pasted_draft"
+NUCLEATE_NODE: Final = "nucleate_node"
 
-AuditRunKind = Literal["compose_document", "pasted_draft"]
+AuditRunKind = Literal["compose_document", "pasted_draft", "nucleate_node"]
 
-AUDIT_RUN_KINDS: tuple[AuditRunKind, ...] = (COMPOSE_DOCUMENT, PASTED_DRAFT)
+AUDIT_RUN_KINDS: tuple[AuditRunKind, ...] = (COMPOSE_DOCUMENT, PASTED_DRAFT, NUCLEATE_NODE)
 
 AUDIT_RUN_KIND_DEFINITIONS: dict[AuditRunKind, str] = {
     COMPOSE_DOCUMENT: (
@@ -103,5 +104,10 @@ AUDIT_RUN_KIND_DEFINITIONS: dict[AuditRunKind, str] = {
     PASTED_DRAFT: (
         "Audit of text pasted into the Audit tab, where the citations have to be extracted "
         "and resolved first. The entry point that needs no corpus."
+    ),
+    NUCLEATE_NODE: (
+        "Nucleate's automatic audit of the archivist's relevance statements against their "
+        "own verbatim evidence, run before a node is shown. Same engine as the Audit tab; "
+        "a separate kind so the two triggers stay distinct in the run records (D-N13)."
     ),
 }

@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -208,8 +209,10 @@ class Passage(Base):
             name="passages_source_check_corrected_chk",
         ),
         CheckConstraint(
-            "text_quote_selector IS NULL OR "
-            "text_quote_selector->>'type' = 'TextQuoteSelector'",
+            "text_quote_selector IS NULL OR ("
+            "jsonb_typeof(text_quote_selector) = 'object' "
+            "AND text_quote_selector->>'type' IS NOT DISTINCT FROM 'TextQuoteSelector' "
+            "AND text_quote_selector ? 'exact')",
             name="passages_text_quote_selector_chk",
         ),
     )
@@ -246,7 +249,7 @@ class Passage(Base):
     # is NULL whenever the quote is not found there (differs_from_source,
     # source_unavailable): a selector says where a quote is, and is never
     # invented for one that isn't.
-    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class Synthesis(Base):
@@ -784,8 +787,10 @@ class Highlight(Base):
     __tablename__ = "highlights"
     __table_args__ = (
         CheckConstraint(
-            "text_quote_selector IS NULL OR "
-            "text_quote_selector->>'type' = 'TextQuoteSelector'",
+            "text_quote_selector IS NULL OR ("
+            "jsonb_typeof(text_quote_selector) = 'object' "
+            "AND text_quote_selector->>'type' IS NOT DISTINCT FROM 'TextQuoteSelector' "
+            "AND text_quote_selector ? 'exact')",
             name="highlights_text_quote_selector_chk",
         ),
     )
@@ -821,7 +826,7 @@ class Highlight(Base):
     # unreshaped so it can be handed back to a Zotero-compatible reader as-is.
     # Capturing it at import is not an optimization: an annotation edited or
     # deleted in Zotero afterwards takes its coordinates with it.
-    zotero_position_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    zotero_position_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # Zotero's document-order key, which sorts annotations within one PDF
     # without interpreting the position rectangles.
     zotero_sort_index: Mapped[str | None] = mapped_column(String(50))
@@ -832,7 +837,7 @@ class Highlight(Base):
     # Passage.text_quote_selector. Distinct from the Zotero position above:
     # that is page geometry in one PDF, this is the text, and survives a
     # different PDF or a re-extraction.
-    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    text_quote_selector: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class AuditRun(Base):
@@ -847,16 +852,19 @@ class AuditRun(Base):
     __table_args__ = (
         CheckConstraint("status IN ('running', 'done', 'failed')", name="audit_runs_status_chk"),
         CheckConstraint(
-            "kind IN ('compose_document', 'pasted_draft')", name="audit_runs_kind_chk"
+            "kind IN ('compose_document', 'pasted_draft', 'nucleate_node')",
+            name="audit_runs_kind_chk",
         ),
-        # The two triggers carry different payloads and neither may borrow the
-        # other's: a compose run points at a document, a draft run carries the
-        # text it was handed.
+        # Each trigger carries its own payload and none may borrow another's: a
+        # compose run points at a document, a draft run carries the text it was
+        # handed, a Nucleate run points at the expansion that triggered it.
         CheckConstraint(
             "(kind = 'compose_document' AND compose_document_id IS NOT NULL "
-            "AND draft_text IS NULL) OR "
+            "AND draft_text IS NULL AND expansion_id IS NULL) OR "
             "(kind = 'pasted_draft' AND compose_document_id IS NULL "
-            "AND draft_text IS NOT NULL)",
+            "AND draft_text IS NOT NULL AND expansion_id IS NULL) OR "
+            "(kind = 'nucleate_node' AND compose_document_id IS NULL "
+            "AND draft_text IS NULL AND expansion_id IS NOT NULL)",
             name="audit_runs_kind_payload_chk",
         ),
         CheckConstraint(
@@ -886,6 +894,11 @@ class AuditRun(Base):
     # The text submitted to a pasted-draft run, kept so a finding can always be
     # read back against the words it was made about. NULL for compose runs.
     draft_text: Mapped[str | None] = mapped_column(Text)
+    # The Nucleate expansion whose relevance statements this run audited
+    # automatically (D-N13). NULL for the other two kinds.
+    expansion_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nucleus_expansions.id", ondelete="CASCADE")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -962,10 +975,10 @@ class AuditDraftCitation(Base):
     doi: Mapped[str | None] = mapped_column(String(255))
     matched_title: Mapped[str | None] = mapped_column(Text)
     matched_year: Mapped[int | None] = mapped_column(Integer)
-    matched_authors_json: Mapped[Any | None] = mapped_column(JSONB)
+    matched_authors_json: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
     # The ranked alternatives, kept so the confirm step has something to offer
     # and so a later reader can see what else was on the table.
-    candidates_json: Mapped[Any | None] = mapped_column(JSONB)
+    candidates_json: Mapped[Any | None] = mapped_column(JSONB(none_as_null=True))
     # Set only when this project already holds the resolved paper.
     paper_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("papers.id", ondelete="SET NULL")
@@ -999,8 +1012,10 @@ class AuditFinding(Base):
         # no StatementEvidence identity to mirror).
         CheckConstraint(
             "(statement_id IS NOT NULL AND target_kind IS NOT NULL AND target_id IS NOT NULL "
-            "AND draft_citation_id IS NULL) OR "
+            "AND draft_citation_id IS NULL AND node_review_id IS NULL) OR "
             "(draft_citation_id IS NOT NULL AND statement_id IS NULL "
+            "AND target_kind IS NULL AND target_id IS NULL AND node_review_id IS NULL) OR "
+            "(node_review_id IS NOT NULL AND statement_id IS NULL AND draft_citation_id IS NULL "
             "AND target_kind IS NULL AND target_id IS NULL)",
             name="audit_findings_anchor_chk",
         ),
@@ -1027,6 +1042,11 @@ class AuditFinding(Base):
     draft_citation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("audit_draft_citations.id", ondelete="CASCADE")
     )
+    # Set instead of either on a Nucleate run: the review whose relevance
+    # statement was checked against its own evidence (D-N13).
+    node_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("node_reviews.id", ondelete="CASCADE")
+    )
     sub_id: Mapped[str] = mapped_column(String(20), nullable=False)
     target_kind: Mapped[str | None] = mapped_column(String(20))
     target_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -1049,3 +1069,348 @@ class AuditFinding(Base):
     )
 
     audit_run: Mapped[AuditRun] = relationship(back_populates="findings")
+
+
+# ── Nucleate: nuclei, the corpus, and the runs that grow it ───────────────────
+#
+# Vocabulary and the reasoning behind the shape: domain/nucleate.py and
+# NUCLEATE_PLAN.md (D-N11..D-N14). In brief: a paper is one CorpusNode per
+# project; a LineageEdge records how it joined a nucleus, and membership of a
+# nucleus *is* having one; a NodeReview is the user's judgement of a node
+# within one nucleus.
+
+
+class Nucleus(Base):
+    """A key question the researcher is gathering evidence about. A project
+    can hold several; each has its own chat history, which is its method
+    record."""
+
+    __tablename__ = "nuclei"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CorpusNode(Base):
+    """One paper in a project's corpus — the same node however many nuclei
+    surface it (handoff Part V).
+
+    Keyed on the paper row rather than the DOI, because uploaded PDFs and some
+    preprints have no DOI; the DOI is the *export* identifier where one exists.
+    Nothing about a node's standing in any nucleus lives here: that is
+    NodeReview, per nucleus.
+    """
+
+    __tablename__ = "corpus_nodes"
+    __table_args__ = (
+        UniqueConstraint("project_id", "paper_id", name="corpus_nodes_project_paper_uq"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NucleusPrompt(Base):
+    """One thing the user asked the archivist to do in a nucleus — the method
+    record. Kept alongside the results because replaying prompts will not
+    reproduce a graph: retrieval sources and models change (handoff Part VI).
+    """
+
+    __tablename__ = "nucleus_prompts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nucleus_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nuclei.id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The canvas nodes selected as anchors when the prompt was sent ("Expanding
+    # from: Caro 2023"). Empty means the prompt applied to the nucleus itself.
+    anchor_node_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=False, default=list
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NucleusExpansion(Base):
+    """The run record for one prompt: what the archivist did, how far it got,
+    and what it cost.
+
+    Cost is metered as tokens with the model that consumed them, not as a
+    currency figure: prices change, and a stored dollar amount would silently
+    become wrong. Per-stage attribution comes from the event log.
+    """
+
+    __tablename__ = "nucleus_expansions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'done', 'failed', 'cancelled')",
+            name="nucleus_expansions_status_chk",
+        ),
+        CheckConstraint("budget BETWEEN 1 AND 50", name="nucleus_expansions_budget_chk"),
+        CheckConstraint(
+            "input_tokens >= 0 AND output_tokens >= 0", name="nucleus_expansions_tokens_chk"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nucleus_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nuclei.id", ondelete="CASCADE"), nullable=False
+    )
+    # One run per prompt: the prompt is the question, this is what happened.
+    prompt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nucleus_prompts.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    # Papers this expansion may add (domain/nucleate.py DEFAULT_EXPANSION_BUDGET).
+    budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The current stage (domain/nucleate.py STAGES); NULL before the first.
+    stage: Mapped[str | None] = mapped_column(String(30))
+    # The archivist's reply in the chat history. Describes papers and why they
+    # were chosen; never synthesizes across them (handoff Part III).
+    reply_text: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NucleusExpansionEvent(Base):
+    """One structured event from an expansion — a stage transition or a
+    per-node status change — persisted as it is streamed (handoff Part V).
+
+    A table rather than a JSON list on the run: it is append-only, written
+    progressively by the worker, and what cost attribution by stage and any
+    later timing analysis will query.
+    """
+
+    __tablename__ = "nucleus_expansion_events"
+    __table_args__ = (
+        UniqueConstraint("expansion_id", "ord", name="nucleus_expansion_events_ord_uq"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    expansion_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nucleus_expansions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Stage state (pending/current/completed/failed) or, with node_id set, a
+    # per-node status (fetching/extracting/verifying/ready/needs full text).
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    node_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("corpus_nodes.id", ondelete="SET NULL")
+    )
+    # Real counts, never estimates: {"retrieved": 34}, {"done": 3, "of": 7}.
+    counts: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    message: Mapped[str | None] = mapped_column(Text)
+    # Tokens consumed within this step, for attribution by stage.
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class LineageEdge(Base):
+    """How a node joined a nucleus: from the nucleus itself or from another
+    node, by which prompt, from which source. Always present; never conflated
+    with a semantic edge (handoff Part V).
+
+    Membership of a nucleus is *defined* as having a lineage edge in it
+    (D-N11) — there is no separate membership list to drift. Every edge
+    carries its nucleus, including node-to-node edges, so membership is one
+    indexed lookup rather than a graph walk.
+    """
+
+    __tablename__ = "lineage_edges"
+    __table_args__ = (
+        CheckConstraint("from_kind IN ('nucleus', 'node')", name="lineage_edges_from_kind_chk"),
+        # From the nucleus: no from-node. From a node: that node, never itself.
+        CheckConstraint(
+            "(from_kind = 'nucleus' AND from_node_id IS NULL) OR "
+            "(from_kind = 'node' AND from_node_id IS NOT NULL AND from_node_id <> to_node_id)",
+            name="lineage_edges_from_chk",
+        ),
+        CheckConstraint(
+            "retrieval_source IS NULL OR retrieval_source IN ('library', 'openalex', 'web')",
+            name="lineage_edges_retrieval_source_chk",
+        ),
+        # Retrieved by the archivist (a prompt and a source) or added by a
+        # person (neither). Never one without the other.
+        CheckConstraint(
+            "(prompt_id IS NULL) = (retrieval_source IS NULL)",
+            name="lineage_edges_retrieved_or_added_chk",
+        ),
+        # The target of NodeReview's composite key: lets a review name the edge
+        # that introduced it *and* have the database check that edge is in the
+        # same nucleus and points at the same node.
+        UniqueConstraint("id", "nucleus_id", "to_node_id", name="lineage_edges_identity_uq"),
+        Index("lineage_edges_membership_idx", "nucleus_id", "to_node_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nucleus_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nuclei.id", ondelete="CASCADE"), nullable=False
+    )
+    from_kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    from_node_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("corpus_nodes.id", ondelete="CASCADE")
+    )
+    to_node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("corpus_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    prompt_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nucleus_prompts.id", ondelete="SET NULL")
+    )
+    # D-N6: on the edge, not the paper — "how this was found" belongs to one
+    # expansion. NULL when a person added the node rather than the archivist.
+    retrieval_source: Mapped[str | None] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NodeReview(Base):
+    """The user's judgement of one node within one nucleus (D-N11): status,
+    the relevance statement, why the archivist chose it, and its evidence.
+
+    Per (node, nucleus) because every steering rule is: a paper rejected under
+    one question may matter to another, and relevance is always relevance *to
+    a question*.
+
+    A review cannot exist without lineage. `introduced_by_edge_id` is part of a
+    composite foreign key onto LineageEdge's (id, nucleus_id, to_node_id), so
+    the database — not application code — guarantees the introducing edge
+    exists, is in this nucleus, and points at this node. That is what keeps
+    these rows from becoming the separate membership list the handoff forbids.
+
+    The latest automatic-audit finding for the relevance statement is derived
+    by query (AuditFinding.node_review_id) rather than stored here: a stored
+    pointer would create a circular foreign key and could drift.
+    """
+
+    __tablename__ = "node_reviews"
+    __table_args__ = (
+        UniqueConstraint("nucleus_id", "node_id", name="node_reviews_nucleus_node_uq"),
+        ForeignKeyConstraint(
+            ["introduced_by_edge_id", "nucleus_id", "node_id"],
+            ["lineage_edges.id", "lineage_edges.nucleus_id", "lineage_edges.to_node_id"],
+            name="node_reviews_introduced_by_edge_fk",
+        ),
+        CheckConstraint(
+            "status IN ('frontier', 'accepted', 'rejected', 'pinned')",
+            name="node_reviews_status_chk",
+        ),
+        # A reason belongs to a rejection; un-rejecting clears it.
+        CheckConstraint(
+            "rejection_reason IS NULL OR status = 'rejected'",
+            name="node_reviews_rejection_reason_chk",
+        ),
+        CheckConstraint(
+            "relevance_provenance IS NULL OR relevance_provenance IN "
+            "('ai_proposed', 'ai_proposed_accepted', 'ai_proposed_corrected', 'user_set')",
+            name="node_reviews_relevance_provenance_chk",
+        ),
+        # A statement always says who wrote it, and a provenance always has a
+        # statement to describe.
+        CheckConstraint(
+            "(relevance_text IS NULL) = (relevance_provenance IS NULL)",
+            name="node_reviews_relevance_pair_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    nucleus_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("nuclei.id", ondelete="CASCADE"), nullable=False
+    )
+    node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("corpus_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    introduced_by_edge_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="frontier")
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    # Describes this paper and why it bears on the question. Never a synthesis
+    # across papers and never an answer to the nucleus (handoff Part III).
+    relevance_text: Mapped[str | None] = mapped_column(Text)
+    relevance_provenance: Mapped[str | None] = mapped_column(String(30))
+    # Why the archivist retrieved this paper — "matched the method named in the
+    # prompt", "cited by two accepted nodes". Collapsed by default in the drawer.
+    selection_reasoning: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class NodeEvidence(Base):
+    """One verbatim quote supporting a node's relevance statement in one
+    nucleus.
+
+    The selector is NOT NULL, unlike on Passage and Highlight. Those can hold a
+    quote that differs from this server's copy; evidence cannot, because it is
+    extracted from text in hand and verified to be a verbatim substring before
+    it is ever stored. A quote that can't be anchored isn't evidence. `source`
+    says whether it came from the full text or only the abstract — the label
+    that tells the user to weigh abstract-level claims accordingly, since
+    overreach concentrates there.
+    """
+
+    __tablename__ = "node_evidence"
+    __table_args__ = (
+        UniqueConstraint("review_id", "ord", name="node_evidence_review_ord_uq"),
+        CheckConstraint("source IN ('full_text', 'abstract')", name="node_evidence_source_chk"),
+        CheckConstraint(
+            "jsonb_typeof(text_quote_selector) = 'object' "
+            "AND text_quote_selector->>'type' IS NOT DISTINCT FROM 'TextQuoteSelector' "
+            "AND text_quote_selector ? 'exact'",
+            name="node_evidence_text_quote_selector_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    review_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("node_reviews.id", ondelete="CASCADE"), nullable=False
+    )
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    verbatim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_quote_selector: Mapped[dict[str, str]] = mapped_column(
+        JSONB(none_as_null=True), nullable=False
+    )
+    # The stored Passage this came from, when the quote was drawn from the
+    # project's full text. NULL for abstract evidence.
+    passage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("passages.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

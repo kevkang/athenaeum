@@ -147,6 +147,64 @@ The cost, accepted: the draft's own reading order is lost. A side-by-side draft-
 was considered and deferred — it would need the claim located back in the submitted text, which
 extraction does not currently record.
 
+### D-N11 — Review state lives per (paper, nucleus), and cannot exist without lineage
+
+**Decided:** status, rejection reason, relevance statement and selection reasoning live in
+`node_reviews`, one row per node per nucleus. Nodes themselves (`corpus_nodes`) are shared across
+nuclei, one per paper per project.
+
+**Why:** the handoff's export skeleton puts `status` and `relevance` on the node, but every one of
+its behaviour rules is per question — down-weight rejected papers *for that nucleus*, never
+re-propose a paper rejected *under the same nucleus*, pinned nodes considered *for that nucleus* —
+and relevance is always relevance to a question. The approved worked example: Koch et al. 2018 is
+accepted under "How quickly do microbes grow in soil?" and rejected under "What controls microbial
+carbon use efficiency?". Both hold at once, on one shared node, which a project-wide status could
+not represent. `tests/test_nucleate_schema.py` runs that exact example.
+
+**The membership concern, and how it's closed:** per-(node, nucleus) rows sit close to the separate
+membership list the handoff forbids. Membership is therefore *defined* as having a lineage edge in
+the nucleus, and the two directions of drift are closed separately:
+
+- *A review without lineage* is impossible at the database level. Each review names the lineage
+  edge that introduced it through a composite foreign key onto `(id, nucleus_id, to_node_id)`, so
+  the edge must exist, be in the same nucleus, and point at the same node. Verified by
+  counterfactual: with the constraint the illegal write is refused; with it dropped (in a
+  rolled-back transaction) the same write is accepted.
+- *Lineage without a review* is prevented in code. `nucleate/corpus.place_node` is the only
+  writer of either, and a source-scanning test fails if anything else constructs them.
+
+`place_node` also enforces the handoff's rule that the archivist never re-proposes a paper rejected
+under the same nucleus. A *person* re-adding one is allowed, since that's a deliberate choice, and
+never overwrites their earlier judgement.
+
+Nodes are keyed on the paper row, not the DOI, because uploaded PDFs and some preprints have no DOI.
+The DOI becomes the export identifier where one exists.
+
+### D-N12 — One provenance vocabulary for statements and edges
+
+**Decided:** `ai_proposed` / `ai_proposed_accepted` / `ai_proposed_corrected` / `user_set`, for
+relevance statements as well as semantic edges. Only `ai_proposed` renders as AI text (blue
+italics). This is the no-third-vocabulary principle the handoff applies to relations, applied here
+to provenance.
+
+### D-N13 — The automatic audit is a third AuditRun kind
+
+**Decided:** `AuditRun.kind` gains `nucleate_node`, tied to the `nucleus_expansions` row that
+triggered it, and `AuditFinding` gains a third anchor, the node review. One engine, one findings
+table, one integrity count, and the trigger stays distinct in the run records, as the handoff
+requires.
+
+**Refinement, made in the build:** the option described the review keeping a pointer to its latest
+finding. It doesn't; the latest finding is derived by query. A stored pointer would have created a
+circular foreign key (review → finding → review) and could drift.
+
+### D-N14 — A cancelled expansion is its own status
+
+**Decided:** `running` / `done` / `failed` / `cancelled`. This is the one value the schema needed
+that neither the handoff nor the earlier answers defined. The handoff requires "cancel available
+throughout". A cancelled run is neither finished nor broken, and recording it as `failed` would
+pollute any failure rate computed from the run records.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
@@ -307,6 +365,25 @@ creating a third *paper-to-paper* vocabulary; it already concedes the question s
 its edges were user-drawn between statements, not papers, and it retires with the statement graph.
 The migration reports affected row counts rather than guessing, per the reversible/dry-run rule.
 
+### JSON null is not SQL NULL — found and fixed 2026-09-27 (migration 0033)
+
+A test written to prove unanchored evidence *can't* be stored showed that it could. SQLAlchemy's
+JSON types store Python `None` as the JSON value `null` unless told otherwise, and
+`'null'::jsonb IS NULL` is false. Two consequences in already-committed work:
+
+- **Phase 3.1:** a Zotero highlight imported without a position was meant to be found later by a
+  backfill using `zotero_position_json IS NULL`. It would have been silently skipped.
+- **Phase 3.2:** a passage whose selector `check_passage` cleared was invisible to any "not yet
+  anchored" query.
+
+The selector `CHECK`s could also be bypassed: `null ->> 'type'` is `NULL`, and a `CHECK` treats
+`NULL` as passing. Fixed by declaring every JSONB column added this session `none_as_null=True`, and
+by migration 0033, which converts any stored JSON null and tightens the selector `CHECK`s to require
+an object, the right type, and `exact`. The dry run found zero rows to convert: the bug was latent
+and caught before any data hit it. `tests/test_jsonb_null.py` guards both halves. Older JSONB
+columns (`authors_json`, `query_expansion_json` and so on) were left alone: out of scope, and
+changing how they store values could affect existing reads.
+
 ### Also noted, not a decision
 
 Uncommitted work sat in the tree and is committed on this branch as of 2026-09-26. Checked rather
@@ -385,8 +462,9 @@ No phase is now blocked on a decision.
    proceed to an audit — `exact` is a deterministic string match, never a model's ranking. Evidence
    source is `project_full_text` / `abstract` / `no_text`.
 5. **Phase 3.2 — TextQuoteSelector.** Done 2026-09-27; see "Also noted" above.
-6. **Node schema** — nuclei, corpus nodes keyed by DOI, lineage edges, evidence, relevance,
-   selection reasoning, run records with per-stage cost. Unblocked by D-N6.
+6. **Node schema.** Done 2026-09-27: migration 0032, `domain/nucleate.py`,
+   `nucleate/corpus.py`. See D-N11..D-N14. Building it surfaced a latent bug in earlier committed
+   work, fixed in 0033 — see "JSON null" below.
 7. **Retrieval pipeline and stage event stream.**
 8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
 9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
