@@ -9,13 +9,43 @@ opt-in via the `db_session`/`client` parameters.
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 
+import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from athenaeum.config import get_settings
+
+
+@asynccontextmanager
+async def _offline_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """The app's startup with every outside service absent: the state the
+    real lifespan leaves when Redis, Neo4j and Chromium are all unavailable."""
+    app.state.arq_pool = None
+    app.state.neo4j_driver = None
+    app.state.pw = None
+    app.state.pw_browser = None
+    yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_outside_services_at_app_startup() -> Iterator[None]:
+    """Every `with TestClient(app)` runs the app's lifespan. The real one
+    connects to Redis (retrying for seconds when it's down), Neo4j, and
+    launches Chromium, once per test. With only Postgres up (as in CI) that
+    made the suite crawl, and with the full stack up tests saw different
+    state than without it. No test relies on those connections: tests that
+    need a queue or driver pass their own."""
+    from athenaeum.main import app
+
+    real = app.router.lifespan_context
+    app.router.lifespan_context = _offline_lifespan
+    yield
+    app.router.lifespan_context = real
 
 
 @pytest_asyncio.fixture
