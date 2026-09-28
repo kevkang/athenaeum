@@ -33,11 +33,11 @@ const STATUS_COPY = {
 
 /**
  * Everything about one node, opened on selection so the prompt stays visible
- * while inspecting (handoff Part IV). First, why the archivist chose it, in
- * its own (AI) voice, so you can judge relevance yourself (D-N22: no verdict
- * of the archivist's own). Then supplying its text if it has none, the review
- * actions and a way into Read (D-N23), its metadata and verbatim evidence,
- * its relations, and the nuclei it's in.
+ * while inspecting (handoff Part IV): supplying its text if it has none, the
+ * review actions and a way into Read (D-N23), the paper's details, then why
+ * the archivist chose it, in its own (AI) voice so you can judge relevance
+ * yourself (D-N22: no verdict of the archivist's own), directly above the
+ * verbatim evidence it rests on. Then its relations and the nuclei it's in.
  */
 export default function NodeDrawer({
   node,
@@ -122,15 +122,6 @@ export default function NodeDrawer({
         <button className={styles.close} onClick={onClose} aria-label="Close">×</button>
       </header>
 
-      <section className={styles.why}>
-        <div className={styles.sectionLabel}>Why the archivist chose this</div>
-        {review.selection_reasoning ? (
-          <p className={styles.aiText}>{review.selection_reasoning}</p>
-        ) : (
-          <p className={styles.faint}>No reason was recorded for this paper.</p>
-        )}
-      </section>
-
       {node.fulltext === 'user_must_supply' && supply(true)}
 
       <section className={styles.section}>
@@ -204,6 +195,15 @@ export default function NodeDrawer({
           <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">doi:{paper.doi}</a>
         )}
         <div className={styles.fulltext} data-state={node.fulltext}>{FULLTEXT_COPY[node.fulltext]}</div>
+      </section>
+
+      <section className={styles.why}>
+        <div className={styles.sectionLabel}>Why the archivist chose this</div>
+        {review.selection_reasoning ? (
+          <p className={styles.aiText}>{review.selection_reasoning}</p>
+        ) : (
+          <p className={styles.faint}>No reason was recorded for this paper.</p>
+        )}
       </section>
 
       <section className={styles.section}>

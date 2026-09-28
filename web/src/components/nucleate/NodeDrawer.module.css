@@ -218,8 +218,8 @@ details[open] > .sectionLabel::before { content: '▾ '; }
   cursor: pointer;
 }
 
-/* ── Why the archivist chose this: first, in the archivist's voice (D-N22) ── */
-.why { padding: 4px 16px 12px; }
+/* ── Why the archivist chose this: in the archivist's voice, above the evidence (D-N22) ── */
+.why { padding: 12px 16px; border-top: 1px solid var(--border-subtle); }
 .meta .title { margin: 0 0 4px; }
 
 /* ── Supplying the full text (D-N23) ── */
