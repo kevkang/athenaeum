@@ -10,9 +10,24 @@ citation objects, not from a separate ranking pass.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
+import structlog
 
 from athenaeum.provider.anthropic_client import AnthropicProvider
 from athenaeum.provider.base import Message
+
+log = structlog.get_logger()
+
+# Room for the whole turn: with the dynamic-filtering variant, the code the
+# model writes to filter results is billed as output too, and it must still
+# write one cited paragraph per source after up to max_uses searches. A
+# response cut off by max_tokens before that writing has no citations, and
+# so reads as "nothing found".
+_MAX_TOKENS = 16000
+# The server pauses a long search turn (stop_reason "pause_turn"); sending the
+# paused turn back resumes it. Bounded so a turn can't loop indefinitely.
+_MAX_CONTINUATIONS = 3
 
 # Current-generation models support the newer web_search variant with
 # built-in dynamic filtering; anything else falls back to the basic variant.
@@ -60,17 +75,26 @@ async def find_via_web_search(
     rather than parsing the raw search-result blocks (which carry only a
     title/url/opaque encrypted_content, no readable snippet)."""
     tool = _web_search_tool_for_model(provider.model, max_uses)
+    messages = [Message(role="user", content=query)]
 
     response = await provider.complete_raw(
-        messages=[Message(role="user", content=query)],
-        system=WEB_SEARCH_FIND_SYSTEM,
-        tools=[tool],
-        max_tokens=2048,
+        messages=messages, system=WEB_SEARCH_FIND_SYSTEM, tools=[tool], max_tokens=_MAX_TOKENS,
     )
+    content: list[Any] = list(response.content)
+    continuations = 0
+    while response.stop_reason == "pause_turn" and continuations < _MAX_CONTINUATIONS:
+        # Resend the paused turn as-is, with no extra "continue" message: the
+        # trailing server_tool_use block tells the API to resume the turn.
+        continuations += 1
+        response = await provider.complete_raw(
+            messages=[*messages, Message(role="assistant", content=list(content))],
+            system=WEB_SEARCH_FIND_SYSTEM, tools=[tool], max_tokens=_MAX_TOKENS,
+        )
+        content.extend(response.content)
 
     matches: list[WebSearchMatch] = []
     seen_urls: set[str] = set()
-    for block in response.content:
+    for block in content:
         if block.type != "text" or not block.citations:
             continue
         for citation in block.citations:
@@ -85,4 +109,17 @@ async def find_via_web_search(
                     relevance_note=block.text.strip(),
                 )
             )
+    # Why a search came back as it did: a truncated or still-paused turn and a
+    # genuinely empty web look identical from the matches alone.
+    log.info(
+        "web_search_find.done",
+        stop_reason=response.stop_reason,
+        continuations=continuations,
+        searches=sum(1 for b in content if b.type == "server_tool_use"),
+        text_blocks=sum(1 for b in content if b.type == "text"),
+        matches=len(matches),
+    )
+    if response.stop_reason in ("max_tokens", "pause_turn"):
+        log.warning("web_search_find.incomplete", stop_reason=response.stop_reason,
+                    matches=len(matches))
     return matches

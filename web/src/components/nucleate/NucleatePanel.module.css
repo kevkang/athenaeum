@@ -91,6 +91,8 @@
   .stage[data-state='current'] .stageSymbol { animation: none; }
 }
 
+.queued { color: var(--text-muted); line-height: 1.5; }
+
 .stageFooter {
   display: flex;
   justify-content: space-between;

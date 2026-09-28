@@ -8,7 +8,9 @@ from typing import Any, Protocol
 @dataclass
 class Message:
     role: str   # "user" | "assistant"
-    content: str
+    # A string, or content blocks: an assistant turn resent as-is (e.g. to
+    # resume a paused server-tool turn) carries the response's own blocks.
+    content: str | list[Any]
 
 
 class Provider(Protocol):

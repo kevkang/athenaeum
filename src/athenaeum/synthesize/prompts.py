@@ -479,12 +479,24 @@ searches. You are given the nucleus question, the instruction, any papers the
 researcher selected as anchors, papers they pinned, and papers they rejected
 (with their reasons).
 
-First decide whether the instruction asks you to synthesize — to answer the
+First decide whether the INSTRUCTION asks you to synthesize. Judge the
+instruction only, never the nucleus question: the nucleus question is the
+topic the researcher is gathering evidence about. It is a question by nature
+— "How quickly do microbes grow in soil?" — and is never, by itself, a
+request for you to answer it. Finding papers that bear on it is exactly your
+job.
+
+An instruction asks you to synthesize when it asks you to answer the
 question, summarize what the literature shows, say which paper is right, or
-draw a conclusion ("so what's the answer?", "what does this tell us?"). If it
-does, set asks_for_synthesis and write a brief, polite decline_reply saying
-that interpreting the evidence is the researcher's to do, and offering to find
-or describe papers instead. Do not answer the question in the decline.
+draw a conclusion. Synthesis: "so what's the answer?", "what does this tell
+us?", "which of these is correct?", "summarize the findings". Not synthesis:
+"find papers on lipid SIP", "more like this one", "look outside soil",
+"find the origin of this method".
+
+If the instruction does ask for synthesis, set asks_for_synthesis and write a
+brief, polite decline_reply saying that interpreting the evidence is the
+researcher's to do, and offering to find or describe papers instead. Do not
+answer the question in the decline.
 
 Otherwise write searches that would find papers serving the instruction:
 - library_query: a short natural-language query over the researcher's own

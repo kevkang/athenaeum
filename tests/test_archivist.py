@@ -19,7 +19,7 @@ from athenaeum.domain import nucleate as v
 from athenaeum.nucleate import archivist
 from athenaeum.nucleate.archivist import ArchivistDeps, rank, run_expansion
 from athenaeum.nucleate.corpus import place_node
-from athenaeum.nucleate.retrieval import Candidate, WebResult
+from athenaeum.nucleate.retrieval import Candidate, OpenAlexResult, WebResult
 from athenaeum.storage.models import (
     AuditFinding,
     AuditRun,
@@ -99,7 +99,7 @@ def _deps(provider, *, openalex=(), library=(), web=None, events=None) -> Archiv
         return list(library)
 
     async def _openalex(queries):
-        return list(openalex)
+        return OpenAlexResult(candidates=list(openalex), failed_queries=0)
 
     async def _web(query):
         return web or WebResult(candidates=[], unmatched=0)
@@ -416,3 +416,41 @@ async def test_rank_drops_invalid_and_repeated_choices_and_honours_the_budget() 
 @pytest.mark.parametrize("budget", [v.MIN_EXPANSION_BUDGET, v.MAX_EXPANSION_BUDGET])
 def test_default_budget_is_within_the_configured_range(budget) -> None:
     assert v.MIN_EXPANSION_BUDGET <= v.DEFAULT_EXPANSION_BUDGET <= v.MAX_EXPANSION_BUDGET
+
+
+
+# ── Found by the first live run ──────────────────────────────────────────────
+
+
+async def test_a_new_nucleus_is_not_handed_its_question_as_the_instruction(db_session) -> None:
+    """The first live run declined a brand-new nucleus as a request to
+    synthesize: its opening prompt *is* its question, and "How quickly do
+    microbes grow in soil?" reads as "please answer this". The opening step
+    must be told what it actually asks — find papers."""
+    user, _, _, expansion = await _world(db_session)  # prompt text == the question
+    provider = ScriptedProvider()
+    deps = _deps(provider, openalex=[_candidate("Koch", _KOCH)])
+
+    await run_expansion(db_session, expansion.id, deps, user.id)
+
+    (planning,) = provider.prompts["plan_retrieval"]
+    assert f"INSTRUCTION: {archivist.OPENING_INSTRUCTION}" in planning
+    assert f"INSTRUCTION: {QUESTION}" not in planning
+    assert f"NUCLEUS QUESTION: {QUESTION}" in planning
+
+
+async def test_a_follow_up_prompt_is_passed_through_unchanged(db_session) -> None:
+    user, _, _, expansion = await _world(db_session, prompt_text="Look outside soil too")
+    provider = ScriptedProvider()
+    deps = _deps(provider, openalex=[_candidate("Koch", _KOCH)])
+
+    await run_expansion(db_session, expansion.id, deps, user.id)
+
+    (planning,) = provider.prompts["plan_retrieval"]
+    assert "INSTRUCTION: Look outside soil too" in planning
+
+
+def test_the_interpret_prompt_says_the_question_is_never_itself_a_synthesis_request() -> None:
+    system = prompts.ARCHIVIST_INTERPRET_SYSTEM
+    assert "Judge the\ninstruction only, never the nucleus question" in system
+    assert "never, by itself, a\nrequest for you to answer it" in system

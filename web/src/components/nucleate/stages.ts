@@ -21,6 +21,9 @@ function describe(stage: Stage, e: ExpansionEvent): string {
     if (c.web_unmatched) {
       parts.push(`${c.web_unmatched} web ${c.web_unmatched === 1 ? 'page' : 'pages'} matched no paper`);
     }
+    if (c.openalex_failed) {
+      parts.push(`${c.openalex_failed} OpenAlex ${c.openalex_failed === 1 ? 'search' : 'searches'} failed`);
+    }
     return parts.join(' · ');
   }
   if (stage === 'ranking' && e.status === 'completed') {

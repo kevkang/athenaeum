@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from athenaeum.domain import nucleate as v
 from athenaeum.domain.source_check import text_quote_selector_in
 from athenaeum.nucleate.corpus import RejectedUnderThisNucleus, place_node
-from athenaeum.nucleate.retrieval import Candidate, WebResult, merge_candidates
+from athenaeum.nucleate.retrieval import Candidate, OpenAlexResult, WebResult, merge_candidates
 from athenaeum.provider.base import Message, Provider
 from athenaeum.storage.models import (
     AuditFinding,
@@ -121,7 +121,7 @@ class ArchivistDeps:
     checker_model: str
     embed_model: str
     library: Callable[[AsyncSession, uuid.UUID, str], Awaitable[list[Candidate]]]
-    openalex: Callable[[list[str]], Awaitable[list[Candidate]]]
+    openalex: Callable[[list[str]], Awaitable[OpenAlexResult]]
     web: Callable[[str], Awaitable[WebResult]]
     publish: Callable[[dict[str, Any]], Awaitable[None]]
     # D-N15, background full text. `find_open_access` looks a DOI up on
@@ -189,6 +189,24 @@ class Emitter:
 
 
 # ── Model steps ──────────────────────────────────────────────────────────────
+
+
+# What the model is told the researcher asked, on a nucleus's opening step.
+OPENING_INSTRUCTION = "Find papers that bear on the nucleus question."
+
+
+def instruction_for(nucleus: Nucleus, prompt: NucleusPrompt) -> str:
+    """The researcher's instruction for this step.
+
+    A new nucleus's first prompt is its question, stored that way so the chat
+    reads naturally. But handing the question to the model as the instruction
+    reads as "please answer this" — and on the first live run the archivist
+    duly declined it as a request to synthesize. So the opening step is given
+    the instruction it actually carries: find papers.
+    """
+    if prompt.text.strip() == nucleus.question.strip():
+        return OPENING_INSTRUCTION
+    return prompt.text
 
 
 @dataclass
@@ -457,8 +475,8 @@ async def _run(
 
     # ── interpreting ──
     await emitter.emit("interpreting", "current")
-    plan = await interpret(deps.archivist, nucleus.question, prompt.text, anchors, pinned,
-                           rejected)
+    plan = await interpret(deps.archivist, nucleus.question, instruction_for(nucleus, prompt),
+                           anchors, pinned, rejected)
     if plan.asks_for_synthesis:
         # The guardrail: decline briefly and point at what's already here,
         # rather than answering the question.
@@ -487,9 +505,10 @@ async def _run(
     library = await deps.library(session, nucleus.project_id, plan.library_query)
     openalex = await deps.openalex(plan.scholarly_queries)
     web = await deps.web(plan.web_query)
-    candidates = merge_candidates(library, openalex, web.candidates)
+    candidates = merge_candidates(library, openalex.candidates, web.candidates)
     await emitter.emit("retrieving", "completed", counts={
-        "retrieved": len(candidates), "library": len(library), "openalex": len(openalex),
+        "retrieved": len(candidates), "library": len(library),
+        "openalex": len(openalex.candidates), "openalex_failed": openalex.failed_queries,
         "web": len(web.candidates), "web_unmatched": web.unmatched,
     })
     if await _cancelled(session, expansion):
@@ -500,8 +519,8 @@ async def _run(
     rejected_keys = {Candidate(source=v.LIBRARY, title=p.title, doi=p.doi,
                                openalex_id=p.openalex_id).key for p, _r in rejected}
     fresh = [c for c in candidates if c.key not in member_keys]
-    selections = (await rank(deps.archivist, nucleus.question, prompt.text, anchors,
-                             rejected, fresh, expansion.budget)) if fresh else []
+    selections = (await rank(deps.archivist, nucleus.question, instruction_for(nucleus, prompt),
+                             anchors, rejected, fresh, expansion.budget)) if fresh else []
     await emitter.emit("ranking", "completed", counts={
         "candidates": len(candidates),
         "already_in_nucleus": len(candidates) - len(fresh),

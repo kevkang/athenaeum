@@ -144,13 +144,22 @@ async def retrieve_library(
 # ── OpenAlex ─────────────────────────────────────────────────────────────────
 
 
+@dataclass
+class OpenAlexResult:
+    candidates: list[Candidate]
+    # Queries that failed even after retries. Counted so the stage can say
+    # so: a failed query and a query with no hits must not look the same.
+    failed_queries: int
+
+
 async def retrieve_openalex(
     queries: list[str], per_query: int = 10, email: str = "contact@athenaeum.app"
-) -> list[Candidate]:
-    """Run each scholarly query against OpenAlex. A query that fails is logged
-    and skipped rather than failing the whole expansion."""
+) -> OpenAlexResult:
+    """Run each scholarly query against OpenAlex. A query that fails is logged,
+    counted and skipped rather than failing the whole expansion."""
     loop = asyncio.get_running_loop()
     candidates: list[Candidate] = []
+    failed = 0
     for query in queries:
         if not query.strip():
             continue
@@ -158,9 +167,10 @@ async def retrieve_openalex(
             hits = await loop.run_in_executor(None, search_works, query, per_query, email)
         except Exception as exc:
             log.warning("archivist.openalex_failed", query=query, error=str(exc)[:200])
+            failed += 1
             continue
         candidates.extend(_from_hit(h, OPENALEX) for h in hits)
-    return candidates
+    return OpenAlexResult(candidates=candidates, failed_queries=failed)
 
 
 # ── Web ──────────────────────────────────────────────────────────────────────

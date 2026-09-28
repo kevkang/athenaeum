@@ -40,6 +40,27 @@ export default function StageList({
   }, [running]);
 
   if (!run) return null;
+
+  if (running && events.length === 0) {
+    // Accepted but not started: nothing has picked the job up yet. Said
+    // plainly, because "working" would be false, and after a minute the most
+    // likely reason is that no background worker is running at all.
+    const waited = (now - Date.parse(run.started_at)) / 1000;
+    return (
+      <div className={styles.stages} aria-live="polite">
+        <div className={styles.queued}>
+          {waited < 60
+            ? 'Queued — waiting for the archivist to start this step.'
+            : 'Still queued: nothing has started this step. The background worker may not be running.'}
+        </div>
+        <div className={styles.stageFooter}>
+          <span className={styles.stageElapsed}>{elapsed(run.started_at, null, now)} waiting</span>
+          <button className={styles.cancelBtn} onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
   const views = stageViews(events);
 
   if (!running && !expanded) {

@@ -7,6 +7,12 @@ import httpx
 import pyalex
 from pyalex import Works
 
+# pyalex's default is no retries, so a single 429 fails the call outright.
+# OpenAlex rate-limits bursts (an archivist run and a background ingest can
+# overlap), so back off and retry instead: waits of roughly 1, 2, 4, 8 s.
+pyalex.config.max_retries = 4
+pyalex.config.retry_backoff_factor = 1.0
+
 _OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 
 

@@ -41,7 +41,9 @@ export default function ChatHistory({
             {exp?.reply_text ? (
               <div className={styles.archivistMsg}>{exp.reply_text}</div>
             ) : exp?.status === 'running' ? (
-              <div className={styles.workingMsg}>Working on it…</div>
+              <div className={styles.workingMsg}>
+                {exp.stage ? 'Working on it…' : 'Queued…'}
+              </div>
             ) : exp?.status === 'failed' ? (
               <div className={styles.failedMsg}>This step failed before finishing.</div>
             ) : null}

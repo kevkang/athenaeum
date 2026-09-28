@@ -21,7 +21,7 @@ from athenaeum.nucleate import fulltext
 from athenaeum.nucleate.archivist import ArchivistDeps, request_background_fulltext, run_expansion
 from athenaeum.nucleate.corpus import place_node
 from athenaeum.nucleate.fulltext import UpgradeDeps, upgrade_nodes_for_paper
-from athenaeum.nucleate.retrieval import Candidate, WebResult
+from athenaeum.nucleate.retrieval import Candidate, OpenAlexResult, WebResult
 from athenaeum.storage.models import (
     AuditRun,
     NodeEvidence,
@@ -165,8 +165,9 @@ async def test_a_paper_with_no_abstract_but_an_open_access_copy_is_fetching_not_
     events: list = []
 
     async def openalex(queries):
-        return [Candidate(source=v.OPENALEX, title="No abstract",
-                          doi=f"10.9999/{uuid.uuid4().hex[:8]}")]
+        return OpenAlexResult(candidates=[Candidate(
+            source=v.OPENALEX, title="No abstract",
+            doi=f"10.9999/{uuid.uuid4().hex[:8]}")], failed_queries=0)
 
     async def nothing(*a):
         return []
