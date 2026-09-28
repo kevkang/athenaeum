@@ -7,7 +7,6 @@ import {
 } from '@tanstack/react-router';
 import { useAuthStore } from './store/auth';
 import LoginPage from './pages/LoginPage';
-import HomePage from './pages/HomePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
 import ReadView from './pages/ReadView';
@@ -147,14 +146,12 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad() {
-    // Logged-in visitors land on their actual dashboard, unchanged.
-    // Logged-out visitors get the public home page (rendered PRINCIPLES.athmd)
-    // instead of being bounced straight to /login, which is still reachable
-    // separately via the page's own "Sign in" link.
+    // Logged-in visitors land on their dashboard; everyone else on sign-in.
+    // The public home page (rendered PRINCIPLES.athmd, pages/HomePage.tsx) is
+    // withdrawn while it's revised; route it here again to bring it back.
     const { isAuthenticated } = useAuthStore.getState();
-    if (isAuthenticated) throw redirect({ to: '/projects' });
+    throw redirect({ to: isAuthenticated ? '/projects' : '/login' });
   },
-  component: HomePage,
 });
 
 const routeTree = rootRoute.addChildren([
