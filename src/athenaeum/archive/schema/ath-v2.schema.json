@@ -1,0 +1,1210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://athenaeum.example/formats/ath/2.0/schema.json",
+  "title": "Athenaeum project archive (.ath), version 2.0",
+  "description": "A project's corpus and its record: nuclei and the prompts that grew them, papers as nodes with their per-nucleus reviews and verbatim evidence, lineage and semantic edges, and the archive sections carried over from version 1. Results are stored, not only prompts. Every quote carries a W3C TextQuoteSelector; no paper's full text is included. The id and the @context namespace are placeholders until published.",
+  "type": "object",
+  "properties": {
+    "@context": {
+      "type": "object"
+    },
+    "format": {
+      "const": "ath"
+    },
+    "version": {
+      "const": "2.0"
+    },
+    "exported_at": {
+      "$ref": "#/$defs/datetime"
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "license"
+      ],
+      "additionalProperties": false
+    },
+    "papers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "doi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openalex_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "authors_json": {},
+          "venue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "abstract": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          },
+          "in_library": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "doi",
+          "openalex_id",
+          "title",
+          "authors_json",
+          "venue",
+          "year",
+          "abstract",
+          "status",
+          "created_at",
+          "in_library"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "passages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "paper_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "sentence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verbatim_text": {
+            "type": "string"
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/textQuoteSelector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "verified_at": {
+            "$ref": "#/$defs/datetime"
+          },
+          "checker_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "paper_id",
+          "sentence_ids",
+          "verbatim_text",
+          "selector",
+          "verified",
+          "verified_at",
+          "checker_model"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "syntheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "claim_text": {
+            "type": "string"
+          },
+          "synthesis_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retrieval_corpus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checker_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verification_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "relevance_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "run_at": {
+            "$ref": "#/$defs/datetime"
+          },
+          "query_expansion_json": {},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "passage_id": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "passage_id",
+                "role",
+                "ord"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "claim_text",
+          "synthesis_text",
+          "retrieval_corpus",
+          "model",
+          "checker_model",
+          "verification_rate",
+          "relevance_rate",
+          "status",
+          "run_at",
+          "query_expansion_json",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "statements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "author_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "assertion": {
+            "type": "string"
+          },
+          "built_from_synthesis_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locked_at": {
+            "$ref": "#/$defs/datetime"
+          },
+          "drafted_at": {
+            "$ref": "#/$defs/datetime"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "target_kind": {
+                  "type": "string"
+                },
+                "target_id": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "paper_id": {
+                  "$ref": "#/$defs/uuid"
+                }
+              },
+              "required": [
+                "target_kind",
+                "target_id",
+                "role"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "to_statement_id": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "relation": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to_statement_id",
+                "relation"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "author_id",
+          "type",
+          "status",
+          "assertion",
+          "built_from_synthesis_id",
+          "locked_at",
+          "drafted_at",
+          "evidence",
+          "edges"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "author_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          }
+        },
+        "required": [
+          "id",
+          "author_id",
+          "target_kind",
+          "target_id",
+          "body",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "compose_document": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "content_json": {},
+            "version": {
+              "type": "integer"
+            },
+            "updated_by": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updated_at": {
+              "$ref": "#/$defs/datetime"
+            }
+          },
+          "required": [
+            "id",
+            "content_json",
+            "version",
+            "updated_by",
+            "updated_at"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "highlights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "paper_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "sentence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verbatim_text": {
+            "type": "string"
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/textQuoteSelector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          }
+        },
+        "required": [
+          "id",
+          "paper_id",
+          "sentence_ids",
+          "verbatim_text",
+          "selector",
+          "author_id",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evaluations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "synthesis_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "passage_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "user_id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "stance": {
+            "type": "string"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          }
+        },
+        "required": [
+          "id",
+          "synthesis_id",
+          "passage_id",
+          "user_id",
+          "stance",
+          "body",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "storage_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "storage_uri",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "project_seq": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "entity_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prev_json": {},
+          "payload_json": {},
+          "created_at": {
+            "$ref": "#/$defs/datetime"
+          }
+        },
+        "required": [
+          "id",
+          "project_seq",
+          "actor_id",
+          "kind",
+          "entity_kind",
+          "entity_id",
+          "prev_json",
+          "payload_json",
+          "created_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "nuclei": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "question": {
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created": {
+            "$ref": "#/$defs/datetime"
+          },
+          "prompts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "anchor_nodes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/nodeRef"
+                  }
+                },
+                "created_by": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "created": {
+                  "$ref": "#/$defs/datetime"
+                },
+                "run": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "done",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "budget": {
+                          "type": "integer"
+                        },
+                        "model": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "input_tokens": {
+                          "type": "integer"
+                        },
+                        "output_tokens": {
+                          "type": "integer"
+                        },
+                        "reply_text": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "started": {
+                          "$ref": "#/$defs/datetime"
+                        },
+                        "finished": {
+                          "$ref": "#/$defs/datetime"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "budget",
+                        "model",
+                        "input_tokens",
+                        "output_tokens",
+                        "reply_text",
+                        "started",
+                        "finished"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "anchor_nodes",
+                "created_by",
+                "created",
+                "run"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "created_by",
+          "created",
+          "prompts"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/nodeRef"
+          },
+          "type": {
+            "const": "paper"
+          },
+          "paper": {
+            "$ref": "#/$defs/uuid"
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "authors": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "year": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "venue": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "doi": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "authors",
+              "year",
+              "venue",
+              "doi"
+            ],
+            "additionalProperties": false
+          },
+          "fulltext": {
+            "type": "string",
+            "enum": [
+              "available",
+              "abstract_only",
+              "user_must_supply"
+            ]
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nucleus": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "frontier",
+                    "accepted",
+                    "rejected",
+                    "pinned"
+                  ]
+                },
+                "rejection_reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "relevance": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "provenance": {
+                          "$ref": "#/$defs/provenance"
+                        },
+                        "audit": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "supported": {
+                                  "type": "boolean"
+                                },
+                                "rationale": {
+                                  "type": "string"
+                                },
+                                "checked": {
+                                  "$ref": "#/$defs/datetime"
+                                }
+                              },
+                              "required": [
+                                "supported",
+                                "rationale",
+                                "checked"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "provenance",
+                        "audit"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "selection_reasoning": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/evidence"
+                  }
+                }
+              },
+              "required": [
+                "nucleus",
+                "status",
+                "rejection_reason",
+                "relevance",
+                "selection_reasoning",
+                "evidence"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "paper",
+          "metadata",
+          "fulltext",
+          "reviews"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "lineage"
+              },
+              "nucleus": {
+                "$ref": "#/$defs/uuid"
+              },
+              "from_kind": {
+                "type": "string",
+                "enum": [
+                  "nucleus",
+                  "node"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "description": "The nucleus id, or a node."
+              },
+              "to": {
+                "$ref": "#/$defs/nodeRef"
+              },
+              "prompt": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retrieval_source": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "library",
+                      "openalex",
+                      "web"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created": {
+                "$ref": "#/$defs/datetime"
+              }
+            },
+            "required": [
+              "kind",
+              "nucleus",
+              "from_kind",
+              "from",
+              "to",
+              "prompt",
+              "retrieval_source",
+              "created"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "semantic"
+              },
+              "from": {
+                "$ref": "#/$defs/nodeRef"
+              },
+              "to": {
+                "$ref": "#/$defs/nodeRef"
+              },
+              "relation": {
+                "$ref": "#/$defs/relation"
+              },
+              "proposed_relation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/relation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provenance": {
+                "$ref": "#/$defs/provenance"
+              },
+              "rationale": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rejected": {
+                "type": "boolean"
+              },
+              "rejection_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/evidence"
+                }
+              },
+              "created_by": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created": {
+                "$ref": "#/$defs/datetime"
+              }
+            },
+            "required": [
+              "kind",
+              "from",
+              "to",
+              "relation",
+              "proposed_relation",
+              "provenance",
+              "rationale",
+              "rejected",
+              "rejection_reason",
+              "evidence",
+              "created_by",
+              "created"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "@context",
+    "format",
+    "version",
+    "exported_at",
+    "project",
+    "papers",
+    "passages",
+    "syntheses",
+    "statements",
+    "annotations",
+    "compose_document",
+    "highlights",
+    "evaluations",
+    "datasets",
+    "provenance",
+    "nuclei",
+    "nodes",
+    "edges"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "datetime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "nodeRef": {
+      "type": "string",
+      "pattern": "^(doi:.+|urn:uuid:[0-9a-f-]{36})$",
+      "description": "A node: doi:<DOI>, or urn:uuid:<paper id> for a paper with no DOI."
+    },
+    "textQuoteSelector": {
+      "description": "W3C Web Annotation TextQuoteSelector: the quote, and the characters either side of it.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "TextQuoteSelector"
+        },
+        "exact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "suffix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "exact"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "description": "A verbatim quote, located by its selector. Never a paper's full text.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "full_text",
+            "abstract"
+          ]
+        },
+        "selector": {
+          "$ref": "#/$defs/textQuoteSelector"
+        }
+      },
+      "required": [
+        "source",
+        "selector"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "ai_proposed",
+        "ai_proposed_accepted",
+        "ai_proposed_corrected",
+        "user_set"
+      ]
+    },
+    "relation": {
+      "type": "string",
+      "enum": [
+        "uses_method_of",
+        "uses_data_from",
+        "extends",
+        "supports",
+        "disagrees_with",
+        "obtains_background_from"
+      ],
+      "description": "Read 'from <relation> to'. The @context maps each term to its CiTO IRI."
+    }
+  }
+}

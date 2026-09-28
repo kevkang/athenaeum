@@ -286,7 +286,7 @@ After:
 | **Nucleate** | Left panel │ canvas │ node drawer | Not built |
 | **Backtrace** | `BacktraceTree`, full screen | **Built** 2026-09-26. `pages/BacktraceView.tsx` |
 | **Audit** | Pasted draft → resolve citations → audit run | **Built** 2026-09-27. `pages/AuditView.tsx`, results grouped by outcome (D-N10) |
-| **Export** | `.ath` v2 corpus export | Existing exporter; v2 per D-N3 not built |
+| **Export** | `.ath` v2 corpus export | Built (step 10): JSON-LD, published schema |
 | **Compose** | Unchanged | Kept per D-N1, frozen per D-N5 |
 
 The visible tab bar is therefore **Read / Backtrace / Audit / Compose / Export** until Nucleate
@@ -503,7 +503,7 @@ can never disagree: one normalization serves both.
   so a forgotten path would otherwise fail silently — and the first sweep for these sites did miss
   three.
 
-Not yet: selectors are not exported (that is `.ath` v2), and draft-audit findings, whose quotes come
+Selectors are exported since `.ath` v2 (step 10). Not yet: draft-audit findings, whose quotes come
 from OpenAlex abstracts, carry none. `text_quote_selector_in(quote, text)` exists for exactly that
 single-text case and for Nucleate's abstract-derived evidence.
 
@@ -568,4 +568,19 @@ No phase is now blocked on a decision.
    full-text paper will show whether the archivist's picks hold up. Relations are not yet audited
    by the checker model the way relevance statements are; nothing was decided about that, so it
    was left out rather than invented. Numbered citation styles are not found (D-N19).
-10. **`.ath` v2 (D-N3)** and its published JSON Schema.
+10. **`.ath` v2 (D-N3).** Done 2026-09-27. The exporter writes JSON with an inline `@context`
+    (namespaces, relation terms mapped to CiTO, the TextQuoteSelector words), the v1 sections
+    unchanged plus selectors and corpus papers, and the Nucleate sections: nuclei with prompts
+    and runs, nodes with per-nucleus reviews and evidence, lineage and semantic edges. Import
+    validates against `archive/schema/ath-v2.schema.json` before writing anything, replays
+    lineage through `place_node`, and still reads v1 YAML. Served at `/formats/ath/2.0/`.
+    Verified by round trip in tests and through the real endpoints.
+
+    **Departures from the handoff's skeleton, each for a recorded reason:** review state is a
+    per-nucleus `reviews` list on each node (D-N11); the `@context` is inline, since the
+    handoff's URL is a placeholder that resolves nowhere; relations are Athenaeum's terms, which
+    the context maps to CiTO IRIs.
+
+    **Not carried over on import:** automatic audit verdicts (measured on the exporting server;
+    reported as a warning, statements import unaudited). The schema's `$id` and the `ath:`
+    namespace are placeholders until a real domain is chosen.

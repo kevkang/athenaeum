@@ -30,6 +30,8 @@ dependencies = [
     "neo4j>=5.0",
     # Phase 6 — archive
     "ruamel.yaml>=0.18",
+    # .ath v2: imports are validated against the published JSON Schema
+    "jsonschema>=4.23",
     # S3 uploads
     "boto3>=1.35",
     # Zotero integration
