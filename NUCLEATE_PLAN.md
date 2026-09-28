@@ -558,7 +558,14 @@ No phase is now blocked on a decision.
    **Gap worth closing later:** the frontend has no test runner. Canvas layout guarantees were
    verified by running the real `layout.ts` under Node's type-stripping; adopting vitest would let
    them live as tests. Not added unasked — it's a project-level choice.
-9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
-   the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the
-   `KnowledgeLink` migration.
+9. **Semantic edges.** Done 2026-09-27, per D-N19 to D-N21: 9a the schema and the `KnowledgeLink`
+   carry-over (migration 0035; `POST /links` now 410), 9b proposing from citing sentences, the
+   review rules and the API, 9c the canvas arrows, the relation drawer and the node drawer's
+   Relations section. Browser-verified against a seeded nucleus: every provenance renders as
+   designed, and accept / add / delete work end to end.
+
+   **Open:** proposing has run only against a scripted model. One real "Propose relations" on a
+   full-text paper will show whether the archivist's picks hold up. Relations are not yet audited
+   by the checker model the way relevance statements are; nothing was decided about that, so it
+   was left out rather than invented. Numbered citation styles are not found (D-N19).
 10. **`.ath` v2 (D-N3)** and its published JSON Schema.

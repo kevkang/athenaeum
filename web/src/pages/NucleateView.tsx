@@ -10,6 +10,7 @@ import NeedsFullTextQueue from '../components/nucleate/NeedsFullTextQueue';
 import PromptBox from '../components/nucleate/PromptBox';
 import NucleateCanvas from '../components/nucleate/NucleateCanvas';
 import NodeDrawer from '../components/nucleate/NodeDrawer';
+import EdgeDrawer from '../components/nucleate/EdgeDrawer';
 import panel from '../components/nucleate/NucleatePanel.module.css';
 import styles from './NucleateView.module.css';
 
@@ -42,13 +43,24 @@ export default function NucleateView() {
   const nucleusId = nucleusParam ?? nuclei[nuclei.length - 1]?.id ?? null;
   const { detail, run, events, refetch } = useNucleus(nucleusId);
 
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelectedNodes] = useState<string[]>([]);
+  // The open relation, if any. Its drawer and a paper's share the space, so
+  // opening one closes the other.
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const setSelected = useCallback((ids: string[] | ((prev: string[]) => string[])) => {
+    setSelectedNodes(ids);
+    setSelectedEdge(null);
+  }, []);
+  const openEdge = useCallback((id: string) => {
+    setSelectedNodes([]);
+    setSelectedEdge(id);
+  }, []);
   const [promptError, setPromptError] = useState<string | null>(null);
 
   const select = useCallback((id: string) => {
     navigate({ to: '/projects/$projectId/nucleate', params: { projectId }, search: { nucleus: id } });
     setSelected([]);
-  }, [navigate, projectId]);
+  }, [navigate, projectId, setSelected]);
 
   const create = useMutation({
     mutationFn: (question: string) => nucleateApi.create(projectId, question),
@@ -74,6 +86,12 @@ export default function NucleateView() {
   // The drawer shows the most recently selected node, keeping the prompt in
   // view while you inspect it (handoff Part IV).
   const drawerNode = nodes.find((n) => n.node_id === selected[selected.length - 1]) ?? null;
+  const semanticEdges = useMemo(() => detail?.semantic_edges ?? [], [detail]);
+  const drawerEdge = semanticEdges.find((e) => e.id === selectedEdge) ?? null;
+  const edgeEnds = drawerEdge && {
+    from: nodes.find((n) => n.node_id === drawerEdge.from_node_id),
+    to: nodes.find((n) => n.node_id === drawerEdge.to_node_id),
+  };
 
   // ── resizable split ──
   const body = useRef<HTMLDivElement>(null);
@@ -155,12 +173,17 @@ export default function NucleateView() {
               running={running}
               selected={selected}
               onSelectionChange={setSelected}
+              selectedEdge={selectedEdge}
+              onEdgeSelect={openEdge}
             />
             {drawerNode && (
               <NodeDrawer
                 // Keyed by node, so an unsaved edit never carries over to another paper.
                 key={drawerNode.node_id}
                 node={drawerNode}
+                nodes={nodes}
+                edges={semanticEdges}
+                onOpenEdge={openEdge}
                 projectId={projectId}
                 nucleusId={detail.nucleus.id}
                 nuclei={nuclei}
@@ -171,6 +194,17 @@ export default function NucleateView() {
                   document.getElementById('nucleate-prompt')?.focus();
                 }}
                 onOpenNucleus={select}
+              />
+            )}
+            {drawerEdge && edgeEnds?.from && edgeEnds.to && (
+              <EdgeDrawer
+                key={drawerEdge.id}
+                edge={drawerEdge}
+                from={edgeEnds.from}
+                to={edgeEnds.to}
+                onClose={() => setSelectedEdge(null)}
+                onChanged={() => void refetch()}
+                onOpenNode={(id) => setSelected([id])}
               />
             )}
           </>

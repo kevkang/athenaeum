@@ -1,8 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { annotationsApi } from '../../api/annotations';
-import { nucleateApi, type CanvasNode, type Nucleus, type ReviewUpdate } from '../../api/nucleate';
+import {
+  nucleateApi,
+  SEMANTIC_RELATIONS,
+  type CanvasNode,
+  type Nucleus,
+  type RelationProposal,
+  type ReviewUpdate,
+  type SemanticEdge,
+  type SemanticRelation,
+} from '../../api/nucleate';
 import { nodeLabel } from './labels';
+import { isUnreviewed, OUTCOME_COPY, RELATION_HINTS, RELATION_LABELS } from './relations';
+import RelationControls from './RelationControls';
 import styles from './NodeDrawer.module.css';
 
 const FULLTEXT_COPY = {
@@ -33,6 +44,8 @@ const STATUS_COPY = {
  */
 export default function NodeDrawer({
   node,
+  nodes,
+  edges,
   projectId,
   nucleusId,
   nuclei,
@@ -40,8 +53,13 @@ export default function NodeDrawer({
   onChanged,
   onExpandFrom,
   onOpenNucleus,
+  onOpenEdge,
 }: {
   node: CanvasNode;
+  /** Every node in the nucleus, to name the other end of a relation. */
+  nodes: CanvasNode[];
+  /** Every relation between papers in the nucleus. */
+  edges: SemanticEdge[];
   projectId: string;
   nucleusId: string;
   nuclei: Nucleus[];
@@ -49,6 +67,7 @@ export default function NodeDrawer({
   onChanged: () => void;
   onExpandFrom: () => void;
   onOpenNucleus: (id: string) => void;
+  onOpenEdge: (edgeId: string) => void;
 }) {
   const { review, paper } = node;
   const queryClient = useQueryClient();
@@ -230,6 +249,15 @@ export default function NodeDrawer({
         ))}
       </section>
 
+      <Relations
+        node={node}
+        nodes={nodes}
+        edges={edges}
+        nucleusId={nucleusId}
+        onChanged={onChanged}
+        onOpenEdge={onOpenEdge}
+      />
+
       <section className={styles.section}>
         <div className={styles.sectionLabel}>Nuclei</div>
         <ul className={styles.nuclei}>
@@ -267,5 +295,156 @@ export default function NodeDrawer({
         </button>
       </footer>
     </aside>
+  );
+}
+
+/**
+ * This paper's relations to others in the nucleus, both ways (D-N21), with
+ * the same review actions as the relation drawer. "Propose relations" asks
+ * the archivist to read where this paper cites the others (D-N19); the
+ * result names every other paper, so an empty result still says why.
+ */
+function Relations({
+  node,
+  nodes,
+  edges,
+  nucleusId,
+  onChanged,
+  onOpenEdge,
+}: {
+  node: CanvasNode;
+  nodes: CanvasNode[];
+  edges: SemanticEdge[];
+  nucleusId: string;
+  onChanged: () => void;
+  onOpenEdge: (edgeId: string) => void;
+}) {
+  const [report, setReport] = useState<RelationProposal | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [relation, setRelation] = useState<SemanticRelation>('uses_method_of');
+  const [target, setTarget] = useState('');
+
+  const byId = new Map(nodes.map((n) => [n.node_id, n]));
+  const mine = edges.filter((e) => e.from_node_id === node.node_id || e.to_node_id === node.node_id);
+  const shown = mine.filter((e) => !e.rejected);
+  const rejected = mine.filter((e) => e.rejected);
+  const others = nodes.filter((n) => n.node_id !== node.node_id && n.review.status !== 'rejected');
+
+  const propose = useMutation({
+    mutationFn: () => nucleateApi.proposeRelations(nucleusId, node.node_id),
+    onSuccess: (r) => {
+      setReport(r);
+      onChanged();
+    },
+  });
+  const add = useMutation({
+    mutationFn: () => nucleateApi.addRelation(nucleusId, node.node_id, target, relation),
+    onSuccess: () => {
+      setAdding(false);
+      setTarget('');
+      onChanged();
+    },
+  });
+
+  const label = (id: string) => {
+    const n = byId.get(id);
+    return n ? nodeLabel(n) : 'a paper';
+  };
+  const row = (e: SemanticEdge) => {
+    const outgoing = e.from_node_id === node.node_id;
+    const verb = (
+      <span className={isUnreviewed(e) ? styles.relationAi : styles.relationHuman}>
+        {RELATION_LABELS[e.relation]}
+      </span>
+    );
+    return (
+      <li key={e.id} className={styles.relationRow}>
+        <button className={styles.relationText} onClick={() => onOpenEdge(e.id)}>
+          {outgoing
+            ? <>This paper {verb} {label(e.to_node_id)}</>
+            : <>{label(e.from_node_id)} {verb} this paper</>}
+        </button>
+        <RelationControls edge={e} onChanged={onChanged} />
+      </li>
+    );
+  };
+
+  const errorOf = (err: unknown) =>
+    (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+
+  return (
+    <section className={styles.section}>
+      <div className={styles.sectionLabel}>Relations ({shown.length})</div>
+      {shown.length === 0 && <p className={styles.faint}>No relations to other papers here yet.</p>}
+      <ul className={styles.relationList}>{shown.map(row)}</ul>
+      {rejected.length > 0 && (
+        <details>
+          <summary className={styles.faint}>{rejected.length} rejected</summary>
+          <ul className={styles.relationList}>{rejected.map(row)}</ul>
+        </details>
+      )}
+
+      <div className={styles.inline}>
+        <button
+          className={styles.btn}
+          disabled={propose.isPending || others.length === 0 || node.fulltext !== 'available'}
+          title={node.fulltext !== 'available'
+            ? 'Relations are read from where this paper cites the others, which needs its full text.'
+            : undefined}
+          onClick={() => propose.mutate()}
+        >
+          {propose.isPending ? 'Reading…' : 'Propose relations from this paper'}
+        </button>
+        <button className={styles.btnQuiet} disabled={others.length === 0} onClick={() => setAdding((a) => !a)}>
+          Add relation…
+        </button>
+      </div>
+      {node.fulltext !== 'available' && (
+        <div className={styles.faint}>Proposing needs this paper’s full text.</div>
+      )}
+      {propose.isError && (
+        <div className={styles.error}>{errorOf(propose.error) ?? 'Could not propose relations.'}</div>
+      )}
+      {report && (
+        <ul className={styles.report} aria-label="What proposing found">
+          {report.pairs.map((p) => (
+            <li key={p.to_node_id}>
+              {label(p.to_node_id)} — {p.outcome === 'proposed' && p.proposed > 1
+                ? `${p.proposed} relations proposed` : OUTCOME_COPY[p.outcome]}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {adding && (
+        <form
+          className={styles.addRelation}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (target) add.mutate();
+          }}
+        >
+          <span>This paper</span>
+          <select
+            className={styles.input}
+            value={relation}
+            onChange={(e) => setRelation(e.target.value as SemanticRelation)}
+            title={RELATION_HINTS[relation]}
+          >
+            {SEMANTIC_RELATIONS.map((r) => <option key={r} value={r}>{RELATION_LABELS[r]}</option>)}
+          </select>
+          <select className={styles.input} value={target} onChange={(e) => setTarget(e.target.value)}>
+            <option value="">Choose a paper…</option>
+            {others.map((n) => <option key={n.node_id} value={n.node_id}>{nodeLabel(n)}</option>)}
+          </select>
+          <div className={styles.faint}>{RELATION_HINTS[relation]}</div>
+          <div className={styles.inline}>
+            <button type="submit" className={styles.btn} disabled={!target || add.isPending}>Add</button>
+            <button type="button" className={styles.btnQuiet} onClick={() => setAdding(false)}>Cancel</button>
+          </div>
+          {add.isError && <div className={styles.error}>{errorOf(add.error) ?? 'Could not add that relation.'}</div>}
+        </form>
+      )}
+    </section>
   );
 }

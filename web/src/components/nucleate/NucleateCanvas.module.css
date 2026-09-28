@@ -182,3 +182,30 @@
 }
 :global(.react-flow__controls-button:hover) { background: var(--bg-hover); }
 :global(.react-flow__controls-button svg) { fill: var(--text-muted); }
+
+/* ── Semantic relations (D-N21) ── */
+
+/* Reviewed or yours: solid and neutral. Unreviewed: dashed in the AI blue. */
+.semantic { stroke: var(--text-muted); stroke-width: 1.6; }
+.semantic[data-ai='true'] { stroke: var(--link); stroke-dasharray: 6 4; }
+.semanticHead { stroke: var(--text-muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.semanticHead[data-ai='true'] { stroke: var(--link); }
+.semantic[data-selected='true'], .semanticHead[data-selected='true'] { stroke: var(--accent); stroke-width: 2.4; }
+
+.edgeHitClickable { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
+
+.semanticLabel {
+  position: absolute;
+  pointer-events: all;
+  padding: 1px 7px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.semanticLabel[data-ai='true'] { color: var(--link); font-style: italic; border-style: dashed; border-color: var(--link); }
+.semanticLabel[data-selected='true'] { border: 1px solid var(--accent); color: var(--accent); }

@@ -3,11 +3,13 @@ import {
   Background,
   BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   Position,
   ReactFlow,
   ReactFlowProvider,
   getStraightPath,
+  useInternalNode,
   useStore,
   type Edge,
   type EdgeProps,
@@ -21,9 +23,11 @@ import {
   type CanvasNode,
   type ExpansionEvent,
   type NucleusDetail,
+  type SemanticEdge,
 } from '../../api/nucleate';
 import { layout, type Pos } from './layout';
 import { nodeLabel } from './labels';
+import { isUnreviewed, RELATION_LABELS } from './relations';
 import styles from './NucleateCanvas.module.css';
 
 /*
@@ -46,6 +50,14 @@ const SOURCE_NAMES: Record<string, string> = {
 type NucleusFlowNode = Node<{ question: string }, 'nucleus'>;
 type PaperFlowNode = Node<{ node: CanvasNode; runStatus: string | null }, 'paper'>;
 type LineageFlowEdge = Edge<{ title: string }, 'lineage'>;
+type SemanticFlowEdge = Edge<{
+  edge: SemanticEdge;
+  /** How far this curve bows out: relations between the same two papers fan
+   * out rather than drawing over each other. */
+  bend: number;
+  title: string;
+  onSelect: (id: string) => void;
+}, 'semantic'>;
 
 function rootId(nucleusId: string) {
   return `nucleus:${nucleusId}`;
@@ -176,8 +188,82 @@ function LineageEdgeView({ sourceX, sourceY, targetX, targetY, data, id }: EdgeP
   );
 }
 
+/** Where a line from a node's centre towards `toward` leaves its box. */
+function boxExit(cx: number, cy: number, w: number, h: number, toward: Pos, pad = 4): Pos {
+  const dx = toward.x - cx;
+  const dy = toward.y - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const t = Math.min(
+    dx !== 0 ? (w / 2 + pad) / Math.abs(dx) : Infinity,
+    dy !== 0 ? (h / 2 + pad) / Math.abs(dy) : Infinity,
+  );
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+/**
+ * A relation A → B (D-N21): a curved arrow, bowed to one side so it never sits
+ * on the straight lineage line, ending at B's edge rather than its centre so
+ * the arrowhead isn't hidden under the card. Unreviewed: dashed, AI blue,
+ * italic label. Reviewed or yours: solid and neutral.
+ */
+function SemanticEdgeView({ id, source, target, data, selected }: EdgeProps<SemanticFlowEdge>) {
+  const from = useInternalNode(source);
+  const to = useInternalNode(target);
+  if (!from || !to || !data) return null;
+  const size = (n: typeof from) => ({ w: n.measured.width ?? 240, h: n.measured.height ?? 90 });
+  const fs = size(from);
+  const ts = size(to);
+  const a = { x: from.internals.positionAbsolute.x + fs.w / 2, y: from.internals.positionAbsolute.y + fs.h / 2 };
+  const b = { x: to.internals.positionAbsolute.x + ts.w / 2, y: to.internals.positionAbsolute.y + ts.h / 2 };
+
+  // Control point: off the midpoint, perpendicular to A→B. The side follows
+  // the direction, so B → A bows the other way from A → B.
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  const c = { x: (a.x + b.x) / 2 + nx * data.bend, y: (a.y + b.y) / 2 + ny * data.bend };
+
+  const start = boxExit(a.x, a.y, fs.w, fs.h, c);
+  const end = boxExit(b.x, b.y, ts.w, ts.h, c, 6);
+  const path = `M ${start.x} ${start.y} Q ${c.x} ${c.y} ${end.x} ${end.y}`;
+
+  // Arrowhead along the curve's final direction (control point → end).
+  const ang = Math.atan2(end.y - c.y, end.x - c.x);
+  const head = 9;
+  const wing = (s: number) => `${end.x - head * Math.cos(ang + s)} ${end.y - head * Math.sin(ang + s)}`;
+  const arrow = `M ${wing(0.45)} L ${end.x} ${end.y} L ${wing(-0.45)}`;
+
+  // The label sits on the curve itself, at its midpoint.
+  const mid = { x: (start.x + 2 * c.x + end.x) / 4, y: (start.y + 2 * c.y + end.y) / 4 };
+  const ai = isUnreviewed(data.edge);
+
+  return (
+    <>
+      <path d={path} className={styles.semantic} data-ai={ai} data-selected={selected} fill="none" />
+      <path d={arrow} className={styles.semanticHead} data-ai={ai} data-selected={selected} fill="none" />
+      <path d={path} className={styles.edgeHitClickable} onClick={() => data.onSelect(id)}>
+        <title>{data.title}</title>
+      </path>
+      <EdgeLabelRenderer>
+        <button
+          // nodrag/nopan: a click on the label is a click, not the start of
+          // a pan of the canvas underneath.
+          className={`${styles.semanticLabel} nodrag nopan`}
+          data-ai={ai}
+          data-selected={selected}
+          style={{ transform: `translate(-50%, -50%) translate(${mid.x}px, ${mid.y}px)` }}
+          onClick={() => data.onSelect(id)}
+          title={data.title}
+        >
+          {RELATION_LABELS[data.edge.relation]}
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
 const nodeTypes = { nucleus: NucleusNodeView, paper: PaperNodeView };
-const edgeTypes = { lineage: LineageEdgeView };
+const edgeTypes = { lineage: LineageEdgeView, semantic: SemanticEdgeView };
 
 // ── The canvas ───────────────────────────────────────────────────────────────
 
@@ -187,9 +273,13 @@ interface CanvasProps {
   running: boolean;
   selected: string[];
   onSelectionChange: (ids: string[]) => void;
+  selectedEdge: string | null;
+  onEdgeSelect: (id: string) => void;
 }
 
-function Canvas({ detail, events, running, selected, onSelectionChange }: CanvasProps) {
+function Canvas({
+  detail, events, running, selected, onSelectionChange, selectedEdge, onEdgeSelect,
+}: CanvasProps) {
   const root = rootId(detail.nucleus.id);
   const ids = useMemo(() => [root, ...detail.nodes.map((n) => n.node_id)], [root, detail.nodes]);
   const links = useMemo(
@@ -244,7 +334,7 @@ function Canvas({ detail, events, running, selected, onSelectionChange }: Canvas
     })),
   ];
 
-  const edges: LineageFlowEdge[] = detail.lineage.map((l) => {
+  const lineageEdges: LineageFlowEdge[] = detail.lineage.map((l) => {
     const source = l.from_kind === 'nucleus' ? root : l.from_node_id!;
     const how = l.prompt_id
       ? `by “${promptText.get(l.prompt_id) ?? 'a prompt'}” · via ${SOURCE_NAMES[l.retrieval_source ?? ''] ?? 'the archivist'}`
@@ -254,6 +344,28 @@ function Canvas({ detail, events, running, selected, onSelectionChange }: Canvas
       data: { title: `Lineage — found from ${labelOf.get(source) ?? 'a paper'} ${how}` },
     };
   });
+
+  // Relations: rejected ones are hidden (kept in the drawer), and so is any
+  // touching a rejected paper, which is collapsed on the canvas.
+  const visible = new Set(detail.nodes.filter((n) => n.review.status !== 'rejected').map((n) => n.node_id));
+  const fan = new Map<string, number>();
+  const semanticEdges: SemanticFlowEdge[] = detail.semantic_edges
+    .filter((e) => !e.rejected && visible.has(e.from_node_id) && visible.has(e.to_node_id))
+    .map((e) => {
+      const pair = [e.from_node_id, e.to_node_id].sort().join('|');
+      const k = fan.get(pair) ?? 0;
+      fan.set(pair, k + 1);
+      const who = isUnreviewed(e) ? 'proposed by the archivist, not yet reviewed' : 'reviewed';
+      return {
+        id: e.id, source: e.from_node_id, target: e.to_node_id, type: 'semantic',
+        selected: e.id === selectedEdge, selectable: false,
+        data: {
+          edge: e, bend: 46 + 26 * k, onSelect: onEdgeSelect,
+          title: `${labelOf.get(e.from_node_id)} ${RELATION_LABELS[e.relation]} ${labelOf.get(e.to_node_id)} — ${who}`,
+        },
+      };
+    });
+  const edges: (LineageFlowEdge | SemanticFlowEdge)[] = [...lineageEdges, ...semanticEdges];
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     let next: string[] | null = null;

@@ -180,3 +180,51 @@ details > .sectionLabel { cursor: pointer; }
    draw one: without it nothing says this section opens. */
 details > .sectionLabel::before { content: '▸ '; }
 details[open] > .sectionLabel::before { content: '▾ '; }
+
+/* ── Relations (D-N21) ── */
+
+/* The relation's own words: AI blue italics until reviewed, like statements. */
+.relationAi { color: var(--link); font-style: italic; }
+.relationHuman { color: var(--text); font-style: normal; font-weight: 600; }
+
+.relationList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.relationRow { padding: 6px 0; border-bottom: 1px solid var(--border-subtle); }
+.relationRow .inline { margin-top: 4px; }
+.relationText {
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.relationText:hover { text-decoration: underline; }
+
+.relationPicker { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.relationOption {
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.relationOption[data-current='true'] { border-color: var(--accent); color: var(--accent); cursor: default; }
+
+.report { margin: 8px 0 0; padding-left: 16px; display: grid; gap: 2px; color: var(--text-faint); }
+
+.addRelation { display: grid; gap: 6px; margin-top: 8px; }
+
+.titleLink {
+  padding: 0;
+  font: inherit;
+  color: var(--text-header);
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--border-strong);
+  cursor: pointer;
+}

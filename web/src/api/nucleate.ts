@@ -150,11 +150,59 @@ export interface CanvasLineage {
   retrieval_source: 'library' | 'openalex' | 'web' | null;
 }
 
+/** The six CiTO-mapped relations (D-N7), read "A <relation> B". */
+export const SEMANTIC_RELATIONS = [
+  'uses_method_of',
+  'uses_data_from',
+  'extends',
+  'supports',
+  'disagrees_with',
+  'obtains_background_from',
+] as const;
+export type SemanticRelation = (typeof SEMANTIC_RELATIONS)[number];
+
+/** A typed relation between two papers, owned by the project (D-N20). */
+export interface SemanticEdge {
+  id: string;
+  from_node_id: string;
+  to_node_id: string;
+  relation: SemanticRelation;
+  /** What the archivist proposed; null for a relation you set yourself. */
+  proposed_relation: SemanticRelation | null;
+  provenance: Provenance;
+  rationale: string | null;
+  rejected: boolean;
+  rejection_reason: string | null;
+  evidence: CanvasEvidence[];
+}
+
+/** What proposing found for one other paper, so an empty result says why. */
+export type RelationOutcome =
+  | 'proposed' | 'no_full_text' | 'no_mention' | 'no_relation' | 'already_recorded';
+
+export interface RelationPair {
+  to_node_id: string;
+  outcome: RelationOutcome;
+  proposed: number;
+}
+
+export interface RelationProposal {
+  edges: SemanticEdge[];
+  pairs: RelationPair[];
+}
+
+export type EdgeUpdate =
+  | { action: 'accept' }
+  | { action: 'correct'; relation: SemanticRelation }
+  | { action: 'reject'; rejection_reason?: string }
+  | { action: 'restore' };
+
 export interface NucleusDetail {
   nucleus: Nucleus;
   nodes: CanvasNode[];
   lineage: CanvasLineage[];
   prompts: NucleusPrompt[];
+  semantic_edges: SemanticEdge[];
 }
 
 export interface ReviewUpdate {
@@ -192,4 +240,21 @@ export const nucleateApi = {
 
   review: (reviewId: string, update: ReviewUpdate) =>
     api.patch<CanvasReview>(`/node-reviews/${reviewId}`, update).then((r) => r.data),
+
+  proposeRelations: (nucleusId: string, nodeId: string) =>
+    api
+      .post<RelationProposal>(`/nuclei/${nucleusId}/nodes/${nodeId}/relation-proposals`)
+      .then((r) => r.data),
+
+  addRelation: (nucleusId: string, fromNodeId: string, toNodeId: string, relation: SemanticRelation) =>
+    api
+      .post<SemanticEdge>(`/nuclei/${nucleusId}/semantic-edges`, {
+        from_node_id: fromNodeId, to_node_id: toNodeId, relation,
+      })
+      .then((r) => r.data),
+
+  updateRelation: (edgeId: string, update: EdgeUpdate) =>
+    api.patch<SemanticEdge>(`/semantic-edges/${edgeId}`, update).then((r) => r.data),
+
+  deleteRelation: (edgeId: string) => api.delete(`/semantic-edges/${edgeId}`),
 };
