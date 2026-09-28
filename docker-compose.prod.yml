@@ -30,6 +30,22 @@ services:
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
 
+  # Production stores files in real AWS S3 (see S3_ENDPOINT_URL above), so it
+  # has no use for MinIO, but the base file makes api and worker wait on
+  # minio-init. MinIO's images can no longer be pulled from Docker Hub
+  # without a login (a deploy failed on exactly that, 2026-09-28), so here
+  # both are no-op stand-ins from an image that can: one idles and reports
+  # healthy, the other exits successfully at once. Nothing talks to them.
+  minio:
+    image: alpine:3
+    command: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "true"]
+
+  minio-init:
+    image: alpine:3
+    entrypoint: ["true"]
+
   worker:
     environment:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
