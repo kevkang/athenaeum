@@ -11,6 +11,7 @@ import HomePage from './pages/HomePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
 import ReadView from './pages/ReadView';
+import NucleateView from './pages/NucleateView';
 import BacktraceView from './pages/BacktraceView';
 import AuditView from './pages/AuditView';
 import ComposeView from './pages/ComposeView';
@@ -99,6 +100,16 @@ const workspaceRedirectRoute = createRoute({
   },
 });
 
+const nucleateRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/nucleate',
+  component: NucleateView,
+  // The nucleus being viewed lives in the URL, so a refresh keeps your place.
+  validateSearch: (search: Record<string, unknown>): { nucleus?: string } => ({
+    nucleus: typeof search.nucleus === 'string' ? search.nucleus : undefined,
+  }),
+});
+
 const backtraceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/backtrace',
@@ -150,6 +161,7 @@ const routeTree = rootRoute.addChildren([
     projectsRoute,
     projectRoute,
     readRoute,
+    nucleateRoute,
     workspaceRedirectRoute,
     backtraceRoute,
     auditRoute,

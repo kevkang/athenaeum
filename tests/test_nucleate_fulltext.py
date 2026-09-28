@@ -187,7 +187,7 @@ async def test_a_paper_with_no_abstract_but_an_open_access_copy_is_fetching_not_
     assert len(calls["fetched"]) == 1
     await db_session.refresh(expansion)
     assert "being fetched in the background" in expansion.reply_text
-    assert "need full text" not in expansion.reply_text
+    assert "full text before any evidence" not in expansion.reply_text
 
 
 # ── The upgrade once full text lands ─────────────────────────────────────────

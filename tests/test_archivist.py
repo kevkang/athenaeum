@@ -184,7 +184,7 @@ async def test_an_expansion_places_nodes_with_evidence_statements_and_audits(db_
     findings = list(await db_session.scalars(
         select(AuditFinding).where(AuditFinding.audit_run_id == run.id)))
     assert {f.node_review_id for f in findings} == {r.id for r in reviews}
-    assert "Proposed 2 papers (2 from openalex)." in expansion.reply_text
+    assert "Proposed 2 papers (2 from OpenAlex)." in expansion.reply_text
 
 
 async def test_stages_are_reported_in_order_with_real_counts(db_session) -> None:
@@ -323,7 +323,7 @@ async def test_a_paper_with_no_text_needs_full_text_and_gets_no_statement(db_ses
     verifying = [e for e in events if e.stage == "verifying" and e.node_id is None]
     assert verifying[-1].counts == {"done": 1, "of": 1, "skipped": 1}
     await db_session.refresh(expansion)
-    assert "1 need full text" in expansion.reply_text
+    assert "1 needs full text before any evidence can be drawn from it." in expansion.reply_text
 
 
 async def test_an_unsupported_statement_is_kept_and_marked_not_hidden(db_session) -> None:

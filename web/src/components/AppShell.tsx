@@ -39,6 +39,14 @@ export default function AppShell() {
                 Read
               </Link>
               <Link
+                to="/projects/$projectId/nucleate"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Nucleate
+              </Link>
+              <Link
                 to="/projects/$projectId/backtrace"
                 params={{ projectId }}
                 className={styles.viewBtn}
@@ -55,20 +63,20 @@ export default function AppShell() {
                 Audit
               </Link>
               <Link
-                to="/projects/$projectId/compose"
-                params={{ projectId }}
-                className={styles.viewBtn}
-                activeProps={{ className: styles.viewBtnActive }}
-              >
-                Compose
-              </Link>
-              <Link
                 to="/projects/$projectId/export"
                 params={{ projectId }}
                 className={styles.viewBtn}
                 activeProps={{ className: styles.viewBtnActive }}
               >
                 Export
+              </Link>
+              <Link
+                to="/projects/$projectId/compose"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Compose
               </Link>
             </div>
           )}

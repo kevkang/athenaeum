@@ -672,30 +672,39 @@ async def _run(
     await _finish(emitter, expansion)
 
 
+_SOURCE_NAMES = {v.LIBRARY: "your library", v.OPENALEX: "OpenAlex", v.WEB: "the web"}
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
 def _summary(tally: _Tally) -> str:
     """The chat reply. Counts and sources only — it describes what was done,
     and never what the papers mean (handoff Part III)."""
     if not tally.placed:
         return "Found no new papers for this instruction."
     by_source = tally.by_source or {}
-    parts = [f"{n} from {'your library' if s == v.LIBRARY else s}"
-             for s, n in by_source.items() if n]
-    lines = [f"Proposed {tally.placed} paper{'s' if tally.placed != 1 else ''}"
-             f" ({', '.join(parts)})."]
+    parts = [f"{n} from {_SOURCE_NAMES.get(s, s)}" for s, n in by_source.items() if n]
+    lines = [f"Proposed {_count(tally.placed, 'paper', 'papers')} ({', '.join(parts)})."]
     if tally.fetching_in_background:
         n = tally.fetching_in_background
-        lines.append(f"{n} open-access PDF{'s are' if n != 1 else ' is'} being fetched in the "
-                     "background; those nodes will gain full-text evidence when it lands.")
+        lines.append(f"{_count(n, 'open-access PDF is', 'open-access PDFs are')} being fetched "
+                     f"in the background; {'its node' if n == 1 else 'those nodes'} will gain "
+                     "full-text evidence when it lands.")
     if tally.needs_full_text:
-        lines.append(f"{tally.needs_full_text} need full text before any evidence can be "
-                     "drawn from them.")
+        n = tally.needs_full_text
+        lines.append(f"{_count(n, 'needs', 'need')} full text before any evidence can be drawn "
+                     f"from {'it' if n == 1 else 'them'}.")
     if tally.no_evidence:
         lines.append(f"{tally.no_evidence} had text but no verbatim evidence for this "
                      "question, so no relevance statement was written.")
     if tally.unsupported:
-        lines.append(f"{tally.unsupported} relevance statement"
-                     f"{'s were' if tally.unsupported != 1 else ' was'} not supported by "
-                     "its own evidence on audit — marked for your review.")
+        statements = _count(tally.unsupported, "relevance statement was",
+                            "relevance statements were")
+        own = "its" if tally.unsupported == 1 else "their"
+        lines.append(f"{statements} not supported by {own} own evidence on audit — marked "
+                     "for your review.")
     return " ".join(lines)
 
 
