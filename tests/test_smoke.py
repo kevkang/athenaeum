@@ -298,3 +298,11 @@ def test_backtrace_list_chains_requires_auth() -> None:
             "/backtrace/chains", params={"project_id": "00000000-0000-0000-0000-000000000000"}
         )
     assert resp.status_code == 401
+
+
+def test_creating_a_knowledge_link_is_retired() -> None:
+    """Migration 0035 carried links over to semantic edges; new ones would
+    land in a table nothing reads."""
+    with TestClient(app) as client:
+        resp = client.post("/links", json={})
+    assert resp.status_code == 410

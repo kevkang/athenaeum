@@ -1,14 +1,20 @@
-"""Project export (GET /projects/{id}/export) and import (POST /projects/import)."""
+"""Project export (GET /projects/{id}/export) and import (POST /projects/import),
+and the published description of the format: its JSON Schema and JSON-LD
+context, under /formats/ath/2.0/.
+"""
 from __future__ import annotations
 
+import json
 import uuid
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
+from athenaeum.archive import ath_v2
 from athenaeum.archive import export as arc_export
 from athenaeum.archive import import_ as arc_import
 from athenaeum.storage.models import ProjectMember
@@ -37,12 +43,12 @@ async def export_project(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    yaml_str = arc_export.dumps(data)
+    body = arc_export.dumps_json(data)
     safe_title = data["project"]["title"][:40].replace("/", "-").replace(" ", "_")
 
     return StreamingResponse(
-        iter([yaml_str.encode()]),
-        media_type="application/x-yaml",
+        iter([body.encode()]),
+        media_type=ath_v2.MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{safe_title}.ath"'},
     )
 
@@ -56,18 +62,31 @@ async def import_project(
 ) -> dict:
     raw = await file.read()
     try:
-        data = arc_export.loads(raw.decode())
+        text = raw.decode()
+        # Version 2 is JSON; a legacy version 1 archive is YAML.
+        data = json.loads(text) if text.lstrip().startswith("{") else arc_export.loads(text)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Cannot parse archive: {exc}") from exc
 
-    if not isinstance(data, dict) or data.get("ath_version") != arc_export.ATH_VERSION:
+    if arc_import.archive_version(data) is None:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported or missing ath_version (expected {arc_export.ATH_VERSION})",
+            detail="Not a .ath archive this server can read (versions 1 and 2.0)",
         )
 
     try:
         result = await arc_import.import_project(session, data, user.id)
+    except ath_v2.InvalidArchive as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # Import keeps the archive's ids, so records already on this server
+        # (the same archive imported before, under another project id) clash.
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Records in this archive already exist on this server; "
+                   "it looks like it was imported here before.",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -91,3 +110,18 @@ async def import_project(
         "papers_fetching": papers_fetching,
         "warnings": result.warnings,
     }
+
+
+# ── The format, published ────────────────────────────────────────────────────
+
+
+@router.get("/formats/ath/2.0/schema.json")
+async def ath_schema() -> JSONResponse:
+    """The JSON Schema every version 2.0 archive validates against."""
+    return JSONResponse(ath_v2.schema(), media_type="application/schema+json")
+
+
+@router.get("/formats/ath/2.0/context.jsonld")
+async def ath_context() -> JSONResponse:
+    """The JSON-LD context each archive also carries inline."""
+    return JSONResponse({"@context": ath_v2.context()}, media_type="application/ld+json")

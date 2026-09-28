@@ -24,7 +24,7 @@ export const zoteroHighlightsApi = {
   import: (
     paperId: string,
     projectId: string,
-    items: { sentence_ids: string[]; verbatim_text: string }[],
+    items: { sentence_ids: string[]; verbatim_text: string; annotation_item_key: string }[],
   ) =>
     api
       .post<Highlight[]>(`/papers/${paperId}/zotero-highlights/import`, {

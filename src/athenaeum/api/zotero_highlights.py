@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 
+import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
@@ -25,6 +26,7 @@ from athenaeum.domain.models import (
     ZoteroHighlightImportRequest,
     ZoteroHighlightPreviewResponse,
 )
+from athenaeum.domain.source_check import selector_for_new_quote
 from athenaeum.ingest.highlight_match import match_annotation_to_sentences
 from athenaeum.ingest.zotero import ZoteroAnnotation, ZoteroCreds, list_annotations_for_item
 from athenaeum.ingest.zotero_local import (
@@ -40,6 +42,7 @@ from athenaeum.storage.models import (
     ZoteroCredentials,
 )
 
+log = structlog.get_logger()
 router = APIRouter(prefix="/papers", tags=["zotero-highlights"])
 
 
@@ -100,6 +103,34 @@ async def _fetch_annotations(
         )
 
 
+async def _position_lookup(
+    session: SessionDep, user_id: uuid.UUID, paper: Paper
+) -> dict[str, ZoteroAnnotation]:
+    """Re-read the paper's Zotero annotations, keyed by annotation item key, so
+    import can take each highlight's position from Zotero rather than from the
+    request body.
+
+    Best-effort by design. A highlight is worth importing for its matched text
+    alone, so an unreachable Zotero account, a revoked key, or a paper that was
+    never a Zotero import all degrade to "no position captured" rather than
+    failing the import — the stored annotation key leaves the row backfillable.
+    """
+    if not paper.zotero_item_key or not paper.zotero_source:
+        return {}
+    try:
+        annotations = await _fetch_annotations(session, user_id, paper)
+    except HTTPException as exc:
+        # _fetch_annotations raises 400/502 for a user-facing preview. Here the
+        # same failure is not fatal, so it is logged and dropped.
+        log.warning(
+            "zotero_highlights.position_lookup_failed",
+            paper_id=str(paper.id),
+            detail=exc.detail,
+        )
+        return {}
+    return {ann.item_key: ann for ann in annotations}
+
+
 @router.get(
     "/{paper_id}/zotero-highlights/preview", response_model=ZoteroHighlightPreviewResponse
 )
@@ -120,9 +151,18 @@ async def preview_zotero_highlights(
 
     annotations = await _fetch_annotations(session, user.id, paper)
 
-    existing = await session.scalars(
-        select(Highlight).where(Highlight.project_id == project_id, Highlight.paper_id == paper_id)
+    existing = list(
+        await session.scalars(
+            select(Highlight).where(
+                Highlight.project_id == project_id, Highlight.paper_id == paper_id
+            )
+        )
     )
+    # Two ways to recognise an annotation already imported. The key is exact and
+    # is what new imports record; the sentence span is the fallback for rows
+    # imported before migration 0029, and is approximate — two annotations on
+    # one sentence share a span.
+    existing_keys = {h.zotero_annotation_key for h in existing if h.zotero_annotation_key}
     existing_spans = {frozenset(h.sentence_ids) for h in existing}
 
     candidates: list[ZoteroHighlightCandidateOut] = []
@@ -138,7 +178,10 @@ async def preview_zotero_highlights(
                 match_ratio=match.ratio if match else None,
                 sentence_ids=match.sentence_ids if match else None,
                 verbatim_text=match.verbatim_text if match else None,
-                already_imported=bool(match and frozenset(match.sentence_ids) in existing_spans),
+                already_imported=(
+                    ann.item_key in existing_keys
+                    or bool(match and frozenset(match.sentence_ids) in existing_spans)
+                ),
             )
         )
     return ZoteroHighlightPreviewResponse(candidates=candidates)
@@ -161,6 +204,9 @@ async def import_zotero_highlights(
     valid_ids = set(
         await session.scalars(select(PaperSentence.id).where(PaperSentence.paper_id == paper_id))
     )
+    annotations_by_key = await _position_lookup(session, user.id, paper)
+    # Every item here quotes the same paper; load its sentences once.
+    sentence_cache: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
 
     created: list[Highlight] = []
     for item in payload.items:
@@ -168,10 +214,20 @@ async def import_zotero_highlights(
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "sentence_ids must belong to this paper"
             )
+        annotation = annotations_by_key.get(item.annotation_item_key)
         highlight = Highlight(
             id=uuid.uuid4(), project_id=payload.project_id, paper_id=paper_id,
             sentence_ids=item.sentence_ids, verbatim_text=item.verbatim_text,
             author_id=user.id,
+            # The key is recorded even when the lookup came back empty: it is
+            # what makes a later backfill possible for this row.
+            zotero_annotation_key=item.annotation_item_key,
+            zotero_position_json=annotation.position if annotation else None,
+            zotero_sort_index=annotation.sort_index if annotation else None,
+            zotero_page_label=annotation.page_label if annotation else None,
+            text_quote_selector=await selector_for_new_quote(
+                session, paper_id, item.verbatim_text, item.sentence_ids, sentence_cache
+            ),
         )
         session.add(highlight)
         created.append(highlight)

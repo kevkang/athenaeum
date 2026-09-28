@@ -13,7 +13,7 @@ from athenaeum.api.audit import get_audit_run
 from athenaeum.domain.models import ComposeDocumentUpdate
 from athenaeum.provider.base import Message
 from athenaeum.storage.models import AuditFinding, AuditRun, Statement, StatementEvidence, User
-from athenaeum.synthesize.audit import audit_evidence
+from athenaeum.synthesize.audit import audit_evidence, malformed_rate
 from tests.test_citations import _seed_paper_with_sentence, _seed_project
 
 
@@ -34,20 +34,20 @@ class _FakeProvider:
 async def test_audit_evidence_empty_quotes_short_circuits_without_calling_the_provider() -> None:
     provider = _FakeProvider(None)
 
-    results = await audit_evidence(provider, "claim", [], "model")
+    checked = await audit_evidence(provider, "claim", [], "model")
 
-    assert results == []
+    assert checked.results == []
     assert provider.last_messages is None
 
 
 async def test_audit_evidence_no_tool_result_marks_everything_unsupported() -> None:
     provider = _FakeProvider(None)
 
-    results = await audit_evidence(provider, "claim", ["quote one", "quote two"], "model")
+    checked = await audit_evidence(provider, "claim", ["quote one", "quote two"], "model")
 
-    assert len(results) == 2
-    assert all(supported is False for supported, _rationale in results)
-    assert all(rationale for _supported, rationale in results)
+    assert len(checked.results) == 2
+    assert all(supported is False for supported, _rationale in checked.results)
+    assert all(rationale for _supported, rationale in checked.results)
 
 
 async def test_audit_evidence_returns_per_item_verdict_and_rationale() -> None:
@@ -62,12 +62,12 @@ async def test_audit_evidence_returns_per_item_verdict_and_rationale() -> None:
         ]},
     })
 
-    results = await audit_evidence(
+    checked = await audit_evidence(
         provider, "Radical intermediates form during abstraction.",
         ["quote supporting it", "quote about something else"], "model",
     )
 
-    assert results == [
+    assert checked.results == [
         (True, "Directly states the claim."),
         (False, "Talks about a related but different mechanism."),
     ]
@@ -81,24 +81,10 @@ async def test_audit_evidence_missing_index_defaults_to_unsupported() -> None:
         },
     })
 
-    results = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
+    checked = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
 
-    assert results[0] == (True, "Good match.")
-    assert results[1][0] is False
-
-
-async def test_audit_evidence_out_of_range_index_is_ignored_not_fatal() -> None:
-    provider = _FakeProvider({
-        "name": "audit_evidence",
-        "input": {"results": [
-            {"evidence_index": 0, "supported": True, "rationale": "Fine."},
-            {"evidence_index": 5, "supported": True, "rationale": "Should be dropped."},
-        ]},
-    })
-
-    results = await audit_evidence(provider, "claim", ["quote A"], "model")
-
-    assert results == [(True, "Fine.")]
+    assert checked.results[0] == (True, "Good match.")
+    assert checked.results[1][0] is False
 
 
 async def test_audit_evidence_context_excludes_which_statement_selected_it() -> None:
@@ -232,3 +218,102 @@ async def test_get_audit_run_assembles_findings_and_no_evidence_statements(db_se
     assert result.findings[0].sub_id == "1.1"
     assert result.findings[0].supported is True
     assert result.statements_with_no_evidence == [bare_statement.id]
+
+
+# ── Response integrity ───────────────────────────────────────────────────────
+
+async def test_a_clean_response_counts_nothing_as_skipped() -> None:
+    provider = _FakeProvider({
+        "name": "audit_evidence",
+        "input": {"results": [
+            {"evidence_index": 0, "supported": True, "rationale": "Direct."},
+            {"evidence_index": 1, "supported": False, "rationale": "Different mechanism."},
+        ]},
+    })
+
+    checked = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
+
+    assert (checked.malformed_entries, checked.missing_verdicts) == (0, 0)
+
+
+async def test_a_malformed_entry_is_counted_and_leaves_its_quote_unjudged() -> None:
+    """A bare string where the tool schema asks for an object, first seen in a
+    real evaluation run where it crashed the whole pass. It must not be fatal,
+    and the count is the point: the skipped quote is recorded as unsupported,
+    which reads exactly like a real rejection."""
+    provider = _FakeProvider({
+        "name": "audit_evidence",
+        "input": {"results": [
+            "supported",
+            {"evidence_index": 1, "supported": True, "rationale": "Fine."},
+        ]},
+    })
+
+    checked = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
+
+    assert (checked.malformed_entries, checked.missing_verdicts) == (1, 1)
+    assert checked.results[0] == (False, "No verdict returned for this item.")
+
+
+async def test_an_index_pointing_at_no_quote_is_counted() -> None:
+    provider = _FakeProvider({
+        "name": "audit_evidence",
+        "input": {"results": [
+            {"evidence_index": 0, "supported": True, "rationale": "Fine."},
+            {"evidence_index": 5, "supported": True, "rationale": "Belongs to nothing."},
+        ]},
+    })
+
+    checked = await audit_evidence(provider, "claim", ["quote A"], "model")
+
+    assert checked.results == [(True, "Fine.")]
+    assert (checked.malformed_entries, checked.missing_verdicts) == (1, 0)
+
+
+async def test_a_repeated_index_keeps_the_first_answer_and_counts_the_repeat() -> None:
+    """Two answers for one quote mean the model lost track of the list. The
+    first is kept so a later entry can't quietly overturn a verdict."""
+    provider = _FakeProvider({
+        "name": "audit_evidence",
+        "input": {"results": [
+            {"evidence_index": 0, "supported": True, "rationale": "First answer."},
+            {"evidence_index": 0, "supported": False, "rationale": "Second answer."},
+        ]},
+    })
+
+    checked = await audit_evidence(provider, "claim", ["quote A"], "model")
+
+    assert checked.results == [(True, "First answer.")]
+    assert checked.malformed_entries == 1
+
+
+async def test_a_boolean_index_is_not_read_as_a_position() -> None:
+    """True is an int in Python and would otherwise land on quote 1."""
+    provider = _FakeProvider({
+        "name": "audit_evidence",
+        "input": {"results": [{"evidence_index": True, "supported": True, "rationale": "x"}]},
+    })
+
+    checked = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
+
+    assert (checked.malformed_entries, checked.missing_verdicts) == (1, 2)
+
+
+async def test_a_response_that_is_not_a_list_counts_once_and_loses_every_verdict() -> None:
+    provider = _FakeProvider({"name": "audit_evidence", "input": {"results": "supported"}})
+
+    checked = await audit_evidence(provider, "claim", ["quote A", "quote B"], "model")
+
+    assert (checked.malformed_entries, checked.missing_verdicts) == (1, 2)
+
+
+async def test_no_response_at_all_is_missing_verdicts_not_malformed_entries() -> None:
+    checked = await audit_evidence(_FakeProvider(None), "claim", ["quote A"], "model")
+
+    assert (checked.malformed_entries, checked.missing_verdicts) == (0, 1)
+
+
+def test_a_rate_over_no_checks_is_unmeasured_rather_than_zero() -> None:
+    """0% would be read as a clean run; nothing was checked at all."""
+    assert malformed_rate(0, 0) is None
+    assert malformed_rate(1, 4) == 0.25

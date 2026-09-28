@@ -1,4 +1,10 @@
-"""Graph endpoints: statement relation graph, ghost papers, co-citation neighbours."""
+"""Graph endpoints: ghost papers and co-citation neighbours, both served from Neo4j.
+
+The statement relation graph endpoint that used to live here was removed with
+the statement graph canvas (decision D-N4): the cytoscape view in the old
+Workspace was its only consumer. Statement rows themselves remain, frozen for
+Compose's use.
+"""
 from __future__ import annotations
 
 import uuid
@@ -6,23 +12,12 @@ import uuid
 import neo4j
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
-from athenaeum.domain.models import (
-    CoCitationNeighborOut,
-    GhostPaperOut,
-    StatementEdgeOut,
-    StatementGraphOut,
-    StatementNodeOut,
-)
+from athenaeum.domain.models import CoCitationNeighborOut, GhostPaperOut
 from athenaeum.graph import queries
-from athenaeum.storage.models import (
-    ProjectMember,
-    Statement,
-    StatementEdge,
-    StatementEvidence,
-)
+from athenaeum.storage.models import ProjectMember
 
 log = structlog.get_logger()
 router = APIRouter(tags=["graph"])
@@ -47,55 +42,6 @@ async def _assert_member(session, project_id: uuid.UUID, user_id: uuid.UUID) -> 
 
 
 # ── Statement graph (served from Postgres for immediate consistency) ───────────
-
-@router.get("/projects/{project_id}/graph", response_model=StatementGraphOut)
-async def get_project_graph(
-    project_id: uuid.UUID,
-    session: SessionDep,
-    user: CurrentUserDep,
-) -> StatementGraphOut:
-    await _assert_member(session, project_id, user.id)
-
-    statements = list(await session.scalars(
-        select(Statement)
-        .where(Statement.project_id == project_id)
-        .order_by(Statement.drafted_at)
-    ))
-    statement_ids = [s.id for s in statements]
-
-    edges: list[StatementEdge] = []
-    evidence_counts: dict[uuid.UUID, int] = {}
-    if statement_ids:
-        edges = list(await session.scalars(
-            select(StatementEdge).where(
-                or_(
-                    StatementEdge.from_statement_id.in_(statement_ids),
-                    StatementEdge.to_statement_id.in_(statement_ids),
-                )
-            )
-        ))
-        count_rows = await session.execute(
-            select(StatementEvidence.statement_id, func.count())
-            .where(StatementEvidence.statement_id.in_(statement_ids))
-            .group_by(StatementEvidence.statement_id)
-        )
-        evidence_counts = {sid: count for sid, count in count_rows.all()}
-
-    return StatementGraphOut(
-        nodes=[
-            StatementNodeOut(
-                id=s.id,
-                project_id=s.project_id,
-                type=s.type,
-                status=s.status,
-                assertion=s.assertion,
-                evidence_count=evidence_counts.get(s.id, 0),
-            )
-            for s in statements
-        ],
-        edges=[StatementEdgeOut.model_validate(e) for e in edges],
-    )
-
 
 # ── Ghost papers (Neo4j) ───────────────────────────────────────────────────────
 

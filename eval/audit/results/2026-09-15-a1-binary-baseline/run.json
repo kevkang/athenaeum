@@ -1,0 +1,16 @@
+{
+  "items_file": "eval/audit/sets/set-a1-scifact.jsonl",
+  "items": 300,
+  "predictor": "audit-binary:claude-sonnet-5",
+  "model": "claude-sonnet-5",
+  "concurrency": 8,
+  "finished_at": "2026-09-15",
+  "quotes_checked": 318,
+  "malformed_entries": null,
+  "missing_verdicts": null,
+  "malformed_rate": null,
+  "prediction_errors": 0,
+  "input_tokens": 359570,
+  "output_tokens": 66659,
+  "note": "Run before the response-integrity counters existed. malformed_entries and missing_verdicts are null because they were not measured; a later check of predictions.jsonl found no item carrying the 'No verdict returned for this item.' fallback, so no quote went unjudged, and 0 items failed."
+}

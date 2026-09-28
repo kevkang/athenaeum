@@ -1,0 +1,230 @@
+/* The node drawer: right side, over the canvas, so the prompt stays in view. */
+
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border);
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 8px;
+}
+.label { font-size: 11px; font-weight: 600; color: var(--accent); }
+.title {
+  margin: 4px 0 0;
+  font-family: 'Lora', Georgia, serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-header);
+}
+.close {
+  align-self: flex-start;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.meta { display: grid; gap: 2px; padding: 0 16px 12px; font-size: 11.5px; }
+.meta a { color: var(--link); }
+.fulltext { margin-top: 4px; color: var(--text-faint); }
+.fulltext[data-state='user_must_supply'] { color: var(--contradicting); }
+
+.section { padding: 12px 16px; border-top: 1px solid var(--border-subtle); }
+.sectionLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: default;
+}
+details > .sectionLabel { cursor: pointer; }
+
+.statusRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.status {
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px dashed var(--border-strong);
+}
+.status[data-status='accepted'] { border-style: solid; color: var(--text); }
+.status[data-status='pinned'] { border: 1px solid var(--accent); color: var(--accent); }
+.status[data-status='rejected'] { color: var(--text-faint); text-decoration: line-through; }
+
+.btn, .btnQuiet, .primary {
+  font-family: inherit;
+  font-size: 11.5px;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.btn { color: var(--accent); background: none; border: 1px solid var(--accent-dim); }
+.btnQuiet { color: var(--text-muted); background: none; border: 1px solid var(--border); }
+.btn:disabled, .btnQuiet:disabled, .primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.primary {
+  width: 100%;
+  padding: 8px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+}
+
+.inline { display: flex; gap: 6px; margin-top: 8px; }
+.input, .textarea {
+  flex: 1;
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+.textarea { font-family: 'Lora', Georgia, serif; font-size: 13px; line-height: 1.5; resize: vertical; }
+
+.reason { margin-top: 6px; color: var(--text-faint); }
+.error { margin-top: 6px; color: var(--contradicting); }
+
+/* The same three voices as the canvas. */
+.aiText { margin: 0 0 6px; color: var(--link); font-style: italic; font-family: 'Lora', Georgia, serif; font-size: 13.5px; line-height: 1.5; }
+.humanText { margin: 0 0 6px; color: var(--text); font-family: 'Lora', Georgia, serif; font-size: 13.5px; line-height: 1.5; }
+.provenance { margin-bottom: 8px; font-size: 11px; color: var(--text-faint); }
+.faint { color: var(--text-faint); }
+
+.audit {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--verified);
+  background: var(--bg-card);
+}
+.audit[data-supported='false'] { border-left-color: var(--contradicting); }
+.audit[data-supported='false'] strong { color: var(--contradicting); }
+.audit[data-supported='true'] strong { color: var(--verified); }
+
+.evidence { margin: 0 0 10px; }
+.quote {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  font-family: 'Lora', Georgia, serif;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.context { color: var(--text-faint); }
+.exact { color: var(--text-muted); background: none; }
+.source {
+  margin-top: 3px;
+  padding-left: 12px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.nuclei { margin: 0; padding-left: 16px; display: grid; gap: 4px; color: var(--text); }
+.linkBtn {
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--question);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.note {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-radius: 4px;
+}
+
+.foot {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 12px 16px;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+}
+
+/* Styling the summary as a block drops the browser's disclosure triangle, so
+   draw one: without it nothing says this section opens. */
+details > .sectionLabel::before { content: '▸ '; }
+details[open] > .sectionLabel::before { content: '▾ '; }
+
+/* ── Relations (D-N21) ── */
+
+/* The relation's own words: AI blue italics until reviewed, like statements. */
+.relationAi { color: var(--link); font-style: italic; }
+.relationHuman { color: var(--text); font-style: normal; font-weight: 600; }
+
+.relationList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.relationRow { padding: 6px 0; border-bottom: 1px solid var(--border-subtle); }
+.relationRow .inline { margin-top: 4px; }
+.relationText {
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.relationText:hover { text-decoration: underline; }
+
+.relationPicker { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.relationOption {
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.relationOption[data-current='true'] { border-color: var(--accent); color: var(--accent); cursor: default; }
+
+.report { margin: 8px 0 0; padding-left: 16px; display: grid; gap: 2px; color: var(--text-faint); }
+
+.addRelation { display: grid; gap: 6px; margin-top: 8px; }
+
+.titleLink {
+  padding: 0;
+  font: inherit;
+  color: var(--text-header);
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--border-strong);
+  cursor: pointer;
+}

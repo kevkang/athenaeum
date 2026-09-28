@@ -11,6 +11,7 @@ from sqlalchemy import select
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.authors import first_author_name
 from athenaeum.domain.models import HighlightCreate, HighlightOut
+from athenaeum.domain.source_check import selector_for_new_quote
 from athenaeum.storage.models import Highlight, Paper, ProjectMember
 
 router = APIRouter(tags=["highlights"])
@@ -48,6 +49,9 @@ async def create_highlight(
         id=uuid.uuid4(), project_id=payload.project_id, paper_id=payload.paper_id,
         sentence_ids=payload.sentence_ids, verbatim_text=payload.verbatim_text,
         author_id=user.id,
+        text_quote_selector=await selector_for_new_quote(
+            session, payload.paper_id, payload.verbatim_text, payload.sentence_ids
+        ),
     )
     session.add(highlight)
     await session.commit()

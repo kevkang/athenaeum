@@ -6,83 +6,67 @@ import { projectsApi } from '../api/projects';
 import { statementsApi } from '../api/statements';
 import styles from './ExportView.module.css';
 
-// ── YAML syntax highlighter ───────────────────────────────────────────────────
+// ── JSON syntax highlighter ───────────────────────────────────────────────────
+// The archive is pretty-printed JSON (.ath 2.0), one key or value per line.
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ISO_RE  = /^\d{4}-\d{2}-\d{2}T/;
-const NUM_RE  = /^-?\d+(\.\d+)?$/;
+const UUID_RE = /^"(urn:uuid:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"$/i;
+const REF_RE  = /^"doi:/;
+const NUM_RE  = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+const LINE_RE = /^(\s*)("(?:[^"\\]|\\.)*"\s*:\s*)?(.*?)(,?)$/;
 
 function colorValue(v: string, s: typeof styles): React.ReactNode {
-  if (v === 'null' || v === '~') return <span className={s.tokFaint}>{v}</span>;
+  if (v === '') return null;
+  if (v === 'null') return <span className={s.tokFaint}>{v}</span>;
   if (v === 'true' || v === 'false') return <span className={s.tokMeta}>{v}</span>;
   if (NUM_RE.test(v)) return <span className={s.tokDefault}>{v}</span>;
-  if (UUID_RE.test(v)) return <span className={s.tokAnchor}>{v}</span>;
-  if (ISO_RE.test(v)) return <span className={s.tokString}>{v}</span>;
-  return <span className={s.tokString}>{v}</span>;
+  if (UUID_RE.test(v) || REF_RE.test(v)) return <span className={s.tokAnchor}>{v}</span>;
+  if (v.startsWith('"')) return <span className={s.tokString}>{v}</span>;
+  return <span className={s.tokFaint}>{v}</span>; // brackets and braces
 }
 
 function tokenizeLine(line: string, s: typeof styles): React.ReactNode {
-  const indentMatch = line.match(/^(\s*)/);
-  const indent = indentMatch?.[1] ?? '';
-  const trimmed = line.slice(indent.length);
-
-  if (trimmed === '' ) return <>{line}</>;
-  if (trimmed === '---' || trimmed === '...') return <span className={s.tokMeta}>{line}</span>;
-  if (trimmed.startsWith('#')) return <span className={s.tokComment}>{line}</span>;
-
-  // List item
-  if (trimmed.startsWith('- ')) {
-    const rest = trimmed.slice(2);
-    return (
-      <>
-        {indent && <span>{indent}</span>}
-        <span className={s.tokFaint}>- </span>
-        {tokenizeKeyValue(rest, s)}
-      </>
-    );
-  }
-
-  // Bare list marker
-  if (trimmed === '-') return <><span>{indent}</span><span className={s.tokFaint}>-</span></>;
-
-  return <><span>{indent}</span>{tokenizeKeyValue(trimmed, s)}</>;
+  const m = line.match(LINE_RE);
+  if (!m) return <>{line}</>;
+  const [, indent, key, value, comma] = m;
+  return (
+    <>
+      {indent}
+      {key && <span className={s.tokKey}>{key}</span>}
+      {colorValue(value, s)}
+      {comma && <span className={s.tokSep}>{comma}</span>}
+    </>
+  );
 }
 
-function tokenizeKeyValue(s_: string, s: typeof styles): React.ReactNode {
-  // key: value
-  const colonIdx = s_.indexOf(': ');
-  if (colonIdx > 0) {
-    const key = s_.slice(0, colonIdx);
-    const val = s_.slice(colonIdx + 2);
-    return (
-      <>
-        <span className={s.tokKey}>{key}</span>
-        <span className={s.tokSep}>: </span>
-        {colorValue(val, s)}
-      </>
-    );
-  }
-  // key: (no value, block follows)
-  if (s_.endsWith(':') && !s_.includes(': ')) {
-    return <span className={s.tokKey}>{s_}</span>;
-  }
-  // Bare value
-  return colorValue(s_, s);
-}
+// ── Stats from the parsed archive ─────────────────────────────────────────────
 
-// ── Stats derived from raw YAML text ─────────────────────────────────────────
+interface ArchiveCounts {
+  papers?: unknown[];
+  passages?: unknown[];
+  statements?: unknown[];
+  nuclei?: unknown[];
+  nodes?: unknown[];
+  edges?: { kind: string }[];
+  version?: string;
+}
 
 function parseStats(text: string) {
-  const countSection = (marker: string) =>
-    (text.match(new RegExp(`^  - ${marker}:`, 'gm')) ?? []).length;
-
+  let data: ArchiveCounts = {};
+  try {
+    data = JSON.parse(text) as ArchiveCounts;
+  } catch {
+    // A preview that can't be parsed still shows its text.
+  }
   return {
-    lines:     text.split('\n').length,
-    chars:     text.length,
-    papers:    countSection('doi'),
-    passages:  countSection('verbatim_text'),
-    syntheses: countSection('claim_text'),
-    statements: countSection('assertion'),
+    lines:      text.split('\n').length,
+    chars:      text.length,
+    version:    data.version ?? '?',
+    papers:     data.papers?.length ?? 0,
+    nuclei:     data.nuclei?.length ?? 0,
+    nodes:      data.nodes?.length ?? 0,
+    relations:  data.edges?.filter((e) => e.kind === 'semantic').length ?? 0,
+    passages:   data.passages?.length ?? 0,
+    statements: data.statements?.length ?? 0,
   };
 }
 
@@ -105,7 +89,7 @@ export default function ExportView() {
 
   const unlockedStatements = (statements ?? []).filter((s) => s.status === 'draft');
 
-  const { data: yamlText, isLoading, error, dataUpdatedAt } = useQuery({
+  const { data: archiveText, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ['export', projectId],
     queryFn: () =>
       api
@@ -114,16 +98,16 @@ export default function ExportView() {
     staleTime: 60_000,
   });
 
-  const stats = useMemo(() => (yamlText ? parseStats(yamlText) : null), [yamlText]);
+  const stats = useMemo(() => (archiveText ? parseStats(archiveText) : null), [archiveText]);
 
-  const lines = useMemo(() => yamlText?.split('\n') ?? [], [yamlText]);
+  const lines = useMemo(() => archiveText?.split('\n') ?? [], [archiveText]);
 
   const filename = project
     ? `${project.title.slice(0, 40).replace(/[\s/]/g, '_')}.ath`
     : 'project.ath';
 
   const downloadNow = useCallback((text: string) => {
-    const blob = new Blob([text], { type: 'application/x-yaml' });
+    const blob = new Blob([text], { type: 'application/ld+json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -152,14 +136,14 @@ export default function ExportView() {
   });
 
   const handleDownload = useCallback(() => {
-    if (!yamlText) return;
+    if (!archiveText) return;
     if (statements === undefined) return; // don't skip the lock check while still loading
     if (unlockedStatements.length > 0) {
       setPendingDownload(true);
       return;
     }
-    downloadNow(yamlText);
-  }, [yamlText, statements, unlockedStatements.length, downloadNow]);
+    downloadNow(archiveText);
+  }, [archiveText, statements, unlockedStatements.length, downloadNow]);
 
   const exportedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -195,7 +179,7 @@ export default function ExportView() {
             <button
               className={styles.downloadBtn}
               onClick={handleDownload}
-              disabled={!yamlText}
+              disabled={!archiveText}
             >
               <span className={styles.downloadIcon}>↓</span>
               Download .ath
@@ -207,7 +191,7 @@ export default function ExportView() {
               will ask you to lock {unlockedStatements.length !== 1 ? 'them' : 'it'} first.
             </div>
           )}
-          <div className={styles.versionBadge}>ath_version: 1</div>
+          <div className={styles.versionBadge}>.ath {stats?.version ?? '2.0'} · JSON-LD</div>
         </div>
 
         {/* Stats */}
@@ -216,8 +200,10 @@ export default function ExportView() {
             <div className={styles.sidebarLabel}>Contents</div>
             {[
               { label: 'Papers',    value: stats.papers },
+              { label: 'Nuclei',    value: stats.nuclei },
+              { label: 'Nodes',     value: stats.nodes },
+              { label: 'Relations', value: stats.relations },
               { label: 'Passages',  value: stats.passages },
-              { label: 'Syntheses', value: stats.syntheses },
               { label: 'Statements', value: stats.statements },
               { label: 'Lines',     value: stats.lines.toLocaleString() },
               { label: 'Size',      value: `${(stats.chars / 1024).toFixed(1)} KB` },
@@ -241,7 +227,7 @@ export default function ExportView() {
         </div>
       </aside>
 
-      {/* ── YAML preview ── */}
+      {/* ── Archive preview ── */}
       <div className={styles.main}>
         <div className={styles.previewHeader}>
           <span className={styles.filenameChip}>{filename}</span>
@@ -258,7 +244,7 @@ export default function ExportView() {
           </div>
         )}
 
-        {yamlText && (
+        {archiveText && (
           <div className={styles.codeScroll}>
             <pre className={styles.codePre}>
               {lines.map((line, i) => (

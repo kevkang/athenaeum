@@ -137,3 +137,60 @@ def test_rrf_merge_handles_items_only_in_one_list() -> None:
     merged = _rrf_merge([a], [])
 
     assert merged == [(a, 1 / 61)]
+
+
+# ── One paper, without the project link (Nucleate's corpus papers) ────────────
+
+
+async def _unlinked_paper(session: AsyncSession, text: str, embedding: list[float]) -> Paper:
+    """A paper with sentences that is *not* in any project's library — the
+    shape of a paper the archivist found on OpenAlex and then ingested."""
+    paper = Paper(id=uuid.uuid4(), title="Corpus-only paper", status="full_text")
+    session.add(paper)
+    await session.flush()
+    section = PaperSection(id=uuid.uuid4(), paper_id=paper.id, label="Body", ord=0,
+                           char_start=0, char_end=1000)
+    session.add(section)
+    await session.flush()
+    session.add(PaperSentence(id=uuid.uuid4(), paper_id=paper.id, section_id=section.id, ord=0,
+                              text=text, char_start=0, char_end=len(text), embedding=embedding))
+    await session.flush()
+    return paper
+
+
+async def test_an_unlinked_paper_is_invisible_to_a_project_search(db_session) -> None:
+    project_id, _, _ = await _seed_project_with_sentences(db_session, [("Unrelated.", None)])
+    paper = await _unlinked_paper(db_session, "Growth rates spanned two orders.", _one_hot(7))
+
+    linked = await search(db_session, project_id, "growth rates", _one_hot(7), paper_id=paper.id)
+
+    assert linked == [], "the default scoping is unchanged"
+
+
+async def test_one_paper_can_be_searched_without_the_project_link(db_session) -> None:
+    project_id, _, _ = await _seed_project_with_sentences(db_session, [("Unrelated.", None)])
+    paper = await _unlinked_paper(db_session, "Growth rates spanned two orders.", _one_hot(7))
+
+    for mode in ("text", "vector", "hybrid"):
+        hits = await search(db_session, project_id, "growth rates", _one_hot(7), mode=mode,
+                            paper_id=paper.id, link_to_project=False)
+        assert [h.paper.id for h in hits] == [paper.id], mode
+
+
+async def test_unlinked_search_stays_inside_the_one_paper(db_session) -> None:
+    project_id, _, _ = await _seed_project_with_sentences(db_session, [("Unrelated.", None)])
+    target = await _unlinked_paper(db_session, "Growth rates in soil.", _one_hot(3))
+    await _unlinked_paper(db_session, "Growth rates in lakes.", _one_hot(3))
+
+    hits = await search(db_session, project_id, "growth rates", _one_hot(3),
+                        paper_id=target.id, link_to_project=False)
+
+    assert {h.paper.id for h in hits} == {target.id}
+
+
+async def test_unscoped_without_a_paper_is_refused(db_session) -> None:
+    """That combination would search every paper on the server."""
+    import pytest
+
+    with pytest.raises(ValueError, match="requires a paper_id"):
+        await search(db_session, uuid.uuid4(), "anything", None, link_to_project=False)

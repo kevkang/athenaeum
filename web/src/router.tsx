@@ -10,7 +10,10 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import ProjectListPage from './pages/ProjectListPage';
-import WorkspaceView from './pages/WorkspaceView';
+import ReadView from './pages/ReadView';
+import NucleateView from './pages/NucleateView';
+import BacktraceView from './pages/BacktraceView';
+import AuditView from './pages/AuditView';
 import ComposeView from './pages/ComposeView';
 import ExportView from './pages/ExportView';
 import AppShell from './components/AppShell';
@@ -72,19 +75,56 @@ const projectsRoute = createRoute({
   component: ProjectListPage,
 });
 
-// Bare /projects/$projectId has no view of its own — land on Workspace by default.
+// Bare /projects/$projectId has no view of its own — land on Read by default.
 const projectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId',
   beforeLoad({ params }) {
-    throw redirect({ to: '/projects/$projectId/workspace', params });
+    throw redirect({ to: '/projects/$projectId/read', params });
   },
 });
 
-const workspaceRoute = createRoute({
+const readRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/read',
+  component: ReadView,
+});
+
+// Read was called Workspace until the statement graph was retired. Kept as a
+// redirect so existing links and bookmarks still land somewhere sensible.
+const workspaceRedirectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/workspace',
-  component: WorkspaceView,
+  beforeLoad({ params }) {
+    throw redirect({ to: '/projects/$projectId/read', params });
+  },
+});
+
+const nucleateRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/nucleate',
+  component: NucleateView,
+  // The nucleus being viewed lives in the URL, so a refresh keeps your place.
+  validateSearch: (search: Record<string, unknown>): { nucleus?: string } => ({
+    nucleus: typeof search.nucleus === 'string' ? search.nucleus : undefined,
+  }),
+});
+
+const backtraceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/backtrace',
+  component: BacktraceView,
+});
+
+const auditRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/projects/$projectId/audit',
+  component: AuditView,
+  // The run id lives in the URL so a finished audit survives a refresh and can
+  // be linked to. An audit can take a while and its results are the product.
+  validateSearch: (search: Record<string, unknown>): { run?: string } => ({
+    run: typeof search.run === 'string' ? search.run : undefined,
+  }),
 });
 
 const composeRoute = createRoute({
@@ -120,7 +160,11 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     projectsRoute,
     projectRoute,
-    workspaceRoute,
+    readRoute,
+    nucleateRoute,
+    workspaceRedirectRoute,
+    backtraceRoute,
+    auditRoute,
     composeRoute,
     exportRoute,
   ]),
