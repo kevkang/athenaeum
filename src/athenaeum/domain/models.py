@@ -1121,6 +1121,15 @@ class NucleusPromptOut(BaseModel):
     expansion: ExpansionOut | None
 
 
+def _semantic_relation_pattern() -> str:
+    from athenaeum.domain.relations import SEMANTIC_RELATIONS
+
+    return "^(" + "|".join(SEMANTIC_RELATIONS) + ")$"
+
+
+_SEMANTIC_RELATION_PATTERN = _semantic_relation_pattern()
+
+
 class CanvasPaperOut(BaseModel):
     id: UUID
     title: str
@@ -1188,11 +1197,62 @@ class CanvasLineageOut(BaseModel):
     retrieval_source: str | None
 
 
+class SemanticEdgeOut(BaseModel):
+    """A typed relation A → B (from → to). Owned by the project (D-N20); the
+    canvas receives those whose papers are both in the nucleus."""
+
+    id: UUID
+    from_node_id: UUID
+    to_node_id: UUID
+    relation: str
+    # What the archivist proposed, when it did; differs from `relation` once
+    # corrected. NULL for a relation the user set.
+    proposed_relation: str | None
+    provenance: str
+    rationale: str | None
+    rejected: bool
+    rejection_reason: str | None
+    evidence: list[CanvasEvidenceOut]
+
+
 class NucleusDetailOut(BaseModel):
     nucleus: NucleusOut
     nodes: list[CanvasNodeOut]
     lineage: list[CanvasLineageOut]
     prompts: list[NucleusPromptOut]
+    semantic_edges: list[SemanticEdgeOut]
+
+
+class RelationPairOut(BaseModel):
+    """What proposing found for one other paper, so an empty result always
+    says why: proposed / no_full_text / no_mention / no_relation /
+    already_recorded."""
+
+    to_node_id: UUID
+    outcome: str
+    proposed: int
+
+
+class RelationProposalOut(BaseModel):
+    edges: list[SemanticEdgeOut]
+    pairs: list[RelationPairOut]
+
+
+class SemanticEdgeCreate(BaseModel):
+    """A relation the user sets directly."""
+
+    from_node_id: UUID
+    to_node_id: UUID
+    relation: str = Field(pattern=_SEMANTIC_RELATION_PATTERN)
+
+
+class SemanticEdgeUpdate(BaseModel):
+    """One action from the drawer: accept, correct (to `relation`), reject
+    (with an optional reason), or restore a rejected relation."""
+
+    action: str = Field(pattern="^(accept|correct|reject|restore)$")
+    relation: str | None = Field(default=None, pattern=_SEMANTIC_RELATION_PATTERN)
+    rejection_reason: str | None = Field(default=None, max_length=500)
 
 
 class NodeReviewUpdate(BaseModel):

@@ -37,10 +37,17 @@ from athenaeum.domain.models import (
     NucleusOut,
     NucleusPromptCreate,
     NucleusPromptOut,
+    RelationPairOut,
+    RelationProposalOut,
+    SemanticEdgeCreate,
+    SemanticEdgeOut,
+    SemanticEdgeUpdate,
 )
 from athenaeum.nucleate.corpus import member_node_ids
 from athenaeum.nucleate.retrieval import author_names
 from athenaeum.nucleate.review import InvalidReviewUpdate, apply_review_update
+from athenaeum.nucleate.semantic import InvalidEdgeUpdate, apply_edge_update, propose_relations
+from athenaeum.provider.resolver import NoLLMKeyConfigured, get_provider_for_user
 from athenaeum.security import decode_session_token
 from athenaeum.storage.db import get_sessionmaker
 from athenaeum.storage.models import (
@@ -57,6 +64,8 @@ from athenaeum.storage.models import (
     Paper,
     ProjectMember,
     ProjectPaper,
+    SemanticEdge,
+    SemanticEdgeEvidence,
 )
 
 log = structlog.get_logger()
@@ -239,8 +248,38 @@ async def nucleus_detail(session: AsyncSession, nucleus: Nucleus) -> NucleusDeta
             .order_by(NucleusPrompt.created_at)
         )
     ]
+    edges = list(await session.scalars(
+        select(SemanticEdge).where(SemanticEdge.from_node_id.in_(node_ids),
+                                   SemanticEdge.to_node_id.in_(node_ids))
+        .order_by(SemanticEdge.created_at)
+    )) if node_ids else []
     return NucleusDetailOut(nucleus=NucleusOut.model_validate(nucleus), nodes=nodes,
-                            lineage=lineage, prompts=prompts)
+                            lineage=lineage, prompts=prompts,
+                            semantic_edges=await _edges_out(session, edges))
+
+
+async def _edges_out(session: AsyncSession, edges: list[SemanticEdge]) -> list[SemanticEdgeOut]:
+    evidence: dict[uuid.UUID, list[CanvasEvidenceOut]] = {}
+    if edges:
+        for e in await session.scalars(
+            select(SemanticEdgeEvidence)
+            .where(SemanticEdgeEvidence.edge_id.in_([edge.id for edge in edges]))
+            .order_by(SemanticEdgeEvidence.ord)
+        ):
+            evidence.setdefault(e.edge_id, []).append(CanvasEvidenceOut(
+                id=e.id, ord=e.ord, source=e.source, verbatim_text=e.verbatim_text,
+                text_quote_selector=e.text_quote_selector,
+            ))
+    return [
+        SemanticEdgeOut(
+            id=edge.id, from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            relation=edge.relation, proposed_relation=edge.proposed_relation,
+            provenance=edge.provenance, rationale=edge.rationale,
+            rejected=edge.rejected_at is not None, rejection_reason=edge.rejection_reason,
+            evidence=evidence.get(edge.id, []),
+        )
+        for edge in edges
+    ]
 
 
 # ── REST ─────────────────────────────────────────────────────────────────────
@@ -394,6 +433,129 @@ async def update_review(
         relevance_text=review.relevance_text, relevance_provenance=review.relevance_provenance,
         selection_reasoning=review.selection_reasoning,
     )
+
+
+# ── Semantic relations (D-N19 to D-N21) ─────────────────────────────────────
+
+
+async def _member_nodes(
+    session: AsyncSession, nucleus: Nucleus, *node_ids: uuid.UUID
+) -> list[CorpusNode]:
+    """The named nodes, each required to be in this nucleus."""
+    members = await member_node_ids(session, nucleus.id)
+    if any(n not in members for n in node_ids):
+        raise HTTPException(status_code=404, detail="Paper not in this nucleus")
+    nodes = {n.id: n for n in await session.scalars(
+        select(CorpusNode).where(CorpusNode.id.in_(node_ids)))}
+    return [nodes[n] for n in node_ids]
+
+
+@router.post("/nuclei/{nucleus_id}/nodes/{node_id}/relation-proposals",
+             response_model=RelationProposalOut)
+async def propose_node_relations(
+    nucleus_id: uuid.UUID, node_id: uuid.UUID, session: SessionDep, user: CurrentUserDep
+) -> RelationProposalOut:
+    """Ask the archivist for relations from this paper to the others in the
+    nucleus, read from the sentences where it cites them (D-N19). Papers
+    rejected in this nucleus are left out."""
+    nucleus = await _nucleus_for(session, nucleus_id, user.id)
+    (from_node,) = await _member_nodes(session, nucleus, node_id)
+    others = list(await session.scalars(
+        select(CorpusNode).join(NodeReview, NodeReview.node_id == CorpusNode.id)
+        .where(NodeReview.nucleus_id == nucleus.id, NodeReview.status != v.REJECTED,
+               CorpusNode.id != from_node.id)
+        .order_by(NodeReview.created_at)
+    ))
+    settings = get_settings()
+    try:
+        provider = await get_provider_for_user(session, user.id, settings.archivist_model,
+                                               settings)
+    except NoLLMKeyConfigured as exc:
+        raise HTTPException(status_code=503, detail="LLM provider not configured") from exc
+    result = await propose_relations(session, provider, nucleus.project_id, from_node, others,
+                                     user.id)
+    await session.commit()
+    return RelationProposalOut(
+        edges=await _edges_out(session, result.edges),
+        pairs=[RelationPairOut(to_node_id=o.to_node_id, outcome=o.outcome, proposed=o.proposed)
+               for o in result.outcomes],
+    )
+
+
+@router.post("/nuclei/{nucleus_id}/semantic-edges", response_model=SemanticEdgeOut,
+             status_code=201)
+async def create_semantic_edge(
+    nucleus_id: uuid.UUID, payload: SemanticEdgeCreate, session: SessionDep,
+    user: CurrentUserDep,
+) -> SemanticEdgeOut:
+    """A relation the user sets directly, between two papers in this nucleus.
+    It belongs to the project, like every relation."""
+    nucleus = await _nucleus_for(session, nucleus_id, user.id)
+    if payload.from_node_id == payload.to_node_id:
+        raise HTTPException(status_code=400, detail="A paper can't relate to itself")
+    await _member_nodes(session, nucleus, payload.from_node_id, payload.to_node_id)
+    existing = await session.scalar(select(SemanticEdge).where(
+        SemanticEdge.from_node_id == payload.from_node_id,
+        SemanticEdge.to_node_id == payload.to_node_id,
+        SemanticEdge.relation == payload.relation,
+    ))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="That relation is already recorded")
+    edge = SemanticEdge(
+        id=uuid.uuid4(), project_id=nucleus.project_id, from_node_id=payload.from_node_id,
+        to_node_id=payload.to_node_id, relation=payload.relation, provenance=v.USER_SET,
+        created_by=user.id,
+    )
+    session.add(edge)
+    await session.commit()
+    await session.refresh(edge)
+    return (await _edges_out(session, [edge]))[0]
+
+
+async def _edge_for(session: AsyncSession, edge_id: uuid.UUID, user_id: uuid.UUID) -> SemanticEdge:
+    edge = await session.get(SemanticEdge, edge_id)
+    if edge is None:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    await _assert_member(session, edge.project_id, user_id)
+    return edge
+
+
+@router.patch("/semantic-edges/{edge_id}", response_model=SemanticEdgeOut)
+async def update_semantic_edge(
+    edge_id: uuid.UUID, payload: SemanticEdgeUpdate, session: SessionDep, user: CurrentUserDep
+) -> SemanticEdgeOut:
+    """Accept, correct, reject or restore a relation."""
+    edge = await _edge_for(session, edge_id, user.id)
+    if payload.action == "correct" and payload.relation != edge.relation:
+        clash = await session.scalar(select(SemanticEdge.id).where(
+            SemanticEdge.from_node_id == edge.from_node_id,
+            SemanticEdge.to_node_id == edge.to_node_id,
+            SemanticEdge.relation == payload.relation,
+        ))
+        if clash is not None:
+            raise HTTPException(status_code=409, detail="That relation is already recorded")
+    try:
+        apply_edge_update(edge, payload.action, relation=payload.relation,
+                          rejection_reason=payload.rejection_reason)
+    except InvalidEdgeUpdate as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(edge)
+    return (await _edges_out(session, [edge]))[0]
+
+
+@router.delete("/semantic-edges/{edge_id}", status_code=204)
+async def delete_semantic_edge(
+    edge_id: uuid.UUID, session: SessionDep, user: CurrentUserDep
+) -> None:
+    """Remove a relation the user set. The archivist's proposals are rejected
+    instead, so the rejection keeps steering later proposals."""
+    edge = await _edge_for(session, edge_id, user.id)
+    if edge.provenance != v.USER_SET:
+        raise HTTPException(status_code=400,
+                            detail="Reject the archivist's relation instead of deleting it")
+    await session.delete(edge)
+    await session.commit()
 
 
 # ── WebSocket ────────────────────────────────────────────────────────────────

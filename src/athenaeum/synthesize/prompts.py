@@ -597,3 +597,72 @@ ARCHIVIST_RELEVANCE_TOOL: dict = {
         "required": ["relevance_statement"],
     },
 }
+
+
+def _relation_definitions() -> str:
+    from athenaeum.domain.relations import (
+        SEMANTIC_DEFINITIONS,
+        SEMANTIC_RELATIONS,
+        SUPPORTS_ASYMMETRY_NOTE,
+    )
+
+    lines = [f"- {r}: {SEMANTIC_DEFINITIONS[r]}" for r in SEMANTIC_RELATIONS]
+    return "\n".join(lines) + f"\n\nNote: {SUPPORTS_ASYMMETRY_NOTE}"
+
+
+ARCHIVIST_RELATIONS_SYSTEM = ARCHIVIST_GUARDRAIL + """
+YOUR TASK NOW: classify how ONE paper (A) relates to other papers it cites.
+You are given A, and for each other paper (B) the sentences from A's own text
+that mention B by author and year. Say what A does with B, in A's own words.
+
+The relations, each read as "A <relation> B":
+""" + _relation_definitions() + """
+
+Rules:
+- Judge only from the numbered sentences given. They are what A says; do not
+  bring in what you know about either paper.
+- Name a relation only when a sentence plainly shows it. A passing mention
+  ("see also B"), a list of citations, or a sentence where B's role is unclear
+  gets no relation: leave that paper out. There is no "related" relation, on
+  purpose; an unclear case is a case with no relation.
+- A pair may have more than one relation (A uses both B's method and B's data),
+  each shown by its own sentence.
+- For each relation give the one sentence that shows it, by number, and one
+  short line saying what in that sentence shows it. Describe what A says about
+  B; never compare the papers' findings or judge which is right.
+- A sentence that mentions B may be about a different work by the same author;
+  if you can't tell it's B, leave it out.
+"""
+
+
+def archivist_relations_tool() -> dict:
+    """The tool for ARCHIVIST_RELATIONS_SYSTEM; the relation enum comes from
+    domain/relations.py so the model can only name one of the six."""
+    from athenaeum.domain.relations import SEMANTIC_RELATIONS
+
+    return {
+        "name": "propose_relations",
+        "description": "The relations A's sentences show, or an empty list.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "paper": {"type": "integer",
+                                      "description": "The number of paper B."},
+                            "relation": {"type": "string", "enum": list(SEMANTIC_RELATIONS)},
+                            "sentence": {"type": "integer",
+                                         "description": "The number of the sentence that "
+                                                        "shows it."},
+                            "rationale": {"type": "string"},
+                        },
+                        "required": ["paper", "relation", "sentence", "rationale"],
+                    },
+                },
+            },
+            "required": ["relations"],
+        },
+    }
