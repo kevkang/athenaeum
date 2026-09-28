@@ -514,8 +514,12 @@ No phase is now blocked on a decision.
    don't — full-text evidence for a corpus-only paper is found through a one-paper search scope
    (`hybrid.search(link_to_project=False)`) precisely so that frontier and rejected papers don't
    appear there unasked.
-8. **Nucleate UI.** 8a done 2026-09-27 (tab, nav, left panel). 8b done 2026-09-27 (canvas).
-   8c next: the node drawer and its actions.
+8. **Nucleate UI.** Done 2026-09-27: 8a the tab, nav and left panel; 8b the canvas; 8c the node
+   drawer. Browser-verified against seeded nuclei, and the drawer's actions against the real API.
+
+   **Not yet done at all: a live run.** Every step from 7a on has been verified against a scripted
+   model and seeded data. Nothing has yet run against a real model, OpenAlex, Unpaywall and GROBID
+   together. That needs `docker compose up -d worker`, a model key, and authorised spend.
 
    **Gap worth closing later:** the frontend has no test runner. Canvas layout guarantees were
    verified by running the real `layout.ts` under Node's type-stripping; adopting vitest would let
