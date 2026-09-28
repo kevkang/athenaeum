@@ -139,7 +139,7 @@ export default function NucleateView() {
                   onCancel={() => run && void nucleateApi.cancel(run.id).then(() => refetch())}
                 />
                 <ChatHistory prompts={detail.prompts} nodes={nodes} />
-                <NeedsFullTextQueue nodes={nodes} onSupplied={() => void refetch()} />
+                <NeedsFullTextQueue nodes={nodes} nucleusId={detail.nucleus.id} onSupplied={() => void refetch()} />
                 <PromptBox
                   anchors={anchors}
                   onRemoveAnchor={(id) => setSelected((s) => s.filter((x) => x !== id))}

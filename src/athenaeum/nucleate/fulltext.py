@@ -13,11 +13,9 @@ Rules, each chosen so the upgrade can't quietly do the wrong thing:
 - Nodes that already have full-text evidence are skipped: running twice is a
   no-op.
 - A node with no statement gets one — but only if the archivist introduced
-  it. An automatic audit's run record is tied to the expansion that caused it
-  (D-N13), and a node a person added has none.
-- Only statements still in the archivist's own words are re-audited
-  (ai_proposed, ai_proposed_accepted). Text a person edited or wrote is theirs;
-  the automatic audit exists to check the archivist.
+  it. A node a person added is theirs to describe.
+
+Statements are no longer audited here, or anywhere in Nucleate (D-N22).
 """
 from __future__ import annotations
 
@@ -34,8 +32,6 @@ from athenaeum.domain import nucleate as v
 from athenaeum.nucleate.archivist import write_relevance
 from athenaeum.provider.base import Provider
 from athenaeum.storage.models import (
-    AuditFinding,
-    AuditRun,
     CorpusNode,
     LineageEdge,
     NodeEvidence,
@@ -44,23 +40,14 @@ from athenaeum.storage.models import (
     NucleusExpansion,
     Paper,
 )
-from athenaeum.synthesize.audit import audit_evidence
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
 
 log = structlog.get_logger()
 
-# Statements whose text is still exactly the archivist's.
-_ARCHIVIST_WORDING = (v.AI_PROPOSED, v.AI_PROPOSED_ACCEPTED)
-
-
 @dataclass
 class UpgradeDeps:
     provider: Provider
-    checker: Provider
-    checker_model: str
     embed_model: str
-    # The user whose credentials this nucleus's work runs on, for the run record.
-    user_id: uuid.UUID | None = None
 
 
 async def _introducing_expansion(
@@ -129,7 +116,7 @@ async def upgrade_nodes_for_paper(
         expansion = await _introducing_expansion(session, review)
         if expansion is None:
             # A person's node: the evidence is theirs to read, but no AI
-            # statement is written for it, since none could be audited.
+            # statement is written for it; they chose it, not the archivist.
             await session.commit()
             continue
 
@@ -142,27 +129,6 @@ async def upgrade_nodes_for_paper(
                 review.relevance_provenance = v.AI_PROPOSED
                 outcomes["statement_written"] += 1
 
-        if review.relevance_text and review.relevance_provenance in _ARCHIVIST_WORDING:
-            quotes = [e.verbatim_text for e in existing] + [passage.verbatim_text]
-            checked = await audit_evidence(
-                checker=deps.checker, assertion=review.relevance_text, quotes=quotes,
-                checker_model_name=deps.checker_model,
-            )
-            run = AuditRun(
-                id=uuid.uuid4(), project_id=nucleus.project_id, kind="nucleate_node",
-                expansion_id=expansion.id, created_by=deps.user_id, status="done",
-                model=deps.checker_model, quotes_checked=len(quotes),
-                malformed_entries=checked.malformed_entries,
-            )
-            session.add(run)
-            await session.flush()
-            for k, (supported, rationale) in enumerate(checked.results):
-                session.add(AuditFinding(
-                    id=uuid.uuid4(), audit_run_id=run.id, ord=k, node_review_id=review.id,
-                    sub_id=str(k + 1), quote=quotes[k], supported=supported,
-                    rationale=rationale,
-                ))
-            outcomes["reaudited"] += 1
         await session.commit()
 
     log.info("nucleate.fulltext_upgrade", paper_id=str(paper_id), **outcomes)

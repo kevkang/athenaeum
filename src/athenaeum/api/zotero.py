@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
@@ -279,6 +280,38 @@ async def browse_items_endpoint(
     )
 
 
+async def supply_existing_paper(
+    session: AsyncSession, paper_id: uuid.UUID, zotero_item_key: str, source: str,
+    user_id: uuid.UUID,
+) -> Paper:
+    """Make a Zotero item the source of a paper that already exists here, so
+    importing it fills that paper in rather than adding a second one. Used by
+    both the Web API and the local import.
+
+    A Zotero item already imported as a *different* paper is refused: the two
+    papers can't be merged here, and quietly re-pointing the item would leave
+    the other one without its source.
+    """
+    from athenaeum.api.papers import _assert_paper_visible
+
+    await _assert_paper_visible(session, paper_id, user_id)
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    other = await session.scalar(select(Paper.id).where(
+        Paper.zotero_item_key == zotero_item_key, Paper.id != paper_id))
+    if other is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="That Zotero item is already imported as a different paper",
+        )
+    if paper.zotero_item_key != zotero_item_key:
+        paper.zotero_item_key = zotero_item_key
+        paper.zotero_imported_by = user_id
+        paper.zotero_source = source
+    return paper
+
+
 @router.post("/import", response_model=PaperOut, status_code=201)
 async def import_item(
     payload: ZoteroImportRequest,
@@ -293,10 +326,15 @@ async def import_item(
         raise HTTPException(status_code=400, detail="Connect your Zotero account first")
     creds = _creds_from_row(row)
 
-    # Already imported this exact Zotero item (by anyone)?
-    paper = await session.scalar(
-        select(Paper).where(Paper.zotero_item_key == payload.zotero_item_key)
-    )
+    paper: Paper | None
+    if payload.paper_id is not None:
+        paper = await supply_existing_paper(
+            session, payload.paper_id, payload.zotero_item_key, "sync", user.id)
+    else:
+        # Already imported this exact Zotero item (by anyone)?
+        paper = await session.scalar(
+            select(Paper).where(Paper.zotero_item_key == payload.zotero_item_key)
+        )
 
     if paper is None:
         try:

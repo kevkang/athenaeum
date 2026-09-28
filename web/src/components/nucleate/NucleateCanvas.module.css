@@ -95,7 +95,7 @@
 }
 .docLabel { font-size: 12px; font-weight: 600; color: var(--text-header); margin-right: auto; }
 
-.tagPinned, .tagCross, .tagRun, .flagUnsupported, .flagAbstract {
+.tagPinned, .tagCross, .tagRun, .flagAbstract {
   font-family: 'Inter', sans-serif;
   font-size: 10px;
   padding: 1px 6px;
@@ -123,7 +123,6 @@
 .noStatement { margin: 0; color: var(--text-faint); font-style: normal; }
 
 .docFlags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.flagUnsupported { color: var(--contradicting); border: 1px solid var(--contradicting); }
 .flagAbstract { color: var(--text-muted); border: 1px solid var(--border-strong); }
 
 /* Verbatim evidence: upright, muted, quoted and ruled — neither the

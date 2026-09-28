@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { papersApi } from '../../api/papers';
-import type { CanvasNode } from '../../api/nucleate';
+import { nucleateApi, type CanvasNode } from '../../api/nucleate';
 import { needsFullText, nodeLabel } from './labels';
 import styles from './NucleatePanel.module.css';
 
 /** The needs-full-text queue: see needsFullText() for what belongs in it.
- * Supplying a PDF uploads it to the existing paper, which re-ingests it. */
+ * Supplying a PDF uploads it to the existing paper, which re-ingests it, and
+ * puts the paper in the library (D-N23). */
 export default function NeedsFullTextQueue({
   nodes,
+  nucleusId,
   onSupplied,
 }: {
   nodes: CanvasNode[];
+  nucleusId: string;
   onSupplied: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -23,6 +26,7 @@ export default function NeedsFullTextQueue({
     setBusy(node.node_id);
     setError(null);
     try {
+      await nucleateApi.addToLibrary(nucleusId, node.node_id);
       await papersApi.reupload(node.paper.id, file);
       onSupplied();
     } catch (e) {

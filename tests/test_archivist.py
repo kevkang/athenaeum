@@ -1,7 +1,7 @@
 """End-to-end tests for one Nucleate expansion, against the real database.
 
 The model is scripted and the retrieval sources are stubs, so every stage runs
-for real — placement, evidence with selectors, relevance, the automatic audit,
+for real — placement, evidence with selectors, relevance,
 the event log, cost metering, cancellation — without a paid call or a network.
 The model's answers are keyed by which tool it was asked to use, which is how
 the pipeline asks it for anything.
@@ -21,7 +21,6 @@ from athenaeum.nucleate.archivist import ArchivistDeps, rank, run_expansion
 from athenaeum.nucleate.corpus import place_node
 from athenaeum.nucleate.retrieval import Candidate, OpenAlexResult, WebResult
 from athenaeum.storage.models import (
-    AuditFinding,
     AuditRun,
     NodeEvidence,
     NodeReview,
@@ -107,7 +106,7 @@ def _deps(provider, *, openalex=(), library=(), web=None, events=None) -> Archiv
     async def _publish(event):
         published.append(event)
 
-    return ArchivistDeps(archivist=provider, checker=provider, checker_model="checker-x",
+    return ArchivistDeps(archivist=provider,
                          embed_model="unused", library=_library, openalex=_openalex,
                          web=_web, publish=_publish)
 
@@ -153,7 +152,7 @@ async def _events(session, expansion_id):
 # ── The whole run ────────────────────────────────────────────────────────────
 
 
-async def test_an_expansion_places_nodes_with_evidence_statements_and_audits(db_session) -> None:
+async def test_an_expansion_places_nodes_with_evidence_and_statements(db_session) -> None:
     user, nucleus, _, expansion = await _world(db_session)
     provider = ScriptedProvider()
     deps = _deps(provider, openalex=[_candidate("Koch growth rates", _KOCH),
@@ -177,13 +176,10 @@ async def test_an_expansion_places_nodes_with_evidence_statements_and_audits(db_
         # Every quote anchored, and the anchor really describes the quote.
         assert evidence[0].text_quote_selector["exact"] == evidence[0].verbatim_text
 
-    # The automatic audit: its own kind of run, tied to this expansion, one
-    # finding per quote anchored to the review.
-    run = await db_session.scalar(select(AuditRun).where(AuditRun.expansion_id == expansion.id))
-    assert run is not None and run.kind == "nucleate_node" and run.status == "done"
-    findings = list(await db_session.scalars(
-        select(AuditFinding).where(AuditFinding.audit_run_id == run.id)))
-    assert {f.node_review_id for f in findings} == {r.id for r in reviews}
+    # No automatic audit any more (D-N22): no second model call, no run record.
+    assert await db_session.scalar(
+        select(AuditRun).where(AuditRun.expansion_id == expansion.id)) is None
+    assert "audit_evidence" not in provider.calls
     assert "Proposed 2 papers (2 from OpenAlex)." in expansion.reply_text
 
 
@@ -199,7 +195,7 @@ async def test_stages_are_reported_in_order_with_real_counts(db_session) -> None
     for e in events:
         if e.node_id is None and e.stage not in stage_order:
             stage_order.append(e.stage)
-    assert stage_order == [s for s in v.STAGES]
+    assert stage_order == list(v.ACTIVE_STAGES)
     retrieved = next(e for e in events if e.stage == "retrieving" and e.status == "completed")
     assert retrieved.counts["openalex"] == 2
     ranked = next(e for e in events if e.stage == "ranking" and e.status == "completed")
@@ -219,7 +215,7 @@ async def test_each_node_reports_its_own_status_as_it_goes(db_session) -> None:
 
     per_node = [e.status for e in await _events(db_session, expansion.id)
                 if e.node_id is not None]
-    assert per_node == [v.NODE_FETCHING, v.NODE_EXTRACTING, v.NODE_VERIFYING, v.NODE_READY]
+    assert per_node == [v.NODE_FETCHING, v.NODE_EXTRACTING, v.NODE_READY]
 
 
 async def test_tokens_are_metered_onto_the_run_and_attributed_to_events(db_session) -> None:
@@ -320,28 +316,10 @@ async def test_a_paper_with_no_text_needs_full_text_and_gets_no_statement(db_ses
     events = await _events(db_session, expansion.id)
     assert any(e.status == v.NODE_NEEDS_FULL_TEXT for e in events)
     # The remaining per-paper stages still complete, counting the skip.
-    verifying = [e for e in events if e.stage == "verifying" and e.node_id is None]
-    assert verifying[-1].counts == {"done": 1, "of": 1, "skipped": 1}
+    placing = [e for e in events if e.stage == "placing" and e.node_id is None]
+    assert placing[-1].counts == {"done": 1, "of": 1, "skipped": 1}
     await db_session.refresh(expansion)
     assert "1 needs full text before any evidence can be drawn from it." in expansion.reply_text
-
-
-async def test_an_unsupported_statement_is_kept_and_marked_not_hidden(db_session) -> None:
-    user, nucleus, _, expansion = await _world(db_session)
-    provider = ScriptedProvider(audit_evidence=lambda c: {"results": [
-        {"evidence_index": 0, "supported": False,
-         "rationale": "The quote reports weeks, not hours."}]})
-    deps = _deps(provider, openalex=[_candidate("Koch", _KOCH)])
-
-    await run_expansion(db_session, expansion.id, deps, user.id)
-
-    (review,) = await _reviews(db_session, nucleus.id)
-    assert review.relevance_text is not None, "shown to the user, who decides"
-    finding = await db_session.scalar(
-        select(AuditFinding).where(AuditFinding.node_review_id == review.id))
-    assert finding is not None and finding.supported is False
-    await db_session.refresh(expansion)
-    assert "not supported by its own evidence" in expansion.reply_text
 
 
 async def test_web_pages_matching_no_paper_are_counted_not_guessed(db_session) -> None:

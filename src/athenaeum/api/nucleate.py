@@ -356,18 +356,23 @@ async def cancel_expansion(
     return expansion
 
 
+async def _link_to_library(
+    session: AsyncSession, project_id: uuid.UUID, paper_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """Put a paper in the project's library, so it appears in the Read tab.
+    Nothing ever removes it again from here: once there, it may already carry
+    highlights."""
+    if await session.get(ProjectPaper, (project_id, paper_id)) is None:
+        session.add(ProjectPaper(project_id=project_id, paper_id=paper_id, added_by=user_id))
+
+
 async def _keep_in_library(session: AsyncSession, review: NodeReview, user_id: uuid.UUID) -> None:
-    """Accepting or pinning a node adds its paper to the project's library, so
-    it appears in the Read tab for reading and highlighting (D-N18). Frontier
-    and rejected papers stay out of it. Nothing ever removes it again from
-    here: once kept, it may already carry highlights."""
+    """Accepting or pinning a node adds its paper to the project's library
+    (D-N18)."""
     nucleus = await session.get(Nucleus, review.nucleus_id)
     node = await session.get(CorpusNode, review.node_id)
     assert nucleus is not None and node is not None
-    linked = await session.get(ProjectPaper, (nucleus.project_id, node.paper_id))
-    if linked is None:
-        session.add(ProjectPaper(project_id=nucleus.project_id, paper_id=node.paper_id,
-                                 added_by=user_id))
+    await _link_to_library(session, nucleus.project_id, node.paper_id, user_id)
 
 
 @router.patch("/node-reviews/{review_id}", response_model=CanvasReviewOut)
@@ -516,6 +521,19 @@ async def delete_semantic_edge(
         raise HTTPException(status_code=400,
                             detail="Reject the archivist's relation instead of deleting it")
     await session.delete(edge)
+    await session.commit()
+
+
+@router.post("/nuclei/{nucleus_id}/nodes/{node_id}/library", status_code=204)
+async def add_node_to_library(
+    nucleus_id: uuid.UUID, node_id: uuid.UUID, session: SessionDep, user: CurrentUserDep
+) -> None:
+    """Put a node's paper in the project's library (D-N23): done on opening it
+    in Read, and on supplying its full text from the drawer. Its review is
+    left alone; being read is not the same as being accepted."""
+    nucleus = await _nucleus_for(session, nucleus_id, user.id)
+    (node,) = await _member_nodes(session, nucleus, node_id)
+    await _link_to_library(session, nucleus.project_id, node.paper_id, user.id)
     await session.commit()
 
 

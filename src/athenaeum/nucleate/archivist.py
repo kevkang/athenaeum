@@ -13,7 +13,6 @@ as it is done rather than all at the end:
   ingesting           settle what text is in hand (library full text, abstract)
   extracting          find verbatim evidence in it
   interpreting_papers write the relevance statement from that evidence
-  verifying           independent audit of the statement against the evidence
   placing             commit it; the node becomes ready
   --
   awaiting_review     explicit: the archivist is done, the next move is yours
@@ -45,8 +44,6 @@ from athenaeum.nucleate.corpus import RejectedUnderThisNucleus, place_node
 from athenaeum.nucleate.retrieval import Candidate, OpenAlexResult, WebResult, merge_candidates
 from athenaeum.provider.base import Message, Provider
 from athenaeum.storage.models import (
-    AuditFinding,
-    AuditRun,
     CorpusNode,
     NodeEvidence,
     NodeReview,
@@ -56,7 +53,6 @@ from athenaeum.storage.models import (
     NucleusPrompt,
     Paper,
 )
-from athenaeum.synthesize.audit import audit_evidence
 from athenaeum.synthesize.backtrace import search_full_text_for_claim
 from athenaeum.synthesize.find_ranking import FindCandidate, rank_candidates
 from athenaeum.synthesize.prompts import (
@@ -71,7 +67,7 @@ from athenaeum.synthesize.prompts import (
 log = structlog.get_logger()
 
 PER_PAPER_STAGES: tuple[str, ...] = (
-    "ingesting", "extracting", "interpreting_papers", "verifying", "placing",
+    "ingesting", "extracting", "interpreting_papers", "placing",
 )
 
 # How many candidates the ranking stage is shown, and how much of each
@@ -117,8 +113,6 @@ class ArchivistDeps:
     whole pipeline can be tested without a model or a network."""
 
     archivist: Provider
-    checker: Provider
-    checker_model: str
     embed_model: str
     library: Callable[[AsyncSession, uuid.UUID, str], Awaitable[list[Candidate]]]
     openalex: Callable[[list[str]], Awaitable[OpenAlexResult]]
@@ -148,13 +142,8 @@ class Emitter:
         self._last_in, self._last_out = self._totals()
 
     def _totals(self) -> tuple[int, int]:
-        providers = (self._deps.archivist, self._deps.checker)
-        # A provider shared by both roles must not be counted twice.
-        unique = {id(p): p for p in providers}.values()
-        return (
-            sum(getattr(p, "input_tokens", 0) for p in unique),
-            sum(getattr(p, "output_tokens", 0) for p in unique),
-        )
+        p = self._deps.archivist
+        return getattr(p, "input_tokens", 0), getattr(p, "output_tokens", 0)
 
     async def emit(
         self,
@@ -430,7 +419,6 @@ class _Tally:
     needs_full_text: int = 0
     fetching_in_background: int = 0
     no_evidence: int = 0
-    unsupported: int = 0
 
 
 async def run_expansion(
@@ -531,8 +519,6 @@ async def _run(
 
     # ── per paper ──
     tally = _Tally(by_source={})
-    audit_run: AuditRun | None = None
-    finding_ord = 0
     total = len(selections)
     done = dict.fromkeys(PER_PAPER_STAGES, 0)
     skipped = dict.fromkeys(PER_PAPER_STAGES, 0)
@@ -653,41 +639,10 @@ async def _run(
             ))
         await session.flush()
 
-        # verifying — the same engine as the Audit tab, its own kind of run
-        await emitter.emit("verifying", v.NODE_VERIFYING, node_id=placement.node.id)
-        if audit_run is None:
-            audit_run = AuditRun(
-                id=uuid.uuid4(), project_id=nucleus.project_id, kind="nucleate_node",
-                expansion_id=expansion.id, created_by=requesting_user_id, status="running",
-                model=deps.checker_model, quotes_checked=0, malformed_entries=0,
-            )
-            session.add(audit_run)
-            await session.flush()
-        checked = await audit_evidence(
-            checker=deps.checker, assertion=statement,
-            quotes=[t for _s, t, _sel, _pid in evidence], checker_model_name=deps.checker_model,
-        )
-        audit_run.quotes_checked = (audit_run.quotes_checked or 0) + len(evidence)
-        audit_run.malformed_entries = (audit_run.malformed_entries or 0) + \
-            checked.malformed_entries
-        for k, (supported, rationale) in enumerate(checked.results):
-            session.add(AuditFinding(
-                id=uuid.uuid4(), audit_run_id=audit_run.id, ord=finding_ord,
-                node_review_id=review.id, sub_id=str(k + 1), quote=evidence[k][1],
-                supported=supported, rationale=rationale,
-            ))
-            finding_ord += 1
-        # Shown, never hidden: a failing statement is marked, and the user decides.
-        if not any(supported for supported, _r in checked.results):
-            tally.unsupported += 1
-        await passed("verifying")
-
         # placing
         await passed("placing")
         await emitter.emit("placing", v.NODE_READY, node_id=placement.node.id)
 
-    if audit_run is not None:
-        audit_run.status = "done"
     expansion.reply_text = _summary(tally)
     await _finish(emitter, expansion)
 
@@ -719,12 +674,6 @@ def _summary(tally: _Tally) -> str:
     if tally.no_evidence:
         lines.append(f"{tally.no_evidence} had text but no verbatim evidence for this "
                      "question, so no relevance statement was written.")
-    if tally.unsupported:
-        statements = _count(tally.unsupported, "relevance statement was",
-                            "relevance statements were")
-        own = "its" if tally.unsupported == 1 else "their"
-        lines.append(f"{statements} not supported by {own} own evidence on audit — marked "
-                     "for your review.")
     return " ".join(lines)
 
 

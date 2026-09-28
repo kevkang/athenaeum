@@ -638,6 +638,10 @@ class ZoteroSearchResultOut(BaseModel):
 class ZoteroImportRequest(BaseModel):
     project_id: UUID
     zotero_item_key: str = Field(min_length=1, max_length=50)
+    # Set when the Zotero item supplies the full text of a paper Athenaeum
+    # already has (a Nucleate node that needs its PDF), rather than adding a
+    # new paper.
+    paper_id: UUID | None = None
     found_quote: str | None = None
     found_relevance_note: str | None = None
 

@@ -271,6 +271,28 @@ Accept / Change relation / Reject. The node drawer lists each paper's relations 
 actions and "Add relation…" for setting one directly. A rejected relation is hidden but kept, so a
 later proposal doesn't offer it again (as a rejected paper steers retrieval).
 
+### D-N22 — No automatic audit; the drawer leads with why the archivist chose a paper
+
+**Decided 2026-09-28, after live use, reversing the automatic-audit half of D-N13:** a "Supported
+by its evidence" verdict is too opinionated for the archivist, which exists to find and describe,
+not to judge. Nucleate no longer audits relevance statements: the verifying stage is gone from runs
+(kept as a retired stage so older runs still read), the full-text upgrade no longer re-audits, and
+the canvas no longer flags statements. Past audit rows are kept and still exported. The Audit tab is
+untouched.
+
+The drawer's first item is the archivist's selection reasoning, "Why the archivist chose this", in
+AI blue italics, so the researcher judges relevance themselves. The relevance statement is no longer
+shown or edited in the drawer; it remains on the canvas card.
+
+### D-N23 — From the drawer: open a paper in Read, and supply its full text
+
+**Decided 2026-09-28:** "Open in Read" puts the paper in the library and opens it there
+(`/read?paper=`); the review is left alone, since reading is not accepting. A paper without full
+text can be supplied from the drawer as the Read tab adds papers: drop or choose a PDF, or take it
+from Zotero (Web API or local). A Zotero item supplied this way fills in the existing paper
+(`paper_id` on the import) rather than adding a second one. Supplied papers join the library,
+from the drawer and from the needs-full-text queue alike.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
@@ -584,3 +606,14 @@ No phase is now blocked on a decision.
     **Not carried over on import:** automatic audit verdicts (measured on the exporting server;
     reported as a warning, statements import unaudited). The schema's `$id` and the `ath:`
     namespace are placeholders until a real domain is chosen.
+11. **Drawer changes from live use (D-N22, D-N23).** Done 2026-09-28.
+
+    **Assessed, not built: a PDF viewer in Read.** Feasible; the work is storage, not the viewer.
+    Every ingestion path currently discards the PDF once its text is extracted (uploads are deleted
+    from S3; open-access and Zotero PDFs only touch a temp directory). A viewer needs: keep each PDF
+    privately in S3 on every path (the real decision: storage cost, and retained copies of
+    paywalled papers, which stay private and are never exported); serve it by presigned URL
+    (`storage/s3.py` has `generate_presigned_url`); render it with pdf.js behind a Text / PDF
+    toggle. Moderate. Jumping from a passage to its place is moderate (pdf.js text search);
+    exact highlight boxes need GROBID coordinates and are larger. Existing papers have no stored
+    PDF: open-access ones can be re-fetched, Zotero-local re-read, uploads re-uploaded.

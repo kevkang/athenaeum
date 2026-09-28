@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { STAGES, STAGE_LABELS, type Expansion, type ExpansionEvent } from '../../api/nucleate';
+import { RETIRED_STAGES, STAGES, STAGE_LABELS, type Expansion, type ExpansionEvent } from '../../api/nucleate';
 import { stageViews, type StageState } from './stages';
 import styles from './NucleatePanel.module.css';
 
@@ -62,6 +62,8 @@ export default function StageList({
   }
 
   const views = stageViews(events);
+  // A retired stage shows only for an older run that actually went through it.
+  const shown = STAGES.filter((s) => !RETIRED_STAGES.includes(s) || events.some((e) => e.stage === s));
 
   if (!running && !expanded) {
     const proposed = events.find((e) => e.stage === 'ranking' && e.status === 'completed')
@@ -85,7 +87,7 @@ export default function StageList({
   return (
     <div className={styles.stages} aria-live="polite">
       <ol className={styles.stageList}>
-        {STAGES.map((stage) => {
+        {shown.map((stage) => {
           const view = views[stage];
           return (
             <li key={stage} className={styles.stage} data-state={view.state}>

@@ -102,7 +102,6 @@ function PaperNodeView({ data, selected }: NodeProps<PaperFlowNode>) {
   const arriving = runStatus !== null && runStatus !== 'ready';
   const aiText = review.relevance_provenance === 'ai_proposed';
   const abstractOnly = node.evidence.length > 0 && node.evidence.every((e) => e.source === 'abstract');
-  const unsupported = node.audit !== null && !node.audit.supported;
 
   if (review.status === 'rejected') {
     // Collapsed, and kept: a rejection is steering signal, not a deletion.
@@ -149,14 +148,9 @@ function PaperNodeView({ data, selected }: NodeProps<PaperFlowNode>) {
         </p>
       )}
 
-      {(unsupported || abstractOnly) && (
+      {abstractOnly && (
         <div className={styles.docFlags}>
-          {unsupported && (
-            <span className={styles.flagUnsupported} title={node.audit?.rationale}>
-              ✕ Not supported by its evidence
-            </span>
-          )}
-          {abstractOnly && <span className={styles.flagAbstract}>From abstract</span>}
+          <span className={styles.flagAbstract}>From abstract</span>
         </div>
       )}
 

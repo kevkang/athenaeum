@@ -88,6 +88,10 @@ const readRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/projects/$projectId/read',
   component: ReadView,
+  // Which paper to open, when arriving from elsewhere (Nucleate's "Open in Read").
+  validateSearch: (search: Record<string, unknown>): { paper?: string } => ({
+    paper: typeof search.paper === 'string' ? search.paper : undefined,
+  }),
 });
 
 // Read was called Workspace until the statement graph was retired. Kept as a
