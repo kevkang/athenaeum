@@ -52,7 +52,12 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        # CPU-only PyTorch first, as the Dockerfile does: otherwise
+        # sentence-transformers pulls the CUDA build (~3 GB of NVIDIA wheels),
+        # which no longer fits on the runner's disk.
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
 
       - name: Apply migrations
         run: alembic upgrade head
