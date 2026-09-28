@@ -1120,6 +1120,9 @@ class CorpusNode(Base):
     __tablename__ = "corpus_nodes"
     __table_args__ = (
         UniqueConstraint("project_id", "paper_id", name="corpus_nodes_project_paper_uq"),
+        # The target of SemanticEdge's composite foreign keys, which keep both
+        # ends of a relation inside the relation's own project.
+        UniqueConstraint("id", "project_id", name="corpus_nodes_id_project_uq"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -1417,6 +1420,124 @@ class NodeEvidence(Base):
     # project's full text. NULL for abstract evidence.
     passage_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("passages.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+_RELATION_SQL = (
+    "'uses_method_of', 'uses_data_from', 'extends', "
+    "'supports', 'disagrees_with', 'obtains_background_from'"
+)
+
+
+class SemanticEdge(Base):
+    """A typed relation between two papers: A (from) uses the method of,
+    extends, disagrees with, ... B (to). The six CiTO-mapped terms live in
+    domain/relations.py.
+
+    Owned by the project, not a nucleus (D-N20): it is a fact about the two
+    papers, shown in every nucleus holding both. Proposed by the archivist only
+    on request, from A's own words (D-N19), or set by the user.
+
+    `proposed_relation` keeps what the archivist said, so a correction stays
+    visible as one; the constraints below make provenance and proposal agree.
+    A rejected edge keeps its row (rejected_at set): it is hidden, and a later
+    proposal won't offer it again.
+    """
+
+    __tablename__ = "semantic_edges"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["from_node_id", "project_id"], ["corpus_nodes.id", "corpus_nodes.project_id"],
+            ondelete="CASCADE", name="semantic_edges_from_node_fk",
+        ),
+        ForeignKeyConstraint(
+            ["to_node_id", "project_id"], ["corpus_nodes.id", "corpus_nodes.project_id"],
+            ondelete="CASCADE", name="semantic_edges_to_node_fk",
+        ),
+        UniqueConstraint("from_node_id", "to_node_id", "relation",
+                         name="semantic_edges_pair_relation_uq"),
+        CheckConstraint("from_node_id <> to_node_id", name="semantic_edges_not_self_chk"),
+        CheckConstraint(f"relation IN ({_RELATION_SQL})", name="semantic_edges_relation_chk"),
+        CheckConstraint(
+            f"proposed_relation IS NULL OR proposed_relation IN ({_RELATION_SQL})",
+            name="semantic_edges_proposed_relation_chk",
+        ),
+        CheckConstraint(
+            "provenance IN ('ai_proposed', 'ai_proposed_accepted', "
+            "'ai_proposed_corrected', 'user_set')",
+            name="semantic_edges_provenance_chk",
+        ),
+        CheckConstraint(
+            "(provenance = 'user_set' AND proposed_relation IS NULL) OR "
+            "(provenance IN ('ai_proposed', 'ai_proposed_accepted') "
+            " AND relation IS NOT DISTINCT FROM proposed_relation) OR "
+            "(provenance = 'ai_proposed_corrected' AND proposed_relation IS NOT NULL "
+            " AND relation <> proposed_relation)",
+            name="semantic_edges_provenance_agrees_chk",
+        ),
+        CheckConstraint(
+            "rejection_reason IS NULL OR rejected_at IS NOT NULL",
+            name="semantic_edges_rejection_reason_chk",
+        ),
+        Index("semantic_edges_project_idx", "project_id"),
+        Index("semantic_edges_to_node_idx", "to_node_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    from_node_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    to_node_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relation: Mapped[str] = mapped_column(String(30), nullable=False)
+    provenance: Mapped[str] = mapped_column(String(30), nullable=False)
+    proposed_relation: Mapped[str | None] = mapped_column(String(30))
+    # The archivist's one line on why its quote shows this relation. Describes
+    # what A says about B; never a synthesis of the two.
+    rationale: Mapped[str | None] = mapped_column(Text)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SemanticEdgeEvidence(Base):
+    """A verbatim quote from paper A showing its relation to paper B: the
+    sentence where A cites B. Anchored like NodeEvidence — a quote that can't
+    be located in A's text is not evidence and is never stored."""
+
+    __tablename__ = "semantic_edge_evidence"
+    __table_args__ = (
+        UniqueConstraint("edge_id", "ord", name="semantic_edge_evidence_edge_ord_uq"),
+        CheckConstraint("source IN ('full_text', 'abstract')",
+                        name="semantic_edge_evidence_source_chk"),
+        CheckConstraint(
+            "jsonb_typeof(text_quote_selector) = 'object' "
+            "AND text_quote_selector->>'type' IS NOT DISTINCT FROM 'TextQuoteSelector' "
+            "AND text_quote_selector ? 'exact'",
+            name="semantic_edge_evidence_text_quote_selector_chk",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    edge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("semantic_edges.id", ondelete="CASCADE"), nullable=False
+    )
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    verbatim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_quote_selector: Mapped[dict[str, str]] = mapped_column(
+        JSONB(none_as_null=True), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

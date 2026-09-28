@@ -1,6 +1,6 @@
 """Knowledge link endpoints.
 
-POST   /links                          — create a typed link between any two refs
+POST   /links                          — retired: 410 Gone (see below)
 DELETE /links/{link_id}                — remove a link
 GET    /projects/{project_id}/links    — list links touching a project (optionally filtered by ref)
 GET    /projects/{project_id}/refs     — unified ref search for the mention picker
@@ -15,7 +15,6 @@ from sqlalchemy import or_, select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.domain.models import (
-    KnowledgeLinkCreate,
     KnowledgeLinkOut,
     KnowledgeRefOut,
 )
@@ -89,39 +88,17 @@ async def _check_membership(
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
-@router.post("/links", response_model=KnowledgeLinkOut, status_code=status.HTTP_201_CREATED)
-async def create_link(
-    payload: KnowledgeLinkCreate,
-    session: SessionDep,
-    user: CurrentUserDep,
-) -> KnowledgeLinkOut:
-    await _check_membership(session, payload.project_id, user.id)
-
-    if payload.from_id == payload.to_id and payload.from_type == payload.to_type:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Cannot link a ref to itself")
-
-    link = KnowledgeLink(
-        id=uuid.uuid4(),
-        project_id=payload.project_id,
-        from_type=payload.from_type,
-        from_id=payload.from_id,
-        to_type=payload.to_type,
-        to_id=payload.to_id,
-        rel=payload.rel,
-        note=payload.note,
-        created_by=user.id,
+@router.post("/links", status_code=status.HTTP_410_GONE)
+async def create_link() -> None:
+    """Retired with migration 0035. Paper → paper relations are semantic edges
+    now (the six CiTO-mapped terms, per project); that migration carried the
+    existing links over. Refusing new ones keeps the two tables from drifting
+    apart. Nothing in the frontend ever created links. Reading and deleting
+    existing rows still works."""
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "Knowledge links are retired. Relate papers with Nucleate's semantic relations.",
     )
-    session.add(link)
-    try:
-        await session.commit()
-    except Exception as exc:
-        await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "Link already exists") from exc
-    await session.refresh(link)
-
-    from_title = await _resolve_title(session, link.from_type, link.from_id)
-    to_title = await _resolve_title(session, link.to_type, link.to_id)
-    return _link_to_out(link, from_title, to_title)
 
 
 @router.delete("/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)

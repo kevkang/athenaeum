@@ -551,20 +551,6 @@ class CoCitationNeighborOut(BaseModel):
 
 # ── Knowledge links ───────────────────────────────────────────────────────────
 
-_REF_TYPES = "^(paper|synthesis)$"
-_REL_TYPES = "^(supports|contradicts|extends|cites|related)$"
-
-
-class KnowledgeLinkCreate(BaseModel):
-    project_id: UUID
-    from_type: str = Field(pattern=_REF_TYPES)
-    from_id: UUID
-    to_type: str = Field(pattern=_REF_TYPES)
-    to_id: UUID
-    rel: str = Field(pattern=_REL_TYPES)
-    note: str | None = Field(default=None, max_length=2000)
-
-
 class KnowledgeLinkOut(BaseModel):
     id: UUID
     project_id: UUID

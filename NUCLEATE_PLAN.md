@@ -243,6 +243,34 @@ library", so a needs-full-text node's paper — in the corpus but not the librar
 refused the very PDF the researcher supplies for it. Visibility now also covers corpus
 membership, still only for members of that project.
 
+### D-N19 — Semantic relations are proposed on demand, from one paper at a time
+
+**Decided 2026-09-27:** never during a run. The node drawer's "Propose relations" asks the
+archivist for relations *from* that paper (A, the citing or using paper) to the other papers in the
+nucleus. Evidence comes first, as everywhere else: A's full text is searched deterministically for
+sentences naming each other paper's first author and year, and the archivist classifies only those
+sentences, quoting one verbatim. The quote is anchored in A's stored sentences like node evidence.
+No full text, no mention found, or no relation among the six: no proposal, and the response says
+which. Relations *into* a paper come from proposing on the other paper.
+
+**Known limit:** numbered citation styles ("[12]") name no author, so those mentions aren't found.
+
+### D-N20 — Semantic relations belong to the project
+
+**Decided 2026-09-27:** "A uses the method of B" is a fact about two papers, not about a question.
+One row per (A, B, relation) across the project, shown in every nucleus containing both papers;
+accepting it once accepts it everywhere. Legacy `KnowledgeLink` rows are project-wide too, so the
+migration maps them directly.
+
+### D-N21 — Semantic edges render as labelled arrows; review happens in the drawer
+
+**Decided 2026-09-27:** a curved arrow A → B with a short label. Unreviewed (`ai_proposed`): dashed,
+AI blue, italic label. Accepted, corrected or user-set: solid, neutral. Lineage edges stay thin,
+straight and grey. Clicking an edge opens the drawer: A → relation → B, the verbatim quote, and
+Accept / Change relation / Reject. The node drawer lists each paper's relations with the same
+actions and "Add relation…" for setting one directly. A rejected relation is hidden but kept, so a
+later proposal doesn't offer it again (as a rejected paper steers retrieval).
+
 ---
 
 ## Part 1 — Tab structure after the reorganization
