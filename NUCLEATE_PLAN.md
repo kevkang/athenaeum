@@ -517,9 +517,15 @@ No phase is now blocked on a decision.
 8. **Nucleate UI.** Done 2026-09-27: 8a the tab, nav and left panel; 8b the canvas; 8c the node
    drawer. Browser-verified against seeded nuclei, and the drawer's actions against the real API.
 
-   **Not yet done at all: a live run.** Every step from 7a on has been verified against a scripted
-   model and seeded data. Nothing has yet run against a real model, OpenAlex, Unpaywall and GROBID
-   together. That needs `docker compose up -d worker`, a model key, and authorised spend.
+   **Live runs done 2026-09-27**, end to end against the real model, OpenAlex, Unpaywall and
+   GROBID. They found and fixed: the opening prompt (the question itself) declined as synthesis;
+   web search finding nothing (dynamic-filtering results carry no citations; the archivist now
+   reads result blocks with the basic variant); OpenAlex 429s (anonymous search is throttled under
+   load; optional `OPENALEX_API_KEY`, two retries, fail fast and count). Local testing: `./test.sh`.
+
+   **Open:** web search's yield after that fix is unmeasured. The next live run's
+   `web_search_pages.done` log line and the retrieving stage's counts say what it contributes;
+   D-N16 (keep web search) should be revisited against its cost once that's known.
 
    **Gap worth closing later:** the frontend has no test runner. Canvas layout guarantees were
    verified by running the real `layout.ts` under Node's type-stripping; adopting vitest would let
