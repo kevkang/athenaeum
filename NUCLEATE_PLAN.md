@@ -514,7 +514,12 @@ No phase is now blocked on a decision.
    don't — full-text evidence for a corpus-only paper is found through a one-paper search scope
    (`hybrid.search(link_to_project=False)`) precisely so that frontier and rejected papers don't
    appear there unasked.
-8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
+8. **Nucleate UI.** 8a done 2026-09-27 (tab, nav, left panel). 8b done 2026-09-27 (canvas).
+   8c next: the node drawer and its actions.
+
+   **Gap worth closing later:** the frontend has no test runner. Canvas layout guarantees were
+   verified by running the real `layout.ts` under Node's type-stripping; adopting vitest would let
+   them live as tests. Not added unasked — it's a project-level choice.
 9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
    the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the
    `KnowledgeLink` migration.

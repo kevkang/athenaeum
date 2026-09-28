@@ -8,6 +8,7 @@ import StageList from '../components/nucleate/StageList';
 import ChatHistory from '../components/nucleate/ChatHistory';
 import NeedsFullTextQueue from '../components/nucleate/NeedsFullTextQueue';
 import PromptBox from '../components/nucleate/PromptBox';
+import NucleateCanvas from '../components/nucleate/NucleateCanvas';
 import panel from '../components/nucleate/NucleatePanel.module.css';
 import styles from './NucleateView.module.css';
 
@@ -143,9 +144,13 @@ export default function NucleateView() {
 
       <main className={styles.canvasArea}>
         {detail ? (
-          <div className={styles.placeholder}>
-            {detail.nodes.length} node{detail.nodes.length === 1 ? '' : 's'} · canvas arrives in 8b
-          </div>
+          <NucleateCanvas
+            detail={detail}
+            events={events}
+            running={running}
+            selected={selected}
+            onSelectionChange={setSelected}
+          />
         ) : (
           <div className={styles.placeholder}>
             {nuclei.length === 0 && !nucleiLoading
