@@ -200,7 +200,9 @@ async def nucleus_detail(session: AsyncSession, nucleus: Nucleus) -> NucleusDeta
             node_id=node.id,
             paper=CanvasPaperOut(id=paper.id, title=paper.title,
                                  authors=author_names(paper.authors_json), year=paper.year,
-                                 venue=paper.venue, doi=paper.doi),
+                                 venue=paper.venue, doi=paper.doi,
+                                 oa_pdf_url=paper.oa_pdf_url,
+                                 oa_checked_at=paper.oa_checked_at),
             fulltext=v.fulltext_state(paper.status, bool(paper.abstract)),
             review=CanvasReviewOut(
                 id=review.id, status=review.status, rejection_reason=review.rejection_reason,

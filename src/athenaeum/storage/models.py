@@ -140,6 +140,13 @@ class Paper(Base):
     found_quote: Mapped[str | None] = mapped_column(Text)
     found_relevance_note: Mapped[str | None] = mapped_column(Text)
     found_corpus: Mapped[str | None] = mapped_column(String(20))
+    # The Unpaywall check (NUCLEATE_PLAN.md D-N15): the open-access PDF found for
+    # this work, and when it was looked for. A property of the work, not of any
+    # project. oa_checked_at set with oa_pdf_url NULL means "checked, no legal
+    # open-access copy" — distinct from never checked (both NULL), and that
+    # difference is what the needs-full-text queue has to show.
+    oa_pdf_url: Mapped[str | None] = mapped_column(Text)
+    oa_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PaperSection(Base):

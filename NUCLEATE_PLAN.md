@@ -486,8 +486,14 @@ No phase is now blocked on a decision.
 7. **The archivist.** 7a done 2026-09-27: `nucleate/archivist.py` and `nucleate/retrieval.py`
    run one expansion end to end, tested with a scripted model. 7b done 2026-09-27:
    `run_expansion_job`, `api/nucleate.py` (nuclei, canvas detail, prompts, expansions, cancel,
-   review actions, and a websocket event stream mirroring the Audit tab's). 7c next: the
-   background full-text upgrade (D-N15).
+   review actions, and a websocket event stream mirroring the Audit tab's). 7c done 2026-09-27:
+   the Unpaywall check (migration 0034, `papers.oa_pdf_url`/`oa_checked_at`), background fetch via
+   `ingest_paper`, and `nucleate/fulltext.py`'s post-ingest upgrade.
+
+   **Open for step 8:** should corpus papers appear in the Read tab's paper list? Today they
+   don't — full-text evidence for a corpus-only paper is found through a one-paper search scope
+   (`hybrid.search(link_to_project=False)`) precisely so that frontier and rejected papers don't
+   appear there unasked.
 8. **Nucleate UI** — left panel, canvas, node drawer, progressive rendering.
 9. **Semantic edges** on the D-N7 vocabulary — `domain/relations.py` is written; what remains is
    the edge table, the CHECK constraint, the AI proposal path with one-click confirm, and the

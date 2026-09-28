@@ -32,7 +32,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -81,6 +81,31 @@ MAX_RANKED_CANDIDATES = 40
 ABSTRACT_CHARS_FOR_RANKING = 600
 
 
+# An Unpaywall answer is reused for this long before asking again: open-access
+# status changes slowly, and repeat expansions shouldn't re-query every paper.
+OA_RECHECK_AFTER = timedelta(days=7)
+
+
+async def request_background_fulltext(deps: ArchivistDeps, paper: Paper) -> bool:
+    """Look for a legal open-access copy of `paper` and, if there is one, ask
+    for it to be fetched and parsed in the background (D-N15).
+
+    The answer is recorded on the paper either way, because "checked, no
+    open-access copy" is exactly what the needs-full-text queue must show.
+    Returns whether a fetch was requested.
+    """
+    if deps.find_open_access is None or deps.request_fulltext is None or not paper.doi:
+        return False
+    now = datetime.now(UTC)
+    if paper.oa_checked_at is None or now - paper.oa_checked_at >= OA_RECHECK_AFTER:
+        paper.oa_pdf_url = await deps.find_open_access(paper.doi)
+        paper.oa_checked_at = now
+    if not paper.oa_pdf_url:
+        return False
+    await deps.request_fulltext(paper.id, paper.oa_pdf_url)
+    return True
+
+
 class ExpansionCancelled(Exception):
     """The user cancelled. Raised at a stage or paper boundary; nodes already
     completed are kept."""
@@ -99,6 +124,12 @@ class ArchivistDeps:
     openalex: Callable[[list[str]], Awaitable[list[Candidate]]]
     web: Callable[[str], Awaitable[WebResult]]
     publish: Callable[[dict[str, Any]], Awaitable[None]]
+    # D-N15, background full text. `find_open_access` looks a DOI up on
+    # Unpaywall; `request_fulltext` asks for the PDF to be fetched and parsed
+    # later. Either left None and no fetch is attempted — nodes keep whatever
+    # text was already in hand.
+    find_open_access: Callable[[str], Awaitable[str | None]] | None = None
+    request_fulltext: Callable[[uuid.UUID, str], Awaitable[None]] | None = None
 
 
 # ── Events ───────────────────────────────────────────────────────────────────
@@ -379,6 +410,7 @@ class _Tally:
     placed: int = 0
     by_source: dict[str, int] | None = None
     needs_full_text: int = 0
+    fetching_in_background: int = 0
     no_evidence: int = 0
     unsupported: int = 0
 
@@ -526,15 +558,27 @@ async def _run(
         tally.by_source[candidate.source] = tally.by_source.get(candidate.source, 0) + 1
         await emitter.emit("ingesting", v.NODE_FETCHING, node_id=placement.node.id)
 
-        # ingesting: what text is already in hand
+        # ingesting: what text is already in hand, and — for a paper without
+        # full text — whether a legal open-access PDF can be fetched later.
         in_library = candidate.source == v.LIBRARY and paper.status == "full_text"
         has_abstract = bool(paper.abstract)
+        fetching = False
+        if not in_library and paper.status != "full_text":
+            fetching = await request_background_fulltext(deps, paper)
+            if fetching:
+                tally.fetching_in_background += 1
         await passed("ingesting")
         if not in_library and not has_abstract:
-            tally.needs_full_text += 1
-            await emitter.emit("ingesting", v.NODE_NEEDS_FULL_TEXT,
-                               node_id=placement.node.id,
-                               message="No full text or abstract available.")
+            if fetching:
+                # Not "user must supply": its PDF is on the way, and the node
+                # will gain evidence and a statement when it lands.
+                await emitter.emit("ingesting", v.NODE_FETCHING, node_id=placement.node.id,
+                                   message="Fetching the open-access PDF in the background.")
+            else:
+                tally.needs_full_text += 1
+                await emitter.emit("ingesting", v.NODE_NEEDS_FULL_TEXT,
+                                   node_id=placement.node.id,
+                                   message="No full text, abstract, or open-access copy found.")
             await skip_rest("ingesting")
             continue
 
@@ -638,6 +682,10 @@ def _summary(tally: _Tally) -> str:
              for s, n in by_source.items() if n]
     lines = [f"Proposed {tally.placed} paper{'s' if tally.placed != 1 else ''}"
              f" ({', '.join(parts)})."]
+    if tally.fetching_in_background:
+        n = tally.fetching_in_background
+        lines.append(f"{n} open-access PDF{'s are' if n != 1 else ' is'} being fetched in the "
+                     "background; those nodes will gain full-text evidence when it lands.")
     if tally.needs_full_text:
         lines.append(f"{tally.needs_full_text} need full text before any evidence can be "
                      "drawn from them.")

@@ -169,6 +169,7 @@ async def search_full_text_for_claim(
     paper_id: uuid.UUID,
     claim: str,
     embed_model: str,
+    link_to_project: bool = True,
 ) -> Passage | None:
     """Search within one specific paper's own sentences for the best passage
     supporting `claim`, reusing the same embed -> hybrid-search -> extract
@@ -185,6 +186,7 @@ async def search_full_text_for_claim(
         top_k=12,
         mode="hybrid",
         paper_id=paper_id,
+        link_to_project=link_to_project,
     )
     if not hits:
         return None

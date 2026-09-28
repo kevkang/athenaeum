@@ -1142,6 +1142,11 @@ class CanvasPaperOut(BaseModel):
     year: int | None
     venue: str | None
     doi: str | None
+    # The Unpaywall check, for the needs-full-text queue (handoff Part V: "the
+    # DOI and an Unpaywall check with each request"). Checked with no URL means
+    # no legal open-access copy; never checked is both None.
+    oa_pdf_url: str | None = None
+    oa_checked_at: datetime | None = None
 
 
 class CanvasReviewOut(BaseModel):

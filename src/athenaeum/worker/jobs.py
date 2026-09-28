@@ -10,6 +10,8 @@ from functools import partial
 import httpx
 import redis.asyncio as aioredis
 import structlog
+from arq import create_pool
+from arq.connections import RedisSettings
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -44,6 +46,10 @@ async def startup(ctx: dict) -> None:
         follow_redirects=True,
     )
     ctx["redis"] = aioredis.from_url(settings.redis_url)
+    # A job that needs to enqueue another (Nucleate's background PDF fetch)
+    # can't use ctx["redis"] above: it replaces arq's own connection with a
+    # plain client that has no enqueue_job.
+    ctx["arq_pool"] = await create_pool(RedisSettings.from_dsn(settings.redis_url))
 
     try:
         from athenaeum.graph.driver import init_constraints, make_driver
@@ -66,6 +72,8 @@ async def shutdown(ctx: dict) -> None:
     await engine.dispose()
     await http.aclose()
     await r.aclose()
+    if ctx.get("arq_pool") is not None:
+        await ctx["arq_pool"].aclose()
     if ctx.get("neo4j_driver") is not None:
         await ctx["neo4j_driver"].close()
     log.info("worker.shutdown")
@@ -95,6 +103,14 @@ async def ingest_paper(
 
     # Populate citation_edges from OpenAlex referenced_works.
     await _sync_citations(ctx, pid, settings)
+
+    # If this paper is a node in any Nucleate corpus, bring those nodes up to
+    # full-text evidence (D-N15). Guarded: a failed upgrade must never undo a
+    # successful ingestion, and it can be re-run.
+    try:
+        await _upgrade_corpus_nodes(ctx, pid, settings)
+    except Exception:
+        log.exception("job.ingest_paper.corpus_upgrade_failed", paper_id=paper_id)
 
     if backtrace_hop_id is not None:
         await _resolve_backtrace_hop_after_ingest(ctx, uuid.UUID(backtrace_hop_id), settings)
@@ -365,6 +381,7 @@ async def run_expansion_job(
     """One Nucleate expansion (nucleate/archivist.py), wired to real sources,
     the user's model credentials, and the Redis event channel."""
     from athenaeum.api.nucleate import event_channel
+    from athenaeum.ingest.acquire import unpaywall_pdf_url
     from athenaeum.nucleate.archivist import ArchivistDeps, run_expansion
     from athenaeum.nucleate.retrieval import retrieve_library, retrieve_openalex, retrieve_web
     from athenaeum.storage.models import NucleusExpansion, NucleusExpansionEvent
@@ -411,10 +428,55 @@ async def run_expansion_job(
         async def publish(event: dict) -> None:
             await redis.publish(channel, json.dumps(event))
 
+        async def find_open_access(doi: str) -> str | None:
+            return await unpaywall_pdf_url(doi, settings.unpaywall_email, ctx["http"])
+
+        async def request_fulltext(paper_id: uuid.UUID, url: str) -> None:
+            # Keyed by paper, so two expansions wanting the same PDF don't
+            # fetch and parse it twice.
+            await ctx["arq_pool"].enqueue_job(
+                "ingest_paper", str(paper_id), oa_pdf_url=url, _job_id=f"ingest_paper:{paper_id}"
+            )
+
         deps = ArchivistDeps(
             archivist=archivist, checker=checker, checker_model=settings.checker_model,
             embed_model=settings.embed_model, library=library, openalex=openalex, web=web,
-            publish=publish,
+            publish=publish, find_open_access=find_open_access,
+            request_fulltext=request_fulltext,
         )
         await run_expansion(session, expansion_uuid, deps, user_uuid)
     log.info("job.expansion.done", expansion_id=expansion_id)
+
+
+async def _upgrade_corpus_nodes(ctx: dict, paper_id: uuid.UUID, settings) -> None:
+    """Run nucleate/fulltext.upgrade_nodes_for_paper, with model access
+    resolved per nucleus: its creator's credentials, else the project owner's."""
+    from athenaeum.nucleate.fulltext import UpgradeDeps, upgrade_nodes_for_paper
+    from athenaeum.storage.models import CorpusNode, Nucleus, Project
+
+    async with AsyncSession(ctx["engine"], expire_on_commit=False) as session:
+        in_corpus = await session.scalar(
+            select(CorpusNode.id).where(CorpusNode.paper_id == paper_id).limit(1)
+        )
+        if in_corpus is None:
+            return
+        cache: dict[uuid.UUID, UpgradeDeps] = {}
+
+        async def deps_for(nucleus: Nucleus) -> UpgradeDeps:
+            user_id = nucleus.created_by
+            if user_id is None:
+                project = await session.get(Project, nucleus.project_id)
+                assert project is not None
+                user_id = project.owner_id
+            if user_id not in cache:
+                cache[user_id] = UpgradeDeps(
+                    provider=await get_provider_for_user(
+                        session, user_id, settings.archivist_model, settings),
+                    checker=await get_provider_for_user(
+                        session, user_id, settings.checker_model, settings),
+                    checker_model=settings.checker_model, embed_model=settings.embed_model,
+                    user_id=user_id,
+                )
+            return cache[user_id]
+
+        await upgrade_nodes_for_paper(session, paper_id, deps_for)

@@ -28,14 +28,31 @@ def _rrf_merge(
     return sorted(scores.items(), key=lambda x: -x[1])
 
 
+def _scope(link_to_project: bool) -> tuple[str, str]:
+    """The project scoping every sentence query uses, or none.
+
+    Normally a search sees only papers linked to the project. Nucleate is the
+    one caller that turns this off, and only together with a single paper_id:
+    a paper the archivist found on OpenAlex is a node in the project's corpus
+    without being linked to its library, and linking it would put frontier and
+    rejected papers in the Read tab's list — a UI question for later. The
+    corpus membership is the authorization there, checked by the caller.
+    """
+    if link_to_project:
+        return "JOIN project_papers pp ON pp.paper_id = ps.paper_id", "pp.project_id = :pid"
+    return "", "TRUE"
+
+
 async def _vector_search(
     session: AsyncSession,
     project_id: uuid.UUID,
     embedding: list[float],
     k: int,
     paper_id: uuid.UUID | None = None,
+    link_to_project: bool = True,
 ) -> list[dict[str, Any]]:
     paper_clause = "AND ps.paper_id = :paper_id" if paper_id is not None else ""
+    scope_join, scope_where = _scope(link_to_project)
     # Bound as a parameter, not f-string-interpolated into the SQL text — the
     # value is currently always our own embedding model's output, but the
     # query text itself shouldn't depend on that staying true. Written as
@@ -57,8 +74,8 @@ async def _vector_search(
                 ps.char_end,
                 (1 - (ps.embedding <=> CAST(:vec AS vector)))::float AS score
             FROM paper_sentences ps
-            JOIN project_papers pp ON pp.paper_id = ps.paper_id
-            WHERE pp.project_id = :pid
+            {scope_join}
+            WHERE {scope_where}
               AND ps.embedding IS NOT NULL
               {paper_clause}
             ORDER BY ps.embedding <=> CAST(:vec AS vector)
@@ -75,8 +92,10 @@ async def _text_search(
     query_text: str,
     k: int,
     paper_id: uuid.UUID | None = None,
+    link_to_project: bool = True,
 ) -> list[dict[str, Any]]:
     paper_clause = "AND ps.paper_id = :paper_id" if paper_id is not None else ""
+    scope_join, scope_where = _scope(link_to_project)
     params: dict[str, Any] = {"q": query_text, "pid": str(project_id), "k": k}
     if paper_id is not None:
         params["paper_id"] = str(paper_id)
@@ -91,8 +110,8 @@ async def _text_search(
                 ps.char_end,
                 ts_rank_cd(ps.text_search, plainto_tsquery('english', :q))::float AS score
             FROM paper_sentences ps
-            JOIN project_papers pp ON pp.paper_id = ps.paper_id
-            WHERE pp.project_id = :pid
+            {scope_join}
+            WHERE {scope_where}
               AND ps.text_search @@ plainto_tsquery('english', :q)
               {paper_clause}
             ORDER BY score DESC
@@ -166,20 +185,28 @@ async def search(
     top_k: int = 20,
     mode: str = "hybrid",
     paper_id: uuid.UUID | None = None,
+    link_to_project: bool = True,
 ) -> list[SentenceHit]:
     """`paper_id` narrows the search to a single paper (still scoped to
     `project_id` via the same project_papers join) — used by Backtrace to
     search within one specific referenced paper rather than a whole project."""
+    if not link_to_project and paper_id is None:
+        # Unscoped *and* unnarrowed would search every paper on the server.
+        raise ValueError("link_to_project=False requires a paper_id")
     inner_k = min(top_k * 4, 200)
 
     vec_hits: list[dict[str, Any]] = []
     txt_hits: list[dict[str, Any]] = []
 
     if mode in ("vector", "hybrid") and query_embedding is not None:
-        vec_hits = await _vector_search(session, project_id, query_embedding, inner_k, paper_id)
+        vec_hits = await _vector_search(
+            session, project_id, query_embedding, inner_k, paper_id, link_to_project
+        )
 
     if mode in ("text", "hybrid"):
-        txt_hits = await _text_search(session, project_id, query_text, inner_k, paper_id)
+        txt_hits = await _text_search(
+            session, project_id, query_text, inner_k, paper_id, link_to_project
+        )
 
     if mode == "hybrid":
         merged = _rrf_merge(
