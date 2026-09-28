@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from athenaeum.synthesize.websearch_find import (
     _web_search_tool_for_model,
     find_via_web_search,
+    search_web_pages,
 )
 
 
@@ -156,3 +157,48 @@ async def test_find_via_web_search_stops_resuming_after_a_bound() -> None:
 
     assert matches == []
     assert 1 < len(provider.calls) <= 5
+
+
+# ── search_web_pages: the archivist's page collector ────────────────────────
+
+def _results(*pairs):
+    return SimpleNamespace(type="web_search_tool_result", content=[
+        SimpleNamespace(type="web_search_result", url=u, title=t) for u, t in pairs
+    ])
+
+
+async def test_search_web_pages_reads_pages_from_the_result_blocks() -> None:
+    """The pages come from the search results themselves, so an answer with
+    no citations (as the dynamic-filtering variant gives) doesn't lose them."""
+    provider = _FakeProvider([
+        _SEARCH,
+        _results(("https://doi.org/10.1/a", "Paper A"), ("https://b.org", None)),
+        _SEARCH,
+        _results(("https://doi.org/10.1/a", "Paper A again")),
+        _text_block("Uncited prose.", citations=None),
+    ], model="claude-sonnet-5")
+
+    pages = await search_web_pages(provider, "query")
+
+    assert [(p.url, p.title) for p in pages] == [
+        ("https://doi.org/10.1/a", "Paper A"), ("https://b.org", "https://b.org"),
+    ]
+
+
+async def test_search_web_pages_always_uses_the_basic_variant() -> None:
+    provider = _FakeProvider([], model="claude-sonnet-5")
+
+    await search_web_pages(provider, "query")
+
+    assert provider.last_call["tools"][0]["type"] == "web_search_20250305"
+
+
+async def test_search_web_pages_skips_a_failed_search() -> None:
+    failed = SimpleNamespace(type="web_search_tool_result",
+                             content=SimpleNamespace(type="web_search_tool_result_error",
+                                                     error_code="too_many_requests"))
+    provider = _FakeProvider([_SEARCH, failed, _SEARCH, _results(("https://c.org", "C"))])
+
+    pages = await search_web_pages(provider, "query")
+
+    assert [p.url for p in pages] == ["https://c.org"]

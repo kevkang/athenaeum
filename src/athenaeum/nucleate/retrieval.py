@@ -30,7 +30,7 @@ from athenaeum.provider.anthropic_client import AnthropicProvider
 from athenaeum.retrieve.hybrid import search as hybrid_search
 from athenaeum.storage.models import Paper
 from athenaeum.synthesize.draft_audit import find_doi, normalize_title, pick_exact_match
-from athenaeum.synthesize.websearch_find import find_via_web_search
+from athenaeum.synthesize.websearch_find import search_web_pages
 
 log = structlog.get_logger()
 
@@ -155,22 +155,25 @@ class OpenAlexResult:
 async def retrieve_openalex(
     queries: list[str], per_query: int = 10, email: str = "contact@athenaeum.app"
 ) -> OpenAlexResult:
-    """Run each scholarly query against OpenAlex. A query that fails is logged,
-    counted and skipped rather than failing the whole expansion."""
+    """Run each scholarly query against OpenAlex. A failure is logged and
+    counted rather than failing the whole expansion.
+
+    The first query to fail (after the client's retries) ends the rest: a
+    failure that survives retries is OpenAlex throttling, and every further
+    query would wait out the same throttle only to fail too. Those skipped
+    queries count as failed."""
     loop = asyncio.get_running_loop()
     candidates: list[Candidate] = []
-    failed = 0
-    for query in queries:
-        if not query.strip():
-            continue
+    live = [q for q in queries if q.strip()]
+    for i, query in enumerate(live):
         try:
             hits = await loop.run_in_executor(None, search_works, query, per_query, email)
         except Exception as exc:
-            log.warning("archivist.openalex_failed", query=query, error=str(exc)[:200])
-            failed += 1
-            continue
+            log.warning("archivist.openalex_failed", query=query, error=str(exc)[:200],
+                        skipped=len(live) - i - 1)
+            return OpenAlexResult(candidates=candidates, failed_queries=len(live) - i)
         candidates.extend(_from_hit(h, OPENALEX) for h in hits)
-    return OpenAlexResult(candidates=candidates, failed_queries=failed)
+    return OpenAlexResult(candidates=candidates, failed_queries=0)
 
 
 # ── Web ──────────────────────────────────────────────────────────────────────
@@ -182,25 +185,27 @@ class WebResult:
     # Pages found that matched no scholarly work deterministically. Counted so
     # the stage can say so, rather than silently vanishing.
     unmatched: int
+    # Pages never checked because OpenAlex, which does the matching, failed.
+    unchecked: int = 0
 
 
 async def _match_page(
     url: str, title: str, email: str
 ) -> OpenAlexSearchHit | None:
-    """Match one web page to a scholarly work, deterministically or not at all."""
+    """Match one web page to a scholarly work, deterministically or not at all.
+    An OpenAlex failure is raised, not read as "no match"."""
     loop = asyncio.get_running_loop()
     doi = find_doi(url) or find_doi(title)
-    try:
-        if doi:
-            hits = await loop.run_in_executor(None, search_works, doi, 5, email)
-            return next((h for h in hits if h.doi and h.doi.lower() == doi), None)
-        hits = await loop.run_in_executor(None, search_works, title, 8, email)
-    except Exception as exc:
-        log.warning("archivist.web_match_failed", url=url, error=str(exc)[:200])
-        return None
+    if doi:
+        hits = await loop.run_in_executor(None, search_works, doi, 5, email)
+        return next((h for h in hits if h.doi and h.doi.lower() == doi), None)
+    hits = await loop.run_in_executor(None, search_works, title, 8, email)
     # A single work whose full title appears verbatim in the page title; the
     # helper refuses short titles and ambiguous double matches.
     return pick_exact_match(title, hits)
+
+
+_MAX_WEB_PAGES = 20
 
 
 async def retrieve_web(
@@ -210,15 +215,25 @@ async def retrieve_web(
     if not query.strip():
         return WebResult(candidates=[], unmatched=0)
     try:
-        matches = await find_via_web_search(provider, query)
+        pages = await search_web_pages(provider, query)
     except Exception as exc:
         log.warning("archivist.web_search_failed", error=str(exc)[:200])
         return WebResult(candidates=[], unmatched=0)
 
     candidates: list[Candidate] = []
     unmatched = 0
-    for match in matches:
-        hit = await _match_page(match.url, match.title, email)
+    # Each page costs an OpenAlex lookup; search results come in rank order,
+    # so the cap drops the least relevant ones.
+    checking = pages[:_MAX_WEB_PAGES]
+    for i, page in enumerate(checking):
+        try:
+            hit = await _match_page(page.url, page.title, email)
+        except Exception as exc:
+            # As with the scholarly queries: past its retries, OpenAlex is
+            # throttling, so stop rather than wait it out once per page.
+            log.warning("archivist.web_match_failed", url=page.url, error=str(exc)[:200])
+            return WebResult(candidates=candidates, unmatched=unmatched,
+                             unchecked=len(checking) - i)
         if hit is None:
             unmatched += 1
             continue

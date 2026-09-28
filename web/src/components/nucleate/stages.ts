@@ -21,6 +21,9 @@ function describe(stage: Stage, e: ExpansionEvent): string {
     if (c.web_unmatched) {
       parts.push(`${c.web_unmatched} web ${c.web_unmatched === 1 ? 'page' : 'pages'} matched no paper`);
     }
+    if (c.web_unchecked) {
+      parts.push(`${c.web_unchecked} web ${c.web_unchecked === 1 ? 'page' : 'pages'} not checked (OpenAlex unavailable)`);
+    }
     if (c.openalex_failed) {
       parts.push(`${c.openalex_failed} OpenAlex ${c.openalex_failed === 1 ? 'search' : 'searches'} failed`);
     }

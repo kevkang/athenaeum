@@ -510,6 +510,7 @@ async def _run(
         "retrieved": len(candidates), "library": len(library),
         "openalex": len(openalex.candidates), "openalex_failed": openalex.failed_queries,
         "web": len(web.candidates), "web_unmatched": web.unmatched,
+        "web_unchecked": web.unchecked,
     })
     if await _cancelled(session, expansion):
         raise ExpansionCancelled

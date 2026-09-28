@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     grobid_url: str = "http://localhost:8070"
     unpaywall_email: str = "contact@athenaeum.app"
+    # OpenAlex throttles anonymous search whenever it's under load (a 429 with
+    # a ~30 s Retry-After), which can empty a whole Nucleate run's OpenAlex
+    # results. A free key (https://openalex.org/rest-api) avoids that.
+    openalex_api_key: str | None = None
     embed_model: str = "BAAI/bge-base-en-v1.5"
 
     anthropic_api_key: str | None = None
