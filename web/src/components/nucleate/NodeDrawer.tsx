@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { annotationsApi } from '../../api/annotations';
 import {
   nucleateApi,
@@ -14,19 +15,13 @@ import {
 import { nodeLabel } from './labels';
 import { isUnreviewed, OUTCOME_COPY, RELATION_HINTS, RELATION_LABELS } from './relations';
 import RelationControls from './RelationControls';
+import SupplyPaper from './SupplyPaper';
 import styles from './NodeDrawer.module.css';
 
 const FULLTEXT_COPY = {
   available: 'Full text available',
   abstract_only: 'Abstract only — weigh abstract-derived claims accordingly',
   user_must_supply: 'User must supply this paper',
-} as const;
-
-const PROVENANCE_COPY = {
-  ai_proposed: 'Written by the archivist · not yet reviewed',
-  ai_proposed_accepted: 'Written by the archivist · accepted by you',
-  ai_proposed_corrected: 'Written by the archivist · edited by you',
-  user_set: 'Written by you',
 } as const;
 
 const STATUS_COPY = {
@@ -38,9 +33,11 @@ const STATUS_COPY = {
 
 /**
  * Everything about one node, opened on selection so the prompt stays visible
- * while inspecting (handoff Part IV): metadata, the relevance statement with
- * its provenance and automatic-audit result, why it was selected, all its
- * verbatim evidence in context, the review actions, and the nuclei it's in.
+ * while inspecting (handoff Part IV). First, why the archivist chose it, in
+ * its own (AI) voice, so you can judge relevance yourself (D-N22: no verdict
+ * of the archivist's own). Then supplying its text if it has none, the review
+ * actions and a way into Read (D-N23), its metadata and verbatim evidence,
+ * its relations, and the nuclei it's in.
  */
 export default function NodeDrawer({
   node,
@@ -71,8 +68,7 @@ export default function NodeDrawer({
 }) {
   const { review, paper } = node;
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(review.relevance_text ?? '');
+  const navigate = useNavigate();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
@@ -80,7 +76,6 @@ export default function NodeDrawer({
   const act = useMutation({
     mutationFn: (update: ReviewUpdate) => nucleateApi.review(review.id, update),
     onSuccess: () => {
-      setEditing(false);
       setRejecting(false);
       setReason('');
       onChanged();
@@ -101,27 +96,42 @@ export default function NodeDrawer({
   });
 
   const questionOf = new Map(nuclei.map((n) => [n.id, n.question]));
-  const ai = review.relevance_provenance === 'ai_proposed';
   const busy = act.isPending;
+
+  // Opening a paper in Read puts it in the library, so it's listed there (D-N23).
+  const openInRead = useMutation({
+    mutationFn: () => nucleateApi.addToLibrary(nucleusId, node.node_id),
+    onSuccess: () => navigate({
+      to: '/projects/$projectId/read', params: { projectId }, search: { paper: paper.id },
+    }),
+  });
+  const supply = (prominent: boolean) => (
+    <SupplyPaper
+      node={node}
+      projectId={projectId}
+      nucleusId={nucleusId}
+      prominent={prominent}
+      onSupplied={onChanged}
+    />
+  );
 
   return (
     <aside className={styles.drawer} aria-label={`Details for ${nodeLabel(node)}`}>
       <header className={styles.head}>
-        <div>
-          <div className={styles.label}>{nodeLabel(node)}</div>
-          <h2 className={styles.title}>{paper.title}</h2>
-        </div>
+        <div className={styles.label}>{nodeLabel(node)}</div>
         <button className={styles.close} onClick={onClose} aria-label="Close">×</button>
       </header>
 
-      <section className={styles.meta}>
-        {paper.authors.length > 0 && <div>{paper.authors.join(', ')}</div>}
-        <div>{[paper.venue, paper.year].filter(Boolean).join(' · ')}</div>
-        {paper.doi && (
-          <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">doi:{paper.doi}</a>
+      <section className={styles.why}>
+        <div className={styles.sectionLabel}>Why the archivist chose this</div>
+        {review.selection_reasoning ? (
+          <p className={styles.aiText}>{review.selection_reasoning}</p>
+        ) : (
+          <p className={styles.faint}>No reason was recorded for this paper.</p>
         )}
-        <div className={styles.fulltext} data-state={node.fulltext}>{FULLTEXT_COPY[node.fulltext]}</div>
       </section>
+
+      {node.fulltext === 'user_must_supply' && supply(true)}
 
       <section className={styles.section}>
         <div className={styles.statusRow}>
@@ -150,6 +160,16 @@ export default function NodeDrawer({
             </>
           )}
         </div>
+        <div className={styles.inline}>
+          <button
+            className={styles.btnQuiet}
+            disabled={openInRead.isPending}
+            onClick={() => openInRead.mutate()}
+          >
+            Open in Read
+          </button>
+        </div>
+        {openInRead.isError && <div className={styles.error}>Could not open it in Read.</div>}
         {review.status === 'rejected' && review.rejection_reason && (
           <div className={styles.reason}>Reason: {review.rejection_reason}</div>
         )}
@@ -176,62 +196,15 @@ export default function NodeDrawer({
         {act.isError && <div className={styles.error}>Could not save that change.</div>}
       </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionLabel}>Relevance</div>
-        {editing ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              act.mutate({ relevance_text: draft });
-            }}
-          >
-            <textarea className={styles.textarea} rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />
-            <div className={styles.inline}>
-              <button type="submit" className={styles.btn} disabled={busy}>Save</button>
-              <button type="button" className={styles.btnQuiet} onClick={() => setEditing(false)}>Cancel</button>
-            </div>
-          </form>
-        ) : review.relevance_text ? (
-          <>
-            <p className={ai ? styles.aiText : styles.humanText}>{review.relevance_text}</p>
-            {review.relevance_provenance && (
-              <div className={styles.provenance}>{PROVENANCE_COPY[review.relevance_provenance]}</div>
-            )}
-          </>
-        ) : (
-          <p className={styles.faint}>No relevance statement.</p>
+      <section className={styles.meta}>
+        <h2 className={styles.title}>{paper.title}</h2>
+        {paper.authors.length > 0 && <div>{paper.authors.join(', ')}</div>}
+        <div>{[paper.venue, paper.year].filter(Boolean).join(' · ')}</div>
+        {paper.doi && (
+          <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">doi:{paper.doi}</a>
         )}
-        {!editing && (
-          <button
-            className={styles.btnQuiet}
-            onClick={() => {
-              setDraft(review.relevance_text ?? '');
-              setEditing(true);
-            }}
-          >
-            {review.relevance_text ? 'Edit statement' : 'Write a statement'}
-          </button>
-        )}
-
-        {node.audit ? (
-          <div className={styles.audit} data-supported={node.audit.supported}>
-            <strong>{node.audit.supported ? '✓ Supported by its evidence' : '✕ Not supported by its evidence'}</strong>
-            <span>{node.audit.rationale}</span>
-            <span className={styles.faint}>
-              Automatic audit · {new Date(node.audit.checked_at).toLocaleString()}
-            </span>
-          </div>
-        ) : review.relevance_text ? (
-          <div className={styles.faint}>Not audited.</div>
-        ) : null}
+        <div className={styles.fulltext} data-state={node.fulltext}>{FULLTEXT_COPY[node.fulltext]}</div>
       </section>
-
-      {review.selection_reasoning && (
-        <details className={styles.section}>
-          <summary className={styles.sectionLabel}>Why the archivist chose this</summary>
-          <p className={styles.aiText}>{review.selection_reasoning}</p>
-        </details>
-      )}
 
       <section className={styles.section}>
         <div className={styles.sectionLabel}>Evidence ({node.evidence.length})</div>
@@ -248,6 +221,8 @@ export default function NodeDrawer({
           </figure>
         ))}
       </section>
+
+      {node.fulltext === 'abstract_only' && supply(false)}
 
       <Relations
         node={node}

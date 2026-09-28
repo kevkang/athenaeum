@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from '@tanstack/react-router';
+import { useParams, useSearch } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { papersApi, type Paper } from '../api/papers';
 import { backtraceApi } from '../api/backtrace';
@@ -32,9 +32,11 @@ function isDroppableFile(file: File): boolean {
  */
 export default function ReadView() {
   const { projectId } = useParams({ from: '/app/projects/$projectId/read' });
+  const { paper: paperParam } = useSearch({ from: '/app/projects/$projectId/read' });
   const queryClient = useQueryClient();
 
-  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
+  // Opens on the paper named in the URL, if any; after that, the sidebar picks.
+  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(paperParam ?? null);
   const [readerMode, setReaderMode] = useState<'read' | 'backtrace'>('read');
   // The chain the stepper is currently walking. Independent of the Backtrace
   // tab's own chain selection — starting a trace here should not silently

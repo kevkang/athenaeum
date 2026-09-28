@@ -4,8 +4,8 @@ nodes up to full-text evidence once a PDF has been parsed.
 The model is scripted and the full-text search is stubbed with one that writes
 a real Passage, so every rule runs against the real database. Each upgrade
 rule has its own test because each one guards against a quiet failure: paying
-for rejected papers, duplicating evidence on a re-run, writing an AI statement
-nothing can audit, or auditing a person's own words.
+for rejected papers, duplicating evidence on a re-run, or writing an AI
+statement for a paper a person chose.
 """
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def _oa_deps(found: str | None, calls: dict) -> ArchivistDeps:
     async def _unused(*a, **k):
         raise AssertionError("not used here")
 
-    return ArchivistDeps(archivist=_Model(), checker=_Model(), checker_model="c",
+    return ArchivistDeps(archivist=_Model(),
                          embed_model="e", library=_unused, openalex=_unused, web=_unused,
                          publish=_unused, find_open_access=find, request_fulltext=request)
 
@@ -230,7 +230,7 @@ async def _node(session, nucleus, paper, prompt=None, **review_fields) -> NodeRe
 
 def _deps_for(model: _Model):
     async def deps_for(nucleus):
-        return UpgradeDeps(provider=model, checker=model, checker_model="c", embed_model="e")
+        return UpgradeDeps(provider=model, embed_model="e")
     return deps_for
 
 
@@ -247,7 +247,7 @@ async def _evidence(session, review) -> list[NodeEvidence]:
         .order_by(NodeEvidence.ord)))
 
 
-async def test_an_archivist_node_gains_full_text_evidence_and_is_reaudited(
+async def test_an_archivist_node_gains_full_text_evidence(
     db_session, stub_fulltext_search,
 ) -> None:
     _, nucleus, prompt, expansion = await _world(db_session)
@@ -264,12 +264,13 @@ async def test_an_archivist_node_gains_full_text_evidence_and_is_reaudited(
 
     outcomes = await upgrade_nodes_for_paper(db_session, paper.id, _deps_for(_Model()))
 
-    assert outcomes == {"evidence_added": 1, "reaudited": 1}
+    assert outcomes == {"evidence_added": 1}
     assert stub_fulltext_search["link_to_project"] is False, "corpus papers aren't in a library"
     evidence = await _evidence(db_session, review)
     assert [(e.ord, e.source) for e in evidence] == [(0, v.ABSTRACT), (1, v.FULL_TEXT)]
-    run = await db_session.scalar(select(AuditRun).where(AuditRun.expansion_id == expansion.id))
-    assert run is not None and run.kind == "nucleate_node" and run.quotes_checked == 2
+    # Nothing is audited any more (D-N22).
+    assert await db_session.scalar(
+        select(AuditRun).where(AuditRun.expansion_id == expansion.id)) is None
 
 
 async def test_a_node_that_had_no_text_gets_its_statement_now(
@@ -281,7 +282,7 @@ async def test_a_node_that_had_no_text_gets_its_statement_now(
 
     outcomes = await upgrade_nodes_for_paper(db_session, paper.id, _deps_for(_Model()))
 
-    assert outcomes["statement_written"] == 1 and outcomes["reaudited"] == 1
+    assert outcomes == {"evidence_added": 1, "statement_written": 1}
     assert review.relevance_provenance == v.AI_PROPOSED
 
 
@@ -317,7 +318,7 @@ async def test_rejected_nodes_cost_nothing(db_session, stub_fulltext_search) -> 
 async def test_a_persons_node_gets_evidence_but_no_ai_statement(
     db_session, stub_fulltext_search,
 ) -> None:
-    """No expansion introduced it, so an AI statement could not be audited."""
+    """No expansion introduced it: a person chose it, so it's theirs to describe."""
     _, nucleus, _, _ = await _world(db_session)
     paper = await _full_text_paper(db_session)
     review = await _node(db_session, nucleus, paper)  # added by a person
@@ -327,20 +328,6 @@ async def test_a_persons_node_gets_evidence_but_no_ai_statement(
     assert outcomes == {"evidence_added": 1}
     assert review.relevance_text is None
     assert len(await _evidence(db_session, review)) == 1
-
-
-async def test_a_persons_own_words_are_not_audited(db_session, stub_fulltext_search) -> None:
-    _, nucleus, prompt, _ = await _world(db_session)
-    paper = await _full_text_paper(db_session)
-    await _node(db_session, nucleus, paper, prompt,
-                relevance_text="My own reading of this paper.",
-                relevance_provenance=v.USER_SET)
-    model = _Model()
-
-    outcomes = await upgrade_nodes_for_paper(db_session, paper.id, _deps_for(model))
-
-    assert outcomes == {"evidence_added": 1}
-    assert "audit_evidence" not in model.calls
 
 
 async def test_nothing_happens_until_the_paper_has_full_text(

@@ -25,6 +25,10 @@ export const STAGES = [
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
+/** Stages no run emits any more (D-N22 retired the automatic audit). An older
+ * run that did go through one still shows it. */
+export const RETIRED_STAGES: readonly Stage[] = ['verifying'];
+
 export const STAGE_LABELS: Record<Stage, string> = {
   interpreting: 'Interpreting',
   retrieving: 'Retrieving',
@@ -257,4 +261,8 @@ export const nucleateApi = {
     api.patch<SemanticEdge>(`/semantic-edges/${edgeId}`, update).then((r) => r.data),
 
   deleteRelation: (edgeId: string) => api.delete(`/semantic-edges/${edgeId}`),
+
+  /** Put a node's paper in the project's library (D-N23). */
+  addToLibrary: (nucleusId: string, nodeId: string) =>
+    api.post(`/nuclei/${nucleusId}/nodes/${nodeId}/library`).then(() => undefined),
 };

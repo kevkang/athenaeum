@@ -22,6 +22,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 
 from athenaeum.api.deps import CurrentUserDep, SessionDep
+from athenaeum.api.zotero import supply_existing_paper
 from athenaeum.config import get_settings
 from athenaeum.domain.models import (
     PaperOut,
@@ -345,9 +346,14 @@ async def import_item(
     await _require_member(session, payload.project_id, user.id)
     data_dir = await _data_dir_or_404(session)
 
-    paper = await session.scalar(
-        select(Paper).where(Paper.zotero_item_key == payload.zotero_item_key)
-    )
+    paper: Paper | None
+    if payload.paper_id is not None:
+        paper = await supply_existing_paper(
+            session, payload.paper_id, payload.zotero_item_key, "local", user.id)
+    else:
+        paper = await session.scalar(
+            select(Paper).where(Paper.zotero_item_key == payload.zotero_item_key)
+        )
 
     if paper is None:
         try:

@@ -400,3 +400,70 @@ async def test_a_corpus_paper_is_visible_to_members_and_nobody_else(db_session) 
     with pytest.raises(HTTPException) as exc:
         await _assert_paper_visible(db_session, node.paper_id, outsider.id)
     assert exc.value.status_code == 403
+
+
+# ── Opening in Read, supplying full text (D-N23) ─────────────────────────────
+
+
+async def test_opening_a_paper_in_read_puts_it_in_the_library(db_session) -> None:
+    """The drawer's "Open in Read" and its upload both link the paper; neither
+    accepts it on the user's behalf."""
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+    assert not await _linked(db_session, project, review)
+
+    await api.add_node_to_library(review.nucleus_id, review.node_id, db_session, user)
+
+    assert await _linked(db_session, project, review)
+    await db_session.refresh(review)
+    assert review.status == v.FRONTIER
+
+
+async def test_only_a_node_in_this_nucleus_can_be_added(db_session) -> None:
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+    other = await _finished_nucleus(db_session, user, project)
+
+    with pytest.raises(HTTPException) as exc:
+        await api.add_node_to_library(other.id, review.node_id, db_session, user)
+    assert exc.value.status_code == 404
+
+
+async def test_a_zotero_item_can_supply_an_existing_paper(db_session) -> None:
+    from athenaeum.api.zotero import supply_existing_paper
+
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+    node = await db_session.get(CorpusNode, review.node_id)
+
+    paper = await supply_existing_paper(db_session, node.paper_id, "ZKEY0001", "sync", user.id)
+
+    assert paper.id == node.paper_id, "filled in, not a second paper"
+    assert (paper.zotero_item_key, paper.zotero_source) == ("ZKEY0001", "sync")
+
+
+async def test_a_zotero_item_already_another_paper_is_refused(db_session) -> None:
+    from athenaeum.api.zotero import supply_existing_paper
+
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+    node = await db_session.get(CorpusNode, review.node_id)
+    db_session.add(Paper(id=uuid.uuid4(), title="Imported before", zotero_item_key="ZKEY0002"))
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await supply_existing_paper(db_session, node.paper_id, "ZKEY0002", "sync", user.id)
+    assert exc.value.status_code == 409
+
+
+async def test_supplying_someone_elses_paper_is_refused(db_session) -> None:
+    from athenaeum.api.zotero import supply_existing_paper
+
+    user, _ = await _member(db_session)
+    stranger_paper = Paper(id=uuid.uuid4(), title="Not in any of your projects")
+    db_session.add(stranger_paper)
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await supply_existing_paper(db_session, stranger_paper.id, "ZKEY0003", "sync", user.id)
+    assert exc.value.status_code == 403

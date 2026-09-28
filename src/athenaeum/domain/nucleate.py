@@ -149,6 +149,11 @@ STAGES: tuple[str, ...] = (
     "awaiting_review",
 )
 
+# Stages no run emits any more, kept so older runs' events still read. The
+# automatic audit ("verifying") was retired by D-N22.
+RETIRED_STAGES: tuple[str, ...] = ("verifying",)
+ACTIVE_STAGES: tuple[str, ...] = tuple(s for s in STAGES if s not in RETIRED_STAGES)
+
 STAGE_LABELS: dict[str, str] = {
     "interpreting": "Interpreting",
     "retrieving": "Retrieving",

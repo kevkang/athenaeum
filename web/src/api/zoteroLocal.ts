@@ -52,6 +52,15 @@ export const zoteroLocalApi = {
       .get<ZoteroSearchResult[]>('/zotero-local/search', { params: { q, project_id: projectId } })
       .then((r) => r.data),
 
+  /** Use a Zotero item as the full text of a paper Athenaeum already has
+   * (a Nucleate node that needs it), instead of adding a new paper. */
+  supplyPaper: (projectId: string, zoteroItemKey: string, paperId: string) =>
+    api
+      .post<Paper>('/zotero-local/import', {
+        project_id: projectId, zotero_item_key: zoteroItemKey, paper_id: paperId,
+      })
+      .then((r) => r.data),
+
   importItem: (
     projectId: string,
     zoteroItemKey: string,

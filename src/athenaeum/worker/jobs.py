@@ -397,8 +397,6 @@ async def run_expansion_job(
         try:
             archivist = await get_provider_for_user(
                 session, user_uuid, settings.archivist_model, settings)
-            checker = await get_provider_for_user(
-                session, user_uuid, settings.checker_model, settings)
         except Exception as exc:
             # No usable model key: fail the run visibly rather than leaving it
             # "running" forever with no event explaining why.
@@ -439,8 +437,8 @@ async def run_expansion_job(
             )
 
         deps = ArchivistDeps(
-            archivist=archivist, checker=checker, checker_model=settings.checker_model,
-            embed_model=settings.embed_model, library=library, openalex=openalex, web=web,
+            archivist=archivist, embed_model=settings.embed_model, library=library,
+            openalex=openalex, web=web,
             publish=publish, find_open_access=find_open_access,
             request_fulltext=request_fulltext,
         )
@@ -472,10 +470,7 @@ async def _upgrade_corpus_nodes(ctx: dict, paper_id: uuid.UUID, settings) -> Non
                 cache[user_id] = UpgradeDeps(
                     provider=await get_provider_for_user(
                         session, user_id, settings.archivist_model, settings),
-                    checker=await get_provider_for_user(
-                        session, user_id, settings.checker_model, settings),
-                    checker_model=settings.checker_model, embed_model=settings.embed_model,
-                    user_id=user_id,
+                    embed_model=settings.embed_model,
                 )
             return cache[user_id]
 
