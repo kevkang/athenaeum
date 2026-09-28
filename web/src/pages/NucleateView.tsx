@@ -9,6 +9,7 @@ import ChatHistory from '../components/nucleate/ChatHistory';
 import NeedsFullTextQueue from '../components/nucleate/NeedsFullTextQueue';
 import PromptBox from '../components/nucleate/PromptBox';
 import NucleateCanvas from '../components/nucleate/NucleateCanvas';
+import NodeDrawer from '../components/nucleate/NodeDrawer';
 import panel from '../components/nucleate/NucleatePanel.module.css';
 import styles from './NucleateView.module.css';
 
@@ -70,6 +71,9 @@ export default function NucleateView() {
   const running = run?.status === 'running';
   const nodes = useMemo(() => detail?.nodes ?? [], [detail]);
   const anchors = nodes.filter((n) => selected.includes(n.node_id));
+  // The drawer shows the most recently selected node, keeping the prompt in
+  // view while you inspect it (handoff Part IV).
+  const drawerNode = nodes.find((n) => n.node_id === selected[selected.length - 1]) ?? null;
 
   // ── resizable split ──
   const body = useRef<HTMLDivElement>(null);
@@ -144,13 +148,32 @@ export default function NucleateView() {
 
       <main className={styles.canvasArea}>
         {detail ? (
-          <NucleateCanvas
-            detail={detail}
-            events={events}
-            running={running}
-            selected={selected}
-            onSelectionChange={setSelected}
-          />
+          <>
+            <NucleateCanvas
+              detail={detail}
+              events={events}
+              running={running}
+              selected={selected}
+              onSelectionChange={setSelected}
+            />
+            {drawerNode && (
+              <NodeDrawer
+                // Keyed by node, so an unsaved edit never carries over to another paper.
+                key={drawerNode.node_id}
+                node={drawerNode}
+                projectId={projectId}
+                nucleusId={detail.nucleus.id}
+                nuclei={nuclei}
+                onClose={() => setSelected([])}
+                onChanged={() => void refetch()}
+                onExpandFrom={() => {
+                  setSelected([drawerNode.node_id]);
+                  document.getElementById('nucleate-prompt')?.focus();
+                }}
+                onOpenNucleus={select}
+              />
+            )}
+          </>
         ) : (
           <div className={styles.placeholder}>
             {nuclei.length === 0 && !nucleiLoading

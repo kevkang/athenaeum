@@ -50,6 +50,7 @@ export default function PromptBox({
       )}
       <div className={styles.promptRow}>
         <textarea
+          id="nucleate-prompt"
           className={styles.promptInput}
           value={text}
           rows={2}
