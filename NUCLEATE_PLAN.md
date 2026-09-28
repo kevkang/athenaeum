@@ -223,6 +223,26 @@ short-title and double-match safeguards the Audit tab uses). Pages that match no
 and *counted* (`web_unmatched`), never guessed at. "Matched by title" was read strictly because a
 looser match could attach a page's claims to a paper that never made them.
 
+### D-N17 — The left panel is a fixed stack, as the handoff draws it
+
+**Decided:** switcher, stage list, chat, needs-full-text queue, prompt, top to bottom. The stage
+list shows in full during a run and then collapses to one line ("Awaiting review · 6 proposed"),
+so the explicit awaiting-review state stays visible without crowding the chat. The queue appears
+only when non-empty. Chosen over stages-inline-in-chat and over tabs, which would hide the stage
+list while you read.
+
+### D-N18 — Accepting or pinning a paper puts it in the library
+
+**Decided:** keeping a node adds its paper to the project's library, so it appears in the Read tab
+for reading and highlighting. Frontier and rejected papers stay in Nucleate only. Un-accepting
+never removes a paper again, since it may already carry highlights. It also makes later retrieval
+treat kept papers as library hits, which is true.
+
+**Consequence, found while building:** paper visibility used to mean "linked to your project's
+library", so a needs-full-text node's paper — in the corpus but not the library — would have
+refused the very PDF the researcher supplies for it. Visibility now also covers corpus
+membership, still only for members of that project.
+
 ---
 
 ## Part 1 — Tab structure after the reorganization

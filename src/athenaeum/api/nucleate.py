@@ -56,6 +56,7 @@ from athenaeum.storage.models import (
     NucleusPrompt,
     Paper,
     ProjectMember,
+    ProjectPaper,
 )
 
 log = structlog.get_logger()
@@ -355,6 +356,20 @@ async def cancel_expansion(
     return expansion
 
 
+async def _keep_in_library(session: AsyncSession, review: NodeReview, user_id: uuid.UUID) -> None:
+    """Accepting or pinning a node adds its paper to the project's library, so
+    it appears in the Read tab for reading and highlighting (D-N18). Frontier
+    and rejected papers stay out of it. Nothing ever removes it again from
+    here: once kept, it may already carry highlights."""
+    nucleus = await session.get(Nucleus, review.nucleus_id)
+    node = await session.get(CorpusNode, review.node_id)
+    assert nucleus is not None and node is not None
+    linked = await session.get(ProjectPaper, (nucleus.project_id, node.paper_id))
+    if linked is None:
+        session.add(ProjectPaper(project_id=nucleus.project_id, paper_id=node.paper_id,
+                                 added_by=user_id))
+
+
 @router.patch("/node-reviews/{review_id}", response_model=CanvasReviewOut)
 async def update_review(
     review_id: uuid.UUID, payload: NodeReviewUpdate, session: SessionDep, user: CurrentUserDep
@@ -370,6 +385,8 @@ async def update_review(
                             relevance_text=payload.relevance_text)
     except InvalidReviewUpdate as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if review.status in (v.ACCEPTED, v.PINNED):
+        await _keep_in_library(session, review, user.id)
     await session.commit()
     await session.refresh(review)
     return CanvasReviewOut(

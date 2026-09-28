@@ -22,6 +22,7 @@ from athenaeum.nucleate.review import InvalidReviewUpdate, apply_review_update
 from athenaeum.storage.models import (
     AuditFinding,
     AuditRun,
+    CorpusNode,
     NodeEvidence,
     NodeReview,
     Nucleus,
@@ -30,6 +31,7 @@ from athenaeum.storage.models import (
     Paper,
     Project,
     ProjectMember,
+    ProjectPaper,
     User,
 )
 
@@ -323,3 +325,78 @@ async def test_the_drawer_actions_persist_through_the_endpoint(db_session) -> No
                                 NodeReviewUpdate(rejection_reason="but it's accepted"),
                                 db_session, user)
     assert exc.value.status_code == 400
+
+
+
+# ── D-N18: keeping a paper puts it in the library ────────────────────────────
+
+
+async def _review_for_new_paper(session, user, project) -> NodeReview:
+    nucleus = await _finished_nucleus(session, user, project)
+    paper = Paper(id=uuid.uuid4(), title="Kept?", status="ghost")
+    session.add(paper)
+    await session.flush()
+    return (await place_node(session, nucleus, paper.id)).review
+
+
+async def _linked(session, project, review) -> bool:
+    """Whether the review's paper is in the project's library."""
+    node = await session.get(CorpusNode, review.node_id)
+    return await session.get(ProjectPaper, (project.id, node.paper_id)) is not None
+
+
+@pytest.mark.parametrize("status", ["accepted", "pinned"])
+async def test_keeping_a_node_adds_its_paper_to_the_library(db_session, status) -> None:
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+
+    await api.update_review(review.id, NodeReviewUpdate(status=status), db_session, user)
+    await api.update_review(review.id, NodeReviewUpdate(status=status), db_session, user)
+
+    assert await _linked(db_session, project, review), "idempotent, and linked once"
+
+
+@pytest.mark.parametrize("status", ["frontier", "rejected"])
+async def test_frontier_and_rejected_papers_stay_out_of_the_library(db_session, status) -> None:
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+
+    await api.update_review(review.id, NodeReviewUpdate(status=status), db_session, user)
+
+    assert not await _linked(db_session, project, review)
+
+
+async def test_rejecting_a_kept_paper_leaves_it_in_the_library(db_session) -> None:
+    """It may already carry highlights."""
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+
+    await api.update_review(review.id, NodeReviewUpdate(status="accepted"), db_session, user)
+    await api.update_review(review.id, NodeReviewUpdate(status="rejected"), db_session, user)
+
+    assert await _linked(db_session, project, review)
+
+
+# ── A corpus paper is visible to the project's members ───────────────────────
+
+
+async def test_a_corpus_paper_is_visible_to_members_and_nobody_else(db_session) -> None:
+    """A needs-full-text node must accept a supplied PDF, and its paper is in
+    the corpus but not the library. Visibility follows corpus membership —
+    and only for members."""
+    from athenaeum.api.papers import _assert_paper_visible
+
+    user, project = await _member(db_session)
+    review = await _review_for_new_paper(db_session, user, project)
+    node = await db_session.get(CorpusNode, review.node_id)
+    assert not await _linked(db_session, project, review), "in the corpus, not the library"
+
+    await _assert_paper_visible(db_session, node.paper_id, user.id)  # no exception
+
+    outsider = User(id=uuid.uuid4(), orcid=f"0000-0000-{uuid.uuid4().hex[:4]}-0006",
+                    display_name="Outsider")
+    db_session.add(outsider)
+    await db_session.flush()
+    with pytest.raises(HTTPException) as exc:
+        await _assert_paper_visible(db_session, node.paper_id, outsider.id)
+    assert exc.value.status_code == 403
