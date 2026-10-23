@@ -1,0 +1,210 @@
+/* The Nucleate canvas: nucleus, document-icon papers, lineage edges. */
+
+.background { color: var(--border-subtle); }
+
+.handle {
+  top: 50% !important;
+  left: 50% !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  opacity: 0;
+  border: none !important;
+  pointer-events: none;
+}
+
+/* ── The nucleus ── */
+
+.nucleus {
+  width: 260px;
+  padding: 16px 18px;
+  text-align: center;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 0 0 6px rgba(201, 168, 118, 0.08);
+}
+.nucleusKicker {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.nucleusQuestion {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text-header);
+}
+
+/* ── Papers, as document icons ── */
+
+/* A rectangle with its top-left corner folded: the corner is clipped away,
+   and a small triangle drawn in its place reads as the fold. */
+.doc {
+  --fold: 14px;
+  position: relative;
+  width: 240px;
+  padding: 10px 12px 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  clip-path: polygon(var(--fold) 0, 100% 0, 100% 100%, 0 100%, 0 var(--fold));
+  font-size: 12.5px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.doc::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--fold);
+  height: var(--fold);
+  background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%);
+}
+
+/* Status at a glance (handoff Part IV). */
+.doc[data-status='frontier'] { border-style: dashed; }                 /* provisional */
+.doc[data-status='accepted'] { border-color: var(--text-muted); }
+.doc[data-status='pinned'] { border-color: var(--accent); border-width: 2px; }
+/* Needs full text: faded, but the card itself stays opaque so the edge
+   behind it can't show through its text. Only the contents are dimmed. */
+.doc[data-ghost='true'] { border-style: dotted; background: var(--bg-canvas); }
+.doc[data-ghost='true'] > * { opacity: 0.55; }
+.doc[data-arriving='true'] { animation: arrive 1.6s ease-in-out infinite; }
+/* Selection is drawn inside the shape: the clip-path that folds the corner
+   would cut away an outline drawn outside it. */
+.doc[data-selected='true'] { box-shadow: inset 0 0 0 2px var(--accent); }
+
+@keyframes arrive { 50% { border-color: var(--accent-dim); } }
+@media (prefers-reduced-motion: reduce) {
+  /* Arriving is still announced by its status tag; only the pulse goes. */
+  .doc[data-arriving='true'] { animation: none; }
+}
+
+.docHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  font-family: 'Inter', sans-serif;
+}
+.docLabel { font-size: 12px; font-weight: 600; color: var(--text-header); margin-right: auto; }
+
+.tagPinned, .tagCross, .tagRun, .flagAbstract {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.tagPinned { color: var(--accent); border: 1px solid var(--accent-dim); }
+/* Cross-nucleus nodes are often the most interesting: a colour of their own. */
+.tagCross { color: var(--question); border: 1px solid var(--question); }
+.tagRun { color: var(--text-muted); border: 1px solid var(--border-strong); }
+
+.relevance { margin: 0; }
+.relevance[data-clamped='true'] {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The archivist's unreviewed words. */
+.aiText { color: var(--link); font-style: italic; }
+/* Words a person has taken on: accepted, edited, or written. */
+.humanText { color: var(--text); font-style: normal; }
+
+.noStatement { margin: 0; color: var(--text-faint); font-style: normal; }
+
+.docFlags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.flagAbstract { color: var(--text-muted); border: 1px solid var(--border-strong); }
+
+/* Verbatim evidence: upright, muted, quoted and ruled — neither the
+   archivist's voice nor the researcher's. */
+.quote {
+  margin: 8px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-strong);
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.quoteSource {
+  display: block;
+  margin-top: 2px;
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.docTitle {
+  margin-top: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Rejected: collapsed, dimmed, still there. */
+.rejected {
+  padding: 3px 9px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-decoration: line-through;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.rejected[data-selected='true'] { outline: 2px solid var(--accent-dim); }
+
+/* ── Lineage edges ── */
+
+.lineage { stroke: var(--border-strong) !important; stroke-width: 1.2 !important; }
+.edgeHit { fill: none; stroke: transparent; stroke-width: 14; cursor: help; }
+
+/* ── React Flow's zoom controls, in the app's theme ── */
+
+:global(.react-flow__controls) { box-shadow: none; border: 1px solid var(--border); }
+:global(.react-flow__controls-button) {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text-muted);
+}
+:global(.react-flow__controls-button:hover) { background: var(--bg-hover); }
+:global(.react-flow__controls-button svg) { fill: var(--text-muted); }
+
+/* ── Semantic relations (D-N21) ── */
+
+/* Reviewed or yours: solid and neutral. Unreviewed: dashed in the AI blue. */
+.semantic { stroke: var(--text-muted); stroke-width: 1.6; }
+.semantic[data-ai='true'] { stroke: var(--link); stroke-dasharray: 6 4; }
+.semanticHead { stroke: var(--text-muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.semanticHead[data-ai='true'] { stroke: var(--link); }
+.semantic[data-selected='true'], .semanticHead[data-selected='true'] { stroke: var(--accent); stroke-width: 2.4; }
+
+.edgeHitClickable { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
+
+.semanticLabel {
+  position: absolute;
+  pointer-events: all;
+  padding: 1px 7px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.semanticLabel[data-ai='true'] { color: var(--link); font-style: italic; border-style: dashed; border-color: var(--link); }
+.semanticLabel[data-selected='true'] { border: 1px solid var(--accent); color: var(--accent); }

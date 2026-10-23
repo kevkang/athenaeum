@@ -11,13 +11,10 @@ COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-# Make the CPU-only PyTorch index authoritative for the whole build (not
-# just a separate first step) so that when sentence-transformers/transformers
-# pulls in a torch version bump, pip resolves it from here too instead of
-# silently falling back to the default PyPI index's CUDA wheel (~5+ GB of
-# nvidia-*/cuda-toolkit/triton packages that blew past this host's tmpfs).
-ENV PIP_INDEX_URL=https://download.pytorch.org/whl/cpu
-ENV PIP_EXTRA_INDEX_URL=https://pypi.org/simple
+# Install CPU-only PyTorch so sentence-transformers doesn't pull the CUDA
+# wheel (~2.5 GB) from PyPI.
+RUN pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir -e .
 

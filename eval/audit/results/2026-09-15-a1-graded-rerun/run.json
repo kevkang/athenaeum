@@ -1,0 +1,17 @@
+{
+  "items_file": "eval/audit/sets/set-a1-scifact.jsonl",
+  "items": 54,
+  "predictor": "audit-graded:claude-sonnet-5",
+  "model": "claude-sonnet-5",
+  "concurrency": 8,
+  "only_ids": "eval/audit/results/2026-09-15-a1-graded-rerun/item-ids.txt",
+  "finished_at": "2026-09-16T03:36:35.956010+00:00",
+  "quotes_checked": 75,
+  "malformed_entries": 3,
+  "missing_verdicts": 0,
+  "malformed_rate": 0.04,
+  "max_malformed_rate": 0.05,
+  "prediction_errors": 3,
+  "input_tokens": 89504,
+  "output_tokens": 28062
+}

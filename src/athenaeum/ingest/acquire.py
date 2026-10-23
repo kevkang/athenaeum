@@ -39,6 +39,12 @@ async def _unpaywall_pdf_url(doi: str, email: str, client: httpx.AsyncClient) ->
         return None
 
 
+async def unpaywall_pdf_url(doi: str, email: str, client: httpx.AsyncClient) -> str | None:
+    """The best legal open-access PDF Unpaywall knows for `doi`, or None. The
+    public name for Nucleate's open-access check (D-N15)."""
+    return await _unpaywall_pdf_url(doi, email, client)
+
+
 async def _semantic_scholar_pdf_url(doi: str, client: httpx.AsyncClient) -> str | None:
     url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}?fields=openAccessPdf"
     try:

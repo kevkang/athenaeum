@@ -93,6 +93,10 @@ export default function ZoteroHighlightImportModal({
       const items = selected.map((r) => ({
         sentence_ids: r.candidate.sentence_ids!,
         verbatim_text: r.candidate.verbatim_text!,
+        // Identifies which Zotero annotation this row came from. The server
+        // looks the annotation's page and position up itself rather than
+        // trusting coordinates sent from here.
+        annotation_item_key: r.candidate.annotation_item_key,
       }));
       await zoteroHighlightsApi.import(paperId, projectId, items);
       setImportedCount(items.length);

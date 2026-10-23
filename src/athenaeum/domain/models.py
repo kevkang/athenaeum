@@ -304,10 +304,21 @@ class AuditRunOut(BaseModel):
 
     id: UUID
     project_id: UUID
-    compose_document_id: UUID
+    # Which trigger produced this run (domain/draft_audit.py). Older rows
+    # predate the column and are compose-document runs by construction.
+    kind: str = "compose_document"
+    # Null on a pasted-draft run, which has no document behind it.
+    compose_document_id: UUID | None = None
+    # The submitted text, on a pasted-draft run only.
+    draft_text: str | None = None
     created_by: UUID | None
     model: str | None
     status: str
+    # How much evidence the checker was asked about, and how many of its
+    # answers could not be attached to a quote. Both None on runs from before
+    # the counting existed: unmeasured, which is not the same as zero.
+    quotes_checked: int | None = None
+    malformed_entries: int | None = None
     created_at: datetime
 
 
@@ -316,14 +327,63 @@ class AuditFindingOut(BaseModel):
 
     id: UUID
     ord: int
-    statement_id: UUID
+    # A finding anchors to a statement (compose run) or a draft citation
+    # (pasted-draft run), never both — see storage/models.py's CHECK.
+    statement_id: UUID | None = None
+    draft_citation_id: UUID | None = None
     sub_id: str
-    target_kind: str
-    target_id: UUID
+    target_kind: str | None = None
+    target_id: UUID | None = None
     quote: str | None
     supported: bool
+    # Graded fields (domain/audit_verdicts.py); null on findings recorded before grading.
+    verdict: str | None = None
+    secondhand: bool | None = None
+    confidence: float | None = None
     rationale: str
     created_at: datetime
+
+
+class AuditDraftCitationOut(BaseModel):
+    """One citation pulled out of a pasted draft.
+
+    Carries its own outcome rather than relying on a finding existing, because
+    the outcomes that produce no finding — unresolved, awaiting confirmation,
+    no readable text — are exactly the ones a reader must not mistake for a
+    citation that was checked and failed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ord: int
+    claim_text: str
+    citation_text: str
+    resolution: str
+    openalex_id: str | None
+    doi: str | None
+    matched_title: str | None
+    matched_year: int | None
+    matched_authors_json: Any | None = None
+    # Offered only when resolution is needs_confirmation.
+    candidates_json: Any | None = None
+    paper_id: UUID | None
+    evidence_source: str | None
+    created_at: datetime
+
+
+class AuditDraftCreate(BaseModel):
+    # A draft short enough to have no citations is allowed; the run simply
+    # reports none. An empty body is not.
+    text: str = Field(min_length=1, max_length=200_000)
+
+
+class AuditDraftConfirm(BaseModel):
+    """Pick one of a citation's candidates. Identified by OpenAlex id rather
+    than list position, so a re-ranking between read and write cannot silently
+    confirm a different work."""
+
+    openalex_id: str = Field(min_length=1)
 
 
 class AuditRunDetailOut(BaseModel):
@@ -332,6 +392,11 @@ class AuditRunDetailOut(BaseModel):
     statements_with_no_evidence: list[UUID] = Field(
         description="Statements with zero attached evidence — computed fresh from "
         "domain/citations.py at read time, not persisted as findings"
+    )
+    draft_citations: list[AuditDraftCitationOut] = Field(
+        default_factory=list,
+        description="Every citation found in a pasted draft, including those that "
+        "produced no finding. Empty for a compose-document run.",
     )
 
 
@@ -487,20 +552,6 @@ class CoCitationNeighborOut(BaseModel):
 
 # ── Knowledge links ───────────────────────────────────────────────────────────
 
-_REF_TYPES = "^(paper|synthesis)$"
-_REL_TYPES = "^(supports|contradicts|extends|cites|related)$"
-
-
-class KnowledgeLinkCreate(BaseModel):
-    project_id: UUID
-    from_type: str = Field(pattern=_REF_TYPES)
-    from_id: UUID
-    to_type: str = Field(pattern=_REF_TYPES)
-    to_id: UUID
-    rel: str = Field(pattern=_REL_TYPES)
-    note: str | None = Field(default=None, max_length=2000)
-
-
 class KnowledgeLinkOut(BaseModel):
     id: UUID
     project_id: UUID
@@ -588,6 +639,10 @@ class ZoteroSearchResultOut(BaseModel):
 class ZoteroImportRequest(BaseModel):
     project_id: UUID
     zotero_item_key: str = Field(min_length=1, max_length=50)
+    # Set when the Zotero item supplies the full text of a paper Athenaeum
+    # already has (a Nucleate node that needs its PDF), rather than adding a
+    # new paper.
+    paper_id: UUID | None = None
     found_quote: str | None = None
     found_relevance_note: str | None = None
 
@@ -980,6 +1035,12 @@ class ZoteroHighlightPreviewResponse(BaseModel):
 class ZoteroHighlightImportItem(BaseModel):
     sentence_ids: list[UUID] = Field(min_length=1)
     verbatim_text: str = Field(min_length=1)
+    # Which annotation this row came from, echoed back from the preview. The
+    # import stores it as provenance and uses it to look the annotation's
+    # position up server-side — the position itself is deliberately not
+    # accepted from the client, since its whole purpose is to record where the
+    # highlight demonstrably was.
+    annotation_item_key: str = Field(min_length=1)
 
 
 class ZoteroHighlightImportRequest(BaseModel):
@@ -1002,3 +1063,225 @@ class ZoteroAnnotationIn(BaseModel):
 class ZoteroHighlightPreviewFromAnnotationsRequest(BaseModel):
     project_id: UUID
     annotations: list[ZoteroAnnotationIn]
+
+
+# ── Nucleate ─────────────────────────────────────────────────────────────────
+#
+# See domain/nucleate.py for the vocabulary and NUCLEATE_PLAN.md for the
+# decisions behind these shapes.
+
+
+class NucleusCreate(BaseModel):
+    """Creating a nucleus states its question, which is also the first prompt:
+    the archivist starts proposing papers straight away."""
+
+    question: str = Field(min_length=1, max_length=2000)
+    budget: int = Field(default=6, ge=5, le=8)
+
+
+class NucleusPromptCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    # Canvas nodes selected as anchors ("Expanding from: Caro 2023").
+    anchor_node_ids: list[UUID] = Field(default_factory=list)
+    budget: int = Field(default=6, ge=5, le=8)
+
+
+class NucleusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    question: str
+    created_at: datetime
+
+
+class ExpansionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    nucleus_id: UUID
+    prompt_id: UUID
+    status: str
+    budget: int
+    stage: str | None
+    # The archivist's reply in the chat history.
+    reply_text: str | None
+    model: str | None
+    input_tokens: int
+    output_tokens: int
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class ExpansionEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ord: int
+    stage: str
+    status: str
+    node_id: UUID | None
+    counts: dict[str, Any] | None
+    message: str | None
+    input_tokens: int
+    output_tokens: int
+    at: datetime
+
+
+class ExpansionDetailOut(BaseModel):
+    expansion: ExpansionOut
+    events: list[ExpansionEventOut]
+
+
+class NucleusPromptOut(BaseModel):
+    """One entry in a nucleus's chat history: what was asked, and what the
+    archivist did about it."""
+
+    id: UUID
+    text: str
+    anchor_node_ids: list[UUID]
+    created_at: datetime
+    expansion: ExpansionOut | None
+
+
+def _semantic_relation_pattern() -> str:
+    from athenaeum.domain.relations import SEMANTIC_RELATIONS
+
+    return "^(" + "|".join(SEMANTIC_RELATIONS) + ")$"
+
+
+_SEMANTIC_RELATION_PATTERN = _semantic_relation_pattern()
+
+
+class CanvasPaperOut(BaseModel):
+    id: UUID
+    title: str
+    authors: list[str]
+    year: int | None
+    venue: str | None
+    doi: str | None
+    # The Unpaywall check, for the needs-full-text queue (handoff Part V: "the
+    # DOI and an Unpaywall check with each request"). Checked with no URL means
+    # no legal open-access copy; never checked is both None.
+    oa_pdf_url: str | None = None
+    oa_checked_at: datetime | None = None
+
+
+class CanvasReviewOut(BaseModel):
+    id: UUID
+    status: str
+    rejection_reason: str | None
+    relevance_text: str | None
+    # ai_proposed renders as AI text (blue italics); every other value doesn't.
+    relevance_provenance: str | None
+    selection_reasoning: str | None
+
+
+class CanvasEvidenceOut(BaseModel):
+    id: UUID
+    ord: int
+    source: str
+    verbatim_text: str
+    text_quote_selector: dict[str, str]
+
+
+class CanvasAuditOut(BaseModel):
+    """The automatic audit of the relevance statement against its evidence.
+    A boolean, because production Audit is still pass/fail per quote; graded
+    verdicts exist only in the evaluation harness so far."""
+
+    supported: bool
+    rationale: str
+    checked_at: datetime
+
+
+class CanvasNodeOut(BaseModel):
+    node_id: UUID
+    paper: CanvasPaperOut
+    # Derived per D-N6, never stored: available / abstract_only / user_must_supply.
+    fulltext: str
+    review: CanvasReviewOut
+    evidence: list[CanvasEvidenceOut]
+    audit: CanvasAuditOut | None
+    # Other nuclei this node also belongs to. Cross-nucleus nodes are often the
+    # most interesting in a corpus, so the canvas marks them.
+    other_nucleus_ids: list[UUID]
+
+
+class CanvasLineageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    from_kind: str
+    from_node_id: UUID | None
+    to_node_id: UUID
+    prompt_id: UUID | None
+    # NULL when a person added the node rather than the archivist retrieving it.
+    retrieval_source: str | None
+
+
+class SemanticEdgeOut(BaseModel):
+    """A typed relation A → B (from → to). Owned by the project (D-N20); the
+    canvas receives those whose papers are both in the nucleus."""
+
+    id: UUID
+    from_node_id: UUID
+    to_node_id: UUID
+    relation: str
+    # What the archivist proposed, when it did; differs from `relation` once
+    # corrected. NULL for a relation the user set.
+    proposed_relation: str | None
+    provenance: str
+    rationale: str | None
+    rejected: bool
+    rejection_reason: str | None
+    evidence: list[CanvasEvidenceOut]
+
+
+class NucleusDetailOut(BaseModel):
+    nucleus: NucleusOut
+    nodes: list[CanvasNodeOut]
+    lineage: list[CanvasLineageOut]
+    prompts: list[NucleusPromptOut]
+    semantic_edges: list[SemanticEdgeOut]
+
+
+class RelationPairOut(BaseModel):
+    """What proposing found for one other paper, so an empty result always
+    says why: proposed / no_full_text / no_mention / no_relation /
+    already_recorded."""
+
+    to_node_id: UUID
+    outcome: str
+    proposed: int
+
+
+class RelationProposalOut(BaseModel):
+    edges: list[SemanticEdgeOut]
+    pairs: list[RelationPairOut]
+
+
+class SemanticEdgeCreate(BaseModel):
+    """A relation the user sets directly."""
+
+    from_node_id: UUID
+    to_node_id: UUID
+    relation: str = Field(pattern=_SEMANTIC_RELATION_PATTERN)
+
+
+class SemanticEdgeUpdate(BaseModel):
+    """One action from the drawer: accept, correct (to `relation`), reject
+    (with an optional reason), or restore a rejected relation."""
+
+    action: str = Field(pattern="^(accept|correct|reject|restore)$")
+    relation: str | None = Field(default=None, pattern=_SEMANTIC_RELATION_PATTERN)
+    rejection_reason: str | None = Field(default=None, max_length=500)
+
+
+class NodeReviewUpdate(BaseModel):
+    """One action from the node drawer: accept, reject (with an optional
+    reason), pin, or edit the relevance statement. Fields left out are left
+    alone."""
+
+    status: str | None = Field(default=None, pattern="^(frontier|accepted|rejected|pinned)$")
+    rejection_reason: str | None = Field(default=None, max_length=500)
+    relevance_text: str | None = Field(default=None, max_length=2000)

@@ -27,6 +27,7 @@ from athenaeum.domain.models import (
 from athenaeum.events import apply_event
 from athenaeum.ingest.openalex import fetch_metadata
 from athenaeum.storage.models import (
+    CorpusNode,
     Paper,
     PaperSection,
     PaperSentence,
@@ -55,14 +56,26 @@ async def _assert_paper_visible(
 ) -> None:
     """A Paper has no single project_id of its own — it can be linked to
     several projects via project_papers — so visibility means "member of at
-    least one project this paper is linked to", not a direct membership row."""
-    visible = await session.scalar(
+    least one project this paper is linked to", not a direct membership row.
+
+    A paper in a project's Nucleate corpus counts too, even when it isn't in
+    that project's library: a needs-full-text node must accept the PDF a
+    researcher supplies for it, and the node drawer must be able to show its
+    text. Still membership-based — nothing outside your own projects.
+    """
+    in_library = await session.scalar(
         select(ProjectPaper.paper_id)
         .join(ProjectMember, ProjectMember.project_id == ProjectPaper.project_id)
         .where(ProjectPaper.paper_id == paper_id, ProjectMember.user_id == user_id)
         .limit(1)
     )
-    if visible is None:
+    in_corpus = in_library or await session.scalar(
+        select(CorpusNode.paper_id)
+        .join(ProjectMember, ProjectMember.project_id == CorpusNode.project_id)
+        .where(CorpusNode.paper_id == paper_id, ProjectMember.user_id == user_id)
+        .limit(1)
+    )
+    if in_corpus is None:
         raise HTTPException(status_code=403, detail="Not authorized to access this paper")
 
 

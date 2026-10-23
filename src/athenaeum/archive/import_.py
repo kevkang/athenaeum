@@ -1,4 +1,5 @@
-"""Reconstruct a project from a .ath archive dict.
+"""Reconstruct a project from a .ath archive dict: version 2 (JSON-LD, with
+the Nucleate corpus) or a legacy version 1 (YAML).
 
 Every server generates its own ids for papers and for the sentences it splits
 them into, so an archive's paper and sentence ids only mean something on the
@@ -20,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from athenaeum.archive import ath_v2
 from athenaeum.domain.source_check import (
     check_passage,
     load_paper_sentences,
@@ -47,6 +49,18 @@ from athenaeum.storage.models import (
 )
 
 ATH_VERSION = 1
+
+
+def archive_version(data: Any) -> int | None:
+    """1 for a legacy YAML archive, 2 for a version 2.0 archive, None for
+    anything else."""
+    if not isinstance(data, dict):
+        return None
+    if data.get("format") == ath_v2.FORMAT and data.get("version") == ath_v2.VERSION:
+        return 2
+    if data.get("ath_version") == ATH_VERSION:
+        return 1
+    return None
 
 
 @dataclass
@@ -105,8 +119,11 @@ async def import_project(
     data: dict[str, Any],
     owner_id: uuid.UUID,
 ) -> ImportResult:
-    if data.get("ath_version") != ATH_VERSION:
-        raise ValueError(f"Unsupported .ath version: {data.get('ath_version')!r}")
+    version = archive_version(data)
+    if version is None:
+        raise ath_v2.InvalidArchive("Not a .ath archive this server can read (versions 1 and 2.0)")
+    if version == 2:
+        ath_v2.validate(data)
 
     proj = data["project"]
     project_id = uuid.UUID(proj["id"])
@@ -132,6 +149,10 @@ async def import_project(
     for p in data.get("papers", []):
         local_id = await _resolve_paper(session, p)
         paper_ids[uuid.UUID(p["id"])] = local_id
+        # Version 2 also lists corpus papers that were never kept (D-N18);
+        # they stay out of the library here too.
+        if not p.get("in_library", True):
+            continue
         await session.execute(
             pg_insert(ProjectPaper)
             .values(project_id=project_id, paper_id=local_id, added_by=owner_id)
@@ -395,6 +416,9 @@ async def import_project(
         ))
     if raw_events:
         session.add(ProjectEventSeq(project_id=project_id, next_seq=next_seq))
+
+    if version == 2:
+        result.warnings += await ath_v2.import_corpus(session, data, project_id, local_paper)
 
     # Papers worth fetching: no text on this server, a DOI to look them up by,
     # and not already known to fail.

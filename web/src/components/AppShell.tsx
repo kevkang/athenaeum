@@ -31,20 +31,36 @@ export default function AppShell() {
           {projectId && (
             <div className={styles.viewSwitcher}>
               <Link
-                to="/projects/$projectId/workspace"
+                to="/projects/$projectId/read"
                 params={{ projectId }}
                 className={styles.viewBtn}
                 activeProps={{ className: styles.viewBtnActive }}
               >
-                Workspace
+                Read
               </Link>
               <Link
-                to="/projects/$projectId/compose"
+                to="/projects/$projectId/nucleate"
                 params={{ projectId }}
                 className={styles.viewBtn}
                 activeProps={{ className: styles.viewBtnActive }}
               >
-                Compose
+                Nucleate
+              </Link>
+              <Link
+                to="/projects/$projectId/backtrace"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Backtrace
+              </Link>
+              <Link
+                to="/projects/$projectId/audit"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Audit
               </Link>
               <Link
                 to="/projects/$projectId/export"
@@ -53,6 +69,14 @@ export default function AppShell() {
                 activeProps={{ className: styles.viewBtnActive }}
               >
                 Export
+              </Link>
+              <Link
+                to="/projects/$projectId/compose"
+                params={{ projectId }}
+                className={styles.viewBtn}
+                activeProps={{ className: styles.viewBtnActive }}
+              >
+                Compose
               </Link>
             </div>
           )}

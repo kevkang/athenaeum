@@ -279,8 +279,8 @@ export default function ReaderPane({
             </button>
           </div>
           <div className={styles.searchHint} style={{ marginBottom: 8 }}>
-            Highlight any text, then drag the button that appears onto the graph — drop it on
-            empty space for a new statement, or onto an existing one to add as evidence there.
+            Highlight any text to bookmark it, or to trace the claim it makes back through its
+            own citations.
           </div>
 
           {fullTextView ? (
@@ -388,20 +388,6 @@ export default function ReaderPane({
           className={styles.selectionTooltipGroup}
           style={{ left: selectionTip.x, top: selectionTip.y }}
         >
-          <button
-            className={styles.selectionTooltip}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(
-                PASSAGE_MIME,
-                JSON.stringify({ sentenceId: selectionTip.sentenceId, text: selectionTip.text }),
-              );
-              e.dataTransfer.effectAllowed = 'copy';
-            }}
-            onDragEnd={() => setSelectionTip(null)}
-          >
-            ⠿ Drag to workspace
-          </button>
           <button
             className={styles.selectionTooltip}
             style={{ cursor: createHighlightMutation.isPending ? 'wait' : 'pointer' }}

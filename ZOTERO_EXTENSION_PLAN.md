@@ -306,7 +306,7 @@ directory); neither path reaches an *extension* user's local Zotero, since that 
 exists inside their browser. So this needed a third `zotero_source` value and a client-driven
 variant of the preview step, not just a new server-side fetch branch:
 
-- **New `zotero_source` value, `"extension"`** — migration `0024_zotero_extension_source.py`
+- **New `zotero_source` value, `"extension"`** — migration `0036_zotero_extension_source.py`
   widens `papers_zotero_source_chk`. `api/papers.py`'s `ingest_paper` and `upload_paper` (the two
   generic endpoints `zoteroExtensionApi.importItem` already calls, per step 4's decision to reuse
   them rather than add a new endpoint) gained an optional `zotero_item_key` param; when present,

@@ -350,11 +350,14 @@
 }
 
 /* ── Reader pane (middle column) ── */
+/* Read's only content pane: it takes everything the papers sidebar leaves.
+   Was flex-shrink:0 with an explicit width while it shared the row with the
+   statement graph, which is retired. */
 .readerPane {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
   background: var(--bg-canvas);
-  border-right: 1px solid var(--border);
   position: relative;
 }
 

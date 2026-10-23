@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     grobid_url: str = "http://localhost:8070"
     unpaywall_email: str = "contact@athenaeum.app"
+    # OpenAlex throttles anonymous search whenever it's under load (a 429 with
+    # a ~30 s Retry-After), which can empty a whole Nucleate run's OpenAlex
+    # results. A free key (https://openalex.org/rest-api) avoids that.
+    openalex_api_key: str | None = None
     embed_model: str = "BAAI/bge-base-en-v1.5"
 
     anthropic_api_key: str | None = None
@@ -61,6 +65,17 @@ class Settings(BaseSettings):
     # summarize_model/zotero_find_model below: this is the credibility-
     # critical path, not a place to economize.
     checker_model: str = "claude-sonnet-5"
+    # Nucleate's archivist: interprets prompts, ranks candidates, writes relevance
+    # statements. Its statements are then audited by checker_model, so the two
+    # stay separate settings even while they default to the same model.
+    archivist_model: str = "claude-sonnet-5"
+    # An audit fails rather than reports when more than this share of its
+    # evidence checks come back unusable (synthesize/audit.py). A skipped
+    # check leaves a citation recorded as unsupported without anything having
+    # judged it, so past some rate the findings accuse an author's citations
+    # on the strength of a broken response. 5% is a starting point, not a
+    # measured value: nothing yet says what rate is normal for this model.
+    audit_malformed_threshold: float = 0.05
     summarize_model: str = "claude-haiku-4-5-20251001"
     zotero_find_model: str = "claude-haiku-4-5-20251001"
 

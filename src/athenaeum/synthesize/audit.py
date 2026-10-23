@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -38,18 +39,50 @@ from athenaeum.synthesize.prompts import AUDIT_SYSTEM, AUDIT_TOOL
 log = structlog.get_logger()
 
 
+@dataclass(frozen=True)
+class EvidenceVerdicts:
+    """One audit_evidence call's verdicts, plus what its response contained
+    that could not be used.
+
+    The counts exist because a skipped entry is invisible in the verdicts
+    themselves: a quote left without a verdict is recorded as unsupported,
+    which reads exactly like a quote the model judged and rejected. Without
+    counting, a run where the model returned nonsense for a tenth of the
+    evidence looks identical to a clean one.
+    """
+
+    results: list[tuple[bool, str]]
+    # Entries in the response that could not be applied to a quote: not an
+    # object, or an evidence_index that was missing, not an integer, outside
+    # the range of quotes sent, or a repeat of an index already answered.
+    malformed_entries: int = 0
+    # Quotes left with no verdict of their own. A response that is not a list
+    # at all, or no response, leaves every quote here.
+    missing_verdicts: int = 0
+
+
+def malformed_rate(malformed_entries: int, quotes_checked: int) -> float | None:
+    """Share of checked quotes for which the response carried an unusable
+    entry, or None when nothing was checked — a rate over zero quotes would
+    print as 0% and be read as "clean"."""
+    if quotes_checked <= 0:
+        return None
+    return malformed_entries / quotes_checked
+
+
 async def audit_evidence(
     checker: Provider,
     assertion: str,
     quotes: list[str],
     checker_model_name: str,
-) -> list[tuple[bool, str]]:
+) -> EvidenceVerdicts:
     """Run the independent audit pass for one statement's quoted evidence.
     Mirrors verify_passages()'s shape (synthesize/verifier.py) but returns a
     (supported, rationale) pair per item — the rationale is the actual
-    deliverable of an audit, not an internal signal."""
+    deliverable of an audit, not an internal signal — alongside a count of
+    what in the response could not be used."""
     if not quotes:
-        return []
+        return EvidenceVerdicts([])
 
     quote_lines = "\n\n".join(f"[{i}] {q}" for i, q in enumerate(quotes))
     user_msg = (
@@ -65,19 +98,65 @@ async def audit_evidence(
     )
     if tool_result is None:
         log.warning("audit.no_tool_result", n_quotes=len(quotes), checker_model=checker_model_name)
-        return [(False, "Audit check failed to return a result.")] * len(quotes)
+        return EvidenceVerdicts(
+            [(False, "Audit check failed to return a result.")] * len(quotes),
+            missing_verdicts=len(quotes),
+        )
 
-    results: list[dict[str, Any]] = tool_result["input"].get("results", [])
+    raw_results = tool_result["input"].get("results", [])
+    malformed = 0
+    entries: list[Any] = []
+    if isinstance(raw_results, list):
+        entries = raw_results
+    else:
+        # The whole answer is unusable rather than one entry of it, so it
+        # counts once and leaves every quote unjudged.
+        log.warning(
+            "audit.results_not_a_list",
+            got=type(raw_results).__name__,
+            checker_model=checker_model_name,
+        )
+        malformed += 1
+
     verdicts: dict[int, tuple[bool, str]] = {}
-    for r in results:
+    for r in entries:
+        if not isinstance(r, dict):
+            # The model occasionally returns a bare string where the tool schema
+            # asks for an object. Skip that entry instead of failing the whole
+            # run; the quote it belonged to falls through to the default below.
+            log.warning(
+                "audit.unexpected_result_shape",
+                got=type(r).__name__,
+                checker_model=checker_model_name,
+            )
+            malformed += 1
+            continue
         idx = r.get("evidence_index", -1)
-        if 0 <= idx < len(quotes):
-            verdicts[idx] = (bool(r.get("supported")), str(r.get("rationale") or ""))
+        # `bool` is an `int` in Python, so True would otherwise pass as index 1.
+        usable = isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < len(quotes)
+        if not usable or idx in verdicts:
+            # No quote to attach this to: the index is missing, not a number,
+            # out of range, or already answered. The first answer for an index
+            # is kept, so a repeat can't silently replace a verdict.
+            log.warning(
+                "audit.unusable_evidence_index",
+                index=repr(idx),
+                n_quotes=len(quotes),
+                duplicate=usable,
+                checker_model=checker_model_name,
+            )
+            malformed += 1
+            continue
+        verdicts[idx] = (bool(r.get("supported")), str(r.get("rationale") or ""))
 
-    return [
-        verdicts.get(i, (False, "No verdict returned for this item."))
-        for i in range(len(quotes))
-    ]
+    return EvidenceVerdicts(
+        [
+            verdicts.get(i, (False, "No verdict returned for this item."))
+            for i in range(len(quotes))
+        ],
+        malformed_entries=malformed,
+        missing_verdicts=len(quotes) - len(verdicts),
+    )
 
 
 _NO_QUOTE_RATIONALE = (
@@ -101,6 +180,8 @@ async def run_audit(
 
         channel = f"audit:{audit_run_id}:steps"
         ord_counter = 0
+        quotes_checked = 0
+        malformed_entries = 0
         try:
             # Resolved inside the try, same reasoning as run_synthesis: a
             # user disconnecting their key between enqueue and pickup fails
@@ -148,13 +229,15 @@ async def run_audit(
 
                 verdicts: dict[str, tuple[bool, str]] = {}
                 if quoted_quotes:
-                    results = await audit_evidence(
+                    checked = await audit_evidence(
                         checker=checker,
                         assertion=statement.assertion,
                         quotes=quoted_quotes,
                         checker_model_name=settings.checker_model,
                     )
-                    for sub_id, verdict in zip(quoted_sub_ids, results, strict=True):
+                    quotes_checked += len(quoted_quotes)
+                    malformed_entries += checked.malformed_entries
+                    for sub_id, verdict in zip(quoted_sub_ids, checked.results, strict=True):
                         verdicts[sub_id] = verdict
                 for sub_id in unquoted_sub_ids:
                     verdicts[sub_id] = (False, _NO_QUOTE_RATIONALE)
@@ -191,6 +274,30 @@ async def run_audit(
                     }))
                     ord_counter += 1
                 await session.commit()
+
+            # Committed before the threshold check so the counts survive the
+            # rollback if that check fails the run.
+            audit_run.quotes_checked = quotes_checked
+            audit_run.malformed_entries = malformed_entries
+            await session.commit()
+            rate = malformed_rate(malformed_entries, quotes_checked)
+            log.info(
+                "audit.response_integrity",
+                audit_run_id=str(audit_run_id),
+                quotes_checked=quotes_checked,
+                malformed_entries=malformed_entries,
+                malformed_rate=rate,
+            )
+            if rate is not None and rate > settings.audit_malformed_threshold:
+                # Every skipped entry left a citation recorded as unsupported
+                # without anything having judged it. Past a threshold, showing
+                # that as a result would accuse the author's citations on the
+                # strength of a broken response, so the run fails instead.
+                raise RuntimeError(
+                    f"audit aborted: {malformed_entries} of {quotes_checked} evidence checks "
+                    f"returned an unusable verdict ({rate:.1%}), above the "
+                    f"{settings.audit_malformed_threshold:.1%} threshold"
+                )
 
             audit_run.status = "done"
             audit_run.model = settings.checker_model

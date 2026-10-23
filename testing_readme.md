@@ -1,5 +1,11 @@
 # Testing Athenaeum locally with Docker
 
+**Quick start:** `./test.sh` runs every automated check, then starts the full
+stack and the frontend at `http://localhost:5173`. Use `--checks-only` or
+`--stack-only` to do just one half. `./test_shutdown.sh` stops it all (add
+`--down` to remove containers, or `--wipe` to also delete local data). The
+rest of this file explains what those scripts do.
+
 This covers two things: running the **automated test suite** against a real
 database, and **manually testing the app** in a browser. Both use the same
 `docker-compose.yml` services — the difference is how much of the stack you
@@ -12,7 +18,7 @@ bring up.
 | Service | Port(s) | What it's for | Needed for automated tests? | Needed for manual UI testing? |
 |---|---|---|---|---|
 | `postgres` | 5432 | Source of truth — `pgvector/pgvector:pg16`, not stock Postgres, because sentence embeddings need the `vector` extension | Yes | Yes |
-| `neo4j` | 7474 (browser), 7687 (bolt) | Derived graph projection (citation/co-citation, ghost papers) | Only if you're testing `graph/sync.py` | Yes |
+| `neo4j` | 7474 (browser), 7687 (bolt) | Derived graph projection (citation/co-citation, ghost papers) | Yes — `tests/test_graph_sync.py` needs it (CI provides it too) | Yes |
 | `redis` | 6379 | `arq` job queue + pub/sub for live synthesis/backtrace step streaming | No | Yes |
 | `grobid` | 8070 | PDF → structured text extraction for paper ingestion | No | Only if ingesting real PDFs |
 | `minio` + `minio-init` | 9000 (S3 API), 9001 (console) | Local S3-compatible storage for uploaded PDFs | No | Only if uploading papers |
@@ -27,8 +33,8 @@ unit tests with no dependencies, but the DB-backed tests (`tests/conftest.py`'s
 extraction) need a real, migrated Postgres to run against.
 
 ```bash
-# 1. Start just the database — no need for the full stack to run tests.
-docker compose up -d postgres
+# 1. Start the two databases the tests use — the same pair CI provides.
+docker compose up -d postgres neo4j
 
 # 2. Wait for it to actually accept connections before doing anything else.
 until docker exec athenaeum-postgres-1 pg_isready -U athenaeum; do sleep 1; done
@@ -43,13 +49,12 @@ until docker exec athenaeum-postgres-1 pg_isready -U athenaeum; do sleep 1; done
 .venv/bin/python -m pytest
 ```
 
-**Why `postgres` alone, not the full stack:** the test suite never touches
-Redis, Grobid, or MinIO, and `graph/sync.py` currently has no automated
-coverage (it opens its own DB connection internally, which doesn't play well
-with the rollback-isolated test fixture — see the comment in
-`tests/conftest.py`). Bringing up the whole stack just to run `pytest` is
-slower for no benefit. Add `neo4j` to the `up -d` line only once tests that
-actually exercise it exist.
+**Why not the full stack:** the tests never need Redis, Grobid, MinIO or
+Chromium. API tests open `TestClient(app)`, which runs the app's startup, but
+`tests/conftest.py` swaps in a startup that connects to none of those, so
+tests behave the same whether or not the rest of the stack is running. (The
+real startup retries Redis for several seconds when it's down and launches a
+browser, once per test, which made the suite take minutes.)
 
 **Test isolation:** each test that uses the `db_session` fixture runs inside
 its own transaction that's rolled back at teardown — including tests that

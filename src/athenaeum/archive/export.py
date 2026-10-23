@@ -1,6 +1,16 @@
-"""Build and serialise a project archive (.ath format = YAML v1)."""
+"""Build and serialise a project archive: `.ath` version 2, JSON-LD (D-N3).
+
+The sections carried over from version 1 keep their names and fields, with
+two additions: passages and highlights gain their TextQuoteSelector, and
+papers cover the Nucleate corpus as well as the library (`in_library` says
+which). The corpus sections themselves are built in archive/ath_v2.py.
+
+YAML stays here too: version 1 archives are still read, and `.athtrace`
+files are still YAML.
+"""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from io import StringIO
@@ -10,6 +20,7 @@ from ruamel.yaml import YAML
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from athenaeum.archive import ath_v2
 from athenaeum.storage.models import (
     Annotation,
     ComposeDocument,
@@ -29,6 +40,7 @@ from athenaeum.storage.models import (
     SynthesisEvidence,
 )
 
+# The version of legacy YAML archives, still accepted on import.
 ATH_VERSION = 1
 
 
@@ -54,12 +66,17 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
     if project is None:
         raise ValueError(f"Project {project_id} not found")
 
-    papers = list(await session.scalars(
+    library = list(await session.scalars(
         select(Paper)
         .join(ProjectPaper, Paper.id == ProjectPaper.paper_id)
         .where(ProjectPaper.project_id == project_id)
     ))
-    paper_ids = [p.id for p in papers]
+    library_ids = {p.id for p in library}
+    # The corpus's papers too: a node's paper need not be in the library
+    # (D-N18), and the file has one place for a paper's metadata.
+    papers = library + [p for p in await ath_v2.corpus_papers(session, project_id)
+                        if p.id not in library_ids]
+    paper_ids = [p.id for p in library]
 
     passages: list[Passage] = [] if not paper_ids else list(await session.scalars(
         select(Passage).where(Passage.paper_id.in_(paper_ids))
@@ -142,7 +159,9 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
         edges_by_statement.setdefault(edge.from_statement_id, []).append(edge)
 
     return {
-        "ath_version": ATH_VERSION,
+        "@context": ath_v2.context(),
+        "format": ath_v2.FORMAT,
+        "version": ath_v2.VERSION,
         "exported_at": datetime.now(UTC).isoformat(),
         "project": {
             "id": str(project.id),
@@ -162,6 +181,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "abstract": p.abstract,
                 "status": p.status,
                 "created_at": _iso(p.created_at),
+                "in_library": p.id in library_ids,
             }
             for p in papers
         ],
@@ -171,6 +191,9 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "paper_id": str(pa.paper_id),
                 "sentence_ids": [str(s) for s in (pa.sentence_ids or [])],
                 "verbatim_text": pa.verbatim_text,
+                # NULL where the quote's words weren't found in this server's
+                # copy of the paper (its source_check says why).
+                "selector": pa.text_quote_selector,
                 "verified": pa.verified,
                 "verified_at": _iso(pa.verified_at),
                 "checker_model": pa.checker_model,
@@ -257,6 +280,7 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
                 "paper_id": str(h.paper_id),
                 "sentence_ids": [str(s) for s in h.sentence_ids],
                 "verbatim_text": h.verbatim_text,
+                "selector": h.text_quote_selector,
                 "author_id": _s(h.author_id),
                 "created_at": _iso(h.created_at),
             }
@@ -298,7 +322,12 @@ async def build_archive(session: AsyncSession, project_id: uuid.UUID) -> dict[st
             }
             for p in provenance
         ],
+        **(await ath_v2.build_corpus(session, project_id)),
     }
+
+
+def dumps_json(data: dict[str, Any]) -> str:
+    return json.dumps(data, indent=2, ensure_ascii=False)
 
 
 def dumps(data: dict[str, Any]) -> str:

@@ -7,6 +7,17 @@ import httpx
 import pyalex
 from pyalex import Works
 
+from athenaeum.config import get_settings
+
+# pyalex's default is no retries, so a single 429 fails the call outright.
+# Retry a brief burst limit, but only twice: the retry obeys OpenAlex's
+# Retry-After, which is ~30 s when it throttles anonymous search, so more
+# retries only stall an interactive run for minutes before failing anyway.
+pyalex.config.max_retries = 2
+pyalex.config.retry_backoff_factor = 1.0
+# A key lifts the anonymous throttling (sent as a bearer token by pyalex).
+pyalex.config.api_key = get_settings().openalex_api_key
+
 _OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 
 
@@ -189,7 +200,9 @@ def fetch_works_by_ids(ids: list[str], email: str = "contact@athenaeum.app") -> 
     if not ids:
         return []
     results: list[OpenAlexMeta] = []
-    with httpx.Client(timeout=15.0) as client:
+    key = get_settings().openalex_api_key
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    with httpx.Client(timeout=15.0, headers=headers) as client:
         for i in range(0, len(ids), 50):
             batch = ids[i : i + 50]
             resp = client.get(

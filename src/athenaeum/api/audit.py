@@ -16,10 +16,24 @@ from athenaeum.api.compose import _assert_member, get_or_create
 from athenaeum.api.deps import CurrentUserDep, SessionDep
 from athenaeum.config import get_settings
 from athenaeum.domain.citations import build_reference_numbering, iter_statement_ids_in_order
-from athenaeum.domain.models import AuditFindingOut, AuditRunDetailOut, AuditRunOut
+from athenaeum.domain.draft_audit import CONFIRMED, NEEDS_CONFIRMATION, PASTED_DRAFT
+from athenaeum.domain.models import (
+    AuditDraftCitationOut,
+    AuditDraftConfirm,
+    AuditDraftCreate,
+    AuditFindingOut,
+    AuditRunDetailOut,
+    AuditRunOut,
+)
 from athenaeum.security import decode_session_token
 from athenaeum.storage.db import get_sessionmaker
-from athenaeum.storage.models import AuditFinding, AuditRun, ComposeDocument, ProjectMember
+from athenaeum.storage.models import (
+    AuditDraftCitation,
+    AuditFinding,
+    AuditRun,
+    ComposeDocument,
+    ProjectMember,
+)
 
 log = structlog.get_logger()
 router = APIRouter(tags=["audit"])
@@ -80,8 +94,17 @@ async def _assert_audit_member(
 
 
 async def _statements_with_no_evidence(
-    session: AsyncSession, compose_document_id: uuid.UUID
+    session: AsyncSession, compose_document_id: uuid.UUID | None
 ) -> list[uuid.UUID]:
+    """Statements in the audited document that cite nothing at all.
+
+    Empty for a pasted-draft run, which has no compose document and no
+    statements: its equivalent concern — a claim whose citation could not be
+    resolved — is carried on the AuditDraftCitation rows instead, where it can
+    say *why* nothing was checked.
+    """
+    if compose_document_id is None:
+        return []
     doc = await session.get(ComposeDocument, compose_document_id)
     if doc is None:
         return []
@@ -113,7 +136,111 @@ async def get_audit_run(
         statements_with_no_evidence=await _statements_with_no_evidence(
             session, audit_run.compose_document_id
         ),
+        draft_citations=[
+            AuditDraftCitationOut.model_validate(c)
+            for c in await session.scalars(
+                select(AuditDraftCitation)
+                .where(AuditDraftCitation.audit_run_id == audit_run_id)
+                .order_by(AuditDraftCitation.ord)
+            )
+        ],
     )
+
+
+# ── Pasted-draft runs (the Audit tab) ──────────────────────────────────────────
+
+@router.post(
+    "/projects/{project_id}/audit-drafts", response_model=AuditRunOut, status_code=201
+)
+async def create_draft_audit_run(
+    project_id: uuid.UUID,
+    payload: AuditDraftCreate,
+    session: SessionDep,
+    user: CurrentUserDep,
+    request: Request,
+) -> AuditRun:
+    """Start an audit of pasted text. Needs no corpus: the citations are found
+    in the text itself and resolved against OpenAlex."""
+    await _assert_audit_member(session, project_id, user.id)
+
+    audit_run = AuditRun(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        kind=PASTED_DRAFT,
+        draft_text=payload.text,
+        created_by=user.id,
+        status="running",
+    )
+    session.add(audit_run)
+    await session.commit()
+    await session.refresh(audit_run)
+
+    try:
+        arq_pool = request.app.state.arq_pool
+        if arq_pool is None:
+            raise RuntimeError("arq pool not available")
+        await arq_pool.enqueue_job("run_draft_audit_job", str(audit_run.id), str(user.id))
+        log.info("draft_audit.enqueued", audit_run_id=str(audit_run.id))
+    except Exception as exc:
+        audit_run.status = "failed"
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Job queue unavailable") from exc
+
+    return audit_run
+
+
+@router.post(
+    "/audit-drafts/citations/{citation_id}/confirm",
+    response_model=AuditDraftCitationOut,
+)
+async def confirm_draft_citation(
+    citation_id: uuid.UUID,
+    payload: AuditDraftConfirm,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> AuditDraftCitation:
+    """Pick which candidate a citation actually refers to.
+
+    Only the match is recorded here; the claim is not re-audited by this call.
+    Confirming is the user asserting which work was cited, which is a different
+    act from judging whether it supports the claim, and keeping them separate
+    means a mis-click never silently rewrites a verdict.
+    """
+    citation = await session.get(AuditDraftCitation, citation_id)
+    if citation is None:
+        raise HTTPException(status_code=404, detail="Citation not found")
+
+    audit_run = await session.get(AuditRun, citation.audit_run_id)
+    if audit_run is None:
+        raise HTTPException(status_code=404, detail="Audit run not found")
+    await _assert_audit_member(session, audit_run.project_id, user.id)
+
+    if citation.resolution != NEEDS_CONFIRMATION:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This citation is already resolved ({citation.resolution})",
+        )
+
+    candidates = citation.candidates_json or []
+    chosen = next(
+        (c for c in candidates if c.get("openalex_id") == payload.openalex_id), None
+    )
+    if chosen is None:
+        # The id has to come from this citation's own candidate list: confirming
+        # is choosing between what was offered, not supplying an arbitrary work.
+        raise HTTPException(status_code=400, detail="Not one of this citation's candidates")
+
+    citation.resolution = CONFIRMED
+    citation.openalex_id = chosen.get("openalex_id")
+    citation.doi = chosen.get("doi")
+    citation.matched_title = chosen.get("title")
+    citation.matched_year = chosen.get("year")
+    citation.matched_authors_json = (
+        [chosen["first_author"]] if chosen.get("first_author") else None
+    )
+    await session.commit()
+    await session.refresh(citation)
+    return citation
 
 
 # ── WebSocket — live findings stream ────────────────────────────────────────────

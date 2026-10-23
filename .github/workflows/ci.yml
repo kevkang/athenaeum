@@ -52,15 +52,12 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        # Same CUDA-vs-CPU torch problem as the Dockerfile (see its comment):
-        # without pinning the index, sentence-transformers/transformers pull
-        # the full CUDA wheel (nvidia-*-cu13, cuda-toolkit, triton), which
-        # blows past the runner's free disk. CPU-only is also all this job
-        # needs — it just runs the test suite, not GPU inference.
-        env:
-          PIP_INDEX_URL: https://download.pytorch.org/whl/cpu
-          PIP_EXTRA_INDEX_URL: https://pypi.org/simple
-        run: pip install -e ".[dev]"
+        # CPU-only PyTorch first, as the Dockerfile does: otherwise
+        # sentence-transformers pulls the CUDA build (~3 GB of NVIDIA wheels),
+        # which no longer fits on the runner's disk.
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
 
       - name: Apply migrations
         run: alembic upgrade head

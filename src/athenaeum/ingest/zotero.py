@@ -10,9 +10,11 @@ PDF links but not for arbitrary user-uploaded Zotero attachments.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 import structlog
@@ -100,10 +102,36 @@ class ZoteroAnnotation:
     comment: str | None
     color: str | None
     page_label: str | None
+    # Where the highlight physically sits in the PDF, as Zotero itself records
+    # it: {"pageIndex": int, "rects": [[x1, y1, x2, y2], ...]}. Kept as Zotero's
+    # own structure rather than reshaped, because the point of storing it is to
+    # be able to hand it back to a Zotero-compatible reader unchanged.
+    position: dict[str, Any] | None
+    # Zotero's own document-order key ("00003|001234|00456"), which sorts
+    # annotations within a PDF without having to interpret `position`.
+    sort_index: str | None
 
 
 # Only these carry a highlighted text span (note/image/ink annotations don't).
 _TEXT_ANNOTATION_TYPES = {"highlight", "underline"}
+
+
+def parse_annotation_position(raw: str | None) -> dict[str, Any] | None:
+    """Parse Zotero's `annotationPosition`, which both the Web API and the
+    local sqlite store hold as a JSON *string* rather than structured data.
+
+    Returns None for anything unparseable or not a JSON object. A highlight
+    whose position cannot be read is still worth importing for its text, so a
+    bad value degrades to "no position" instead of failing the import.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        log.warning("zotero.annotation_position_unparseable")
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _client(creds: ZoteroCreds) -> Zotero:
@@ -390,6 +418,8 @@ async def list_annotations(creds: ZoteroCreds, attachment_item_key: str) -> list
                 comment=data.get("annotationComment") or None,
                 color=data.get("annotationColor"),
                 page_label=data.get("annotationPageLabel"),
+                position=parse_annotation_position(data.get("annotationPosition")),
+                sort_index=data.get("annotationSortIndex"),
             )
         )
     return annotations

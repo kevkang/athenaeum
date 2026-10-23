@@ -90,6 +90,7 @@ services:
       UNPAYWALL_EMAIL: contact@athenaeum.app
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}  # dev-only; set in your local .env, never commit real keys
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # dev-only; set in your local .env, never commit real keys
+      OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}  # free key; set in your local .env, never commit real keys
       S3_BUCKET: athenaeum-papers
       S3_ENDPOINT_URL: http://minio:9000
       # Only the api service needs this — it's the one signing figure URLs
@@ -134,6 +135,7 @@ services:
       UNPAYWALL_EMAIL: contact@athenaeum.app
       SECRET_ENCRYPTION_KEY: s5CfwQ2M9uFZEZ912pomPM9IfFn_dsuPIMW3JFj5-rg=  # dev-only, do not use in production
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}  # dev-only; set in your local .env, never commit real keys
+      OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}  # free key; set in your local .env, never commit real keys
       S3_BUCKET: athenaeum-papers
       S3_ENDPOINT_URL: http://minio:9000
       AWS_REGION: us-east-1
