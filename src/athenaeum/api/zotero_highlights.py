@@ -24,6 +24,7 @@ from athenaeum.domain.models import (
     HighlightOut,
     ZoteroHighlightCandidateOut,
     ZoteroHighlightImportRequest,
+    ZoteroHighlightPreviewFromAnnotationsRequest,
     ZoteroHighlightPreviewResponse,
 )
 from athenaeum.domain.source_check import selector_for_new_quote
@@ -115,7 +116,9 @@ async def _position_lookup(
     never a Zotero import all degrade to "no position captured" rather than
     failing the import — the stored annotation key leaves the row backfillable.
     """
-    if not paper.zotero_item_key or not paper.zotero_source:
+    # Extension-imported papers have no server-side route to Zotero at all, so
+    # there is nothing to look up (and nothing worth logging as a failure).
+    if not paper.zotero_item_key or paper.zotero_source not in ("sync", "local"):
         return {}
     try:
         annotations = await _fetch_annotations(session, user_id, paper)
@@ -131,26 +134,12 @@ async def _position_lookup(
     return {ann.item_key: ann for ann in annotations}
 
 
-@router.get(
-    "/{paper_id}/zotero-highlights/preview", response_model=ZoteroHighlightPreviewResponse
-)
-async def preview_zotero_highlights(
-    paper_id: uuid.UUID,
+async def _build_candidates(
     session: SessionDep,
-    user: CurrentUserDep,
-    project_id: uuid.UUID = Query(...),
+    project_id: uuid.UUID,
+    paper_id: uuid.UUID,
+    annotations: list[ZoteroAnnotation],
 ) -> ZoteroHighlightPreviewResponse:
-    await _assert_member(session, project_id, user.id)
-    paper = await session.get(Paper, paper_id)
-    if paper is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Paper not found")
-    if not paper.zotero_item_key or not paper.zotero_source:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "This paper wasn't imported from Zotero"
-        )
-
-    annotations = await _fetch_annotations(session, user.id, paper)
-
     existing = list(
         await session.scalars(
             select(Highlight).where(
@@ -185,6 +174,65 @@ async def preview_zotero_highlights(
             )
         )
     return ZoteroHighlightPreviewResponse(candidates=candidates)
+
+
+@router.get(
+    "/{paper_id}/zotero-highlights/preview", response_model=ZoteroHighlightPreviewResponse
+)
+async def preview_zotero_highlights(
+    paper_id: uuid.UUID,
+    session: SessionDep,
+    user: CurrentUserDep,
+    project_id: uuid.UUID = Query(...),
+) -> ZoteroHighlightPreviewResponse:
+    await _assert_member(session, project_id, user.id)
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Paper not found")
+    if not paper.zotero_item_key or not paper.zotero_source:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "This paper wasn't imported from Zotero"
+        )
+
+    annotations = await _fetch_annotations(session, user.id, paper)
+    return await _build_candidates(session, project_id, paper_id, annotations)
+
+
+@router.post(
+    "/{paper_id}/zotero-highlights/preview-external",
+    response_model=ZoteroHighlightPreviewResponse,
+)
+async def preview_zotero_highlights_from_annotations(
+    paper_id: uuid.UUID,
+    payload: ZoteroHighlightPreviewFromAnnotationsRequest,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> ZoteroHighlightPreviewResponse:
+    """Same fuzzy-match preview as preview_zotero_highlights, but for papers
+    imported via the browser extension (zotero_source == 'extension') —
+    the backend has no route to the user's local Zotero for those, so the
+    frontend fetches annotations through the extension itself and posts them
+    here for matching. See ZOTERO_EXTENSION_PLAN.md step 7."""
+    await _assert_member(session, payload.project_id, user.id)
+    paper = await session.get(Paper, paper_id)
+    if paper is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Paper not found")
+
+    annotations = [
+        ZoteroAnnotation(
+            item_key=a.item_key,
+            parent_item_key="",
+            annotation_type="highlight",
+            text=a.text,
+            comment=a.comment,
+            color=a.color,
+            page_label=None,
+            position=None,
+            sort_index=None,
+        )
+        for a in payload.annotations
+    ]
+    return await _build_candidates(session, payload.project_id, paper_id, annotations)
 
 
 @router.post(

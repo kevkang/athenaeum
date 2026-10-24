@@ -44,7 +44,15 @@ type ZoteroRequest =
     }
   | { type: 'getCollections' }
   | { type: 'getItem'; itemKey: string }
-  | { type: 'getBestAttachmentFile'; itemKey: string };
+  | { type: 'getBestAttachmentFile'; itemKey: string }
+  | { type: 'getAnnotations'; itemKey: string };
+
+interface AthenaeumZoteroAnnotation {
+  key: string;
+  text: string | null;
+  comment: string | null;
+  color: string | null;
+}
 
 type ZoteroResponse =
   | { type: 'pong' }
@@ -53,6 +61,7 @@ type ZoteroResponse =
   | { type: 'item'; item: AthenaeumZoteroItem | null }
   | { type: 'itemFile'; found: false }
   | { type: 'itemFile'; found: true; filename: string; contentType: string; bytesBase64: string }
+  | { type: 'annotations'; annotations: AthenaeumZoteroAnnotation[] }
   | { type: 'error'; message: string };
 
 interface RelayEnvelope {
@@ -175,14 +184,29 @@ export function createZoteroExtensionApi(alreadyInProjectDois: ReadonlySet<strin
         return papersApi.upload(file, projectId, {
           title: item.title ?? undefined,
           doi: item.doi ?? undefined,
+          zoteroItemKey,
         });
       }
 
       if (item.doi) {
-        return papersApi.ingest(item.doi, projectId);
+        return papersApi.ingest(item.doi, projectId, { zoteroItemKey });
       }
 
       throw new Error('No PDF or DOI available to import this item');
     },
   };
+}
+
+/** Fetches highlight/underline annotations for a Zotero item through the
+ * extension bridge, for ZoteroHighlightImportModal's extension-backed data
+ * source (papers with zotero_source === 'extension'; see
+ * ZOTERO_EXTENSION_PLAN.md step 7). Throws if the extension isn't reachable
+ * — callers should surface that as an error state, same as a failed
+ * server-side preview fetch. */
+export async function getAnnotationsViaExtension(zoteroItemKey: string) {
+  const response = await sendZoteroRequest({ type: 'getAnnotations', itemKey: zoteroItemKey });
+  if (response.type !== 'annotations') throw new Error('Unexpected response from Zotero extension');
+  return response.annotations
+    .filter((a): a is AthenaeumZoteroAnnotation & { text: string } => a.text !== null)
+    .map((a) => ({ item_key: a.key, text: a.text, comment: a.comment, color: a.color }));
 }

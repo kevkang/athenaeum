@@ -1,6 +1,7 @@
 # Zotero Connector Extension — Implementation Plan
 
-Status: **in progress — steps 1-4 of the build order done, step 5 onward not started.**
+Status: **in progress — steps 1-4 and 7 of the build order done (5 superseded, 6 covered by
+step 4's verification); step 8 (store submission) not started.**
 Supersedes/operationalizes the investigation in `extension-plan-context.md` (source of the
 architecture and security research below) with a concrete build plan checked against the actual
 current state of the codebase (2026-08-21).
@@ -278,6 +279,14 @@ the new UI path; confirm the `Paper` row and its file both land correctly, and �
 confirm this works for a PDF that is *not* synced to Zotero's cloud storage, since that's the
 capability path 1 structurally cannot offer and the whole reason this extension is worth building.
 
+**Already satisfied by step 4's real-deploy verification (2026-08-22)**, no separate work needed:
+that verification's "clicking import on a real item ... fetched its metadata + PDF bytes via the
+extension and called `papersApi.upload`" is exactly this step's exit criteria, run against a
+locally-stored PDF (the local API serves bytes straight off disk regardless of cloud-sync state —
+see step 2's note dropping the `synced` check). The one gap step 4 left open — that imported
+papers didn't carry a `zotero_item_key`/`zotero_source`, unlike paths 1/2 — is closed by step 7
+below, since that's what step 7 needed to know which Zotero item to re-fetch annotations for.
+
 ### 7. Annotation fetch → highlight import
 
 Wire `GET .../children` (annotation items) into the already-built highlight import flow
@@ -290,6 +299,50 @@ it does not change the fuzzy-matching logic itself.
 
 **Exit criteria:** import highlights for a paper via the extension path, confirm they match
 sentences the same way the existing Web-API-backed flow does, on a real annotated PDF.
+
+**Built 2026-08-22.** The backend's existing `preview_zotero_highlights` fetches annotations
+server-side via `paper.zotero_source` (`"sync"` → Web API, `"local"` → the bind-mounted data
+directory); neither path reaches an *extension* user's local Zotero, since that connection only
+exists inside their browser. So this needed a third `zotero_source` value and a client-driven
+variant of the preview step, not just a new server-side fetch branch:
+
+- **New `zotero_source` value, `"extension"`** — migration `0036_zotero_extension_source.py`
+  widens `papers_zotero_source_chk`. `api/papers.py`'s `ingest_paper` and `upload_paper` (the two
+  generic endpoints `zoteroExtensionApi.importItem` already calls, per step 4's decision to reuse
+  them rather than add a new endpoint) gained an optional `zotero_item_key` param; when present,
+  the created (or, on DOI-dedup, the existing-and-not-already-linked) `Paper` gets
+  `zotero_source="extension"`. `retry_ingest`'s Web-API-retry branch narrowed from
+  `if paper.zotero_item_key` to `if paper.zotero_item_key and paper.zotero_source == "sync"` — it
+  would otherwise have wrongly matched extension-imported papers and tried to retry them against
+  `zotero_imported_by` credentials that don't exist for that path, always failing with a 409.
+- **`POST /papers/{paper_id}/zotero-highlights/preview-external`** (`zotero_highlights.py`) —
+  same fuzzy-match-and-respond logic as the existing `GET .../preview` (both now call a shared
+  `_build_candidates` helper), but takes annotations in the request body instead of fetching them
+  itself, and doesn't require `paper.zotero_item_key`/`zotero_source` to already be Zotero-linked
+  the way the GET route does.
+- **`extension/`'s `getAnnotations` message** (built in step 2, exposed in the protocol since
+  step 4) needed no changes — it was already wired end to end and verified against a real library.
+- **`web/src/lib/zoteroExtension.ts`** gained `getAnnotationsViaExtension(itemKey)`, and
+  `importItem` now passes `zoteroItemKey` through to `papersApi.upload`/`.ingest` so the paper
+  created from an extension import carries it.
+- **`ZoteroHighlightImportModal.tsx`** gained `zoteroSource`/`zoteroItemKey` props; when
+  `zoteroSource === 'extension'`, it fetches annotations via the extension bridge and calls the new
+  `previewFromAnnotations` client method instead of the existing server-driven `preview` — same
+  modal, same review/import UI, per the pattern step 4 established for the browse modal.
+  `ReaderPane.tsx` (the modal's only call site) passes the paper's own `zotero_source`/
+  `zotero_item_key` through unchanged; its existing "Import Zotero highlights" button was already
+  gated on `paper.zotero_item_key` being set, so it starts showing for extension-imported papers
+  automatically once they carry that field.
+
+**Verification status:** `tsc -b --noEmit`, `eslint`, and the extension's Vitest suite (10 tests)
+all clean; backend `mypy`/`ruff` clean; `pytest` on the DB-independent Zotero test modules
+(`test_zotero_mapping.py`, `test_zotero_attachment_selection.py`, `test_zotero_local.py`,
+`test_zotero_find.py`) all pass. The DB-backed suite (`tests/test_smoke.py` and friends) needs a
+live Postgres via docker-compose, which wasn't running in this session — **not run**, so the
+migration and the new endpoint's live DB behavior are unverified beyond static checks. Full
+in-browser verification against a real annotated PDF (this step's actual exit criteria) is also
+**not done** — needs a follow-up manual pass the way step 4's did, with Zotero Desktop running and
+a real highlighted PDF, before this is considered done-done rather than "should work."
 
 ### 8. Package and submit to Chrome Web Store
 

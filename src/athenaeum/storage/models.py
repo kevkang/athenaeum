@@ -105,7 +105,7 @@ class Paper(Base):
             "status IN ('full_text', 'ghost', 'failed')", name="papers_status_chk"
         ),
         CheckConstraint(
-            "zotero_source IN ('sync', 'local')", name="papers_zotero_source_chk"
+            "zotero_source IN ('sync', 'local', 'extension')", name="papers_zotero_source_chk"
         ),
         CheckConstraint(
             "found_corpus IN ('zotero_sync', 'zotero_local', 'openalex')",
@@ -131,7 +131,10 @@ class Paper(Base):
     )
     # Distinguishes which Zotero path imported this paper — 'sync' retries
     # need the importer's stored Web API credentials, 'local' retries just
-    # re-read the bind-mounted data directory. NULL for non-Zotero papers.
+    # re-read the bind-mounted data directory, 'extension' has no
+    # server-retryable path at all (the browser extension held the only
+    # connection to the user's Zotero, and it's gone by retry time) — see
+    # api/papers.py:retry_ingest. NULL for non-Zotero papers.
     zotero_source: Mapped[str | None] = mapped_column(String(10))
     # Verbatim quote (and why it's relevant) surfaced by a "Find" search at
     # import time — comes from the abstract, not the ingested body text, so

@@ -125,6 +125,9 @@ async def ingest_paper(
             existing.found_quote = payload.found_quote
             existing.found_relevance_note = payload.found_relevance_note
             existing.found_corpus = "openalex"
+        if payload.zotero_item_key and not existing.zotero_item_key:
+            existing.zotero_item_key = payload.zotero_item_key
+            existing.zotero_source = "extension"
         await session.commit()
         return existing
 
@@ -149,6 +152,8 @@ async def ingest_paper(
         found_quote=payload.found_quote,
         found_relevance_note=payload.found_relevance_note,
         found_corpus="openalex" if payload.found_quote else None,
+        zotero_item_key=payload.zotero_item_key,
+        zotero_source="extension" if payload.zotero_item_key else None,
     )
     session.add(paper)
 
@@ -187,6 +192,7 @@ async def upload_paper(
     file: UploadFile = File(...),
     title: str | None = Form(default=None),
     doi: str | None = Form(default=None),
+    zotero_item_key: str | None = Form(default=None),
 ) -> Paper:
     settings = get_settings()
     if not settings.s3_bucket:
@@ -230,6 +236,8 @@ async def upload_paper(
         doi=bare_doi,
         title=title.strip() if title else (file.filename or "[Uploaded file]"),
         status="ghost",
+        zotero_item_key=zotero_item_key,
+        zotero_source="extension" if zotero_item_key else None,
     )
     session.add(paper)
     session.add(ProjectPaper(project_id=project_id, paper_id=paper_id, added_by=user.id))
@@ -481,7 +489,7 @@ async def retry_ingest(
 
         return paper
 
-    if paper.zotero_item_key:
+    if paper.zotero_item_key and paper.zotero_source == "sync":
         if paper.zotero_imported_by is None or (
             await session.get(ZoteroCredentials, paper.zotero_imported_by)
         ) is None:

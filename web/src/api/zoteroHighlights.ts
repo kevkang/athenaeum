@@ -13,12 +13,30 @@ export interface ZoteroHighlightCandidate {
   already_imported: boolean;
 }
 
+export interface ZoteroAnnotationIn {
+  item_key: string;
+  text: string;
+  comment: string | null;
+  color: string | null;
+}
+
 export const zoteroHighlightsApi = {
   preview: (paperId: string, projectId: string) =>
     api
       .get<{ candidates: ZoteroHighlightCandidate[] }>(`/papers/${paperId}/zotero-highlights/preview`, {
         params: { project_id: projectId },
       })
+      .then((r) => r.data.candidates),
+
+  // For papers imported via the browser extension: the backend can't reach
+  // the user's local Zotero itself, so the caller fetches annotations
+  // through the extension and posts them here for fuzzy-matching.
+  previewFromAnnotations: (paperId: string, projectId: string, annotations: ZoteroAnnotationIn[]) =>
+    api
+      .post<{ candidates: ZoteroHighlightCandidate[] }>(
+        `/papers/${paperId}/zotero-highlights/preview-external`,
+        { project_id: projectId, annotations },
+      )
       .then((r) => r.data.candidates),
 
   import: (
